@@ -52,7 +52,7 @@ async def on_message(message) -> None:
         return
 
     # ユーザーからの質問を受け取る
-    if message.content.startswith("!gpt"):
+    if client.user in message.mentions:
         question = message.content[4:]
 
         # ChatGPTクラスを使って回答を生成する
