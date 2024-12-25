@@ -39,7 +39,7 @@ client = discord.Client(intents=intents)
 # Discord Botが起動したときに呼び出される関数
 @client.event
 async def on_ready() -> None:
-    print("起動完了")
+    print("ready to go.")
 
 
 # Discordでメッセージが送信されたときに呼び出される関数

@@ -4,6 +4,7 @@ Dockerfile
 README.md
 .github
 .git
+k8s/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
