@@ -2,11 +2,12 @@ FROM python:3.12-alpine3.21
 
 ARG USER_NAME=sphene
 ARG USER_ID=1000
-ARG GROUP_ID=$UID
+ARG GROUP_ID=${USER_ID}
 
 RUN <<EOF
-  addgroup -S -g "${GROUP_ID}" "${USER_NAME}"
-  adduser -u "${USER_ID}" -G "${USER_NAME}" -D "${USER_NAME}"
+  addgroup -S -g ${GROUP_ID} ${USER_NAME}
+  adduser -u ${USER_ID} -G ${USER_NAME} -D ${USER_NAME}
+  
 EOF
 
 USER "${USER_NAME}"
@@ -20,6 +21,6 @@ RUN <<EOF
   pip install --user -r requirements.txt
 EOF
 
-ENV PYTHONUSERBASE=/home/$USERNAME/.local PATH=$PYTHONUSERBASE/bin:$PATH
+ENV PYTHONUSERBASE=/home/$USER_NAME/.local PATH=$PYTHONUSERBASE/bin:$PATH
 
 CMD ["python", "app.py"]
