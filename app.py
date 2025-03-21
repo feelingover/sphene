@@ -1,4 +1,5 @@
 from collections import defaultdict
+from pathlib import Path
 from typing import DefaultDict
 
 import discord
@@ -7,6 +8,11 @@ from openai import OpenAI
 import config
 
 aiclient = OpenAI(api_key=config.OPENAI_API_KEY)
+
+
+def load_system_prompt() -> str:
+    prompt_path = Path(__file__).parent / "prompts" / "system.txt"
+    return prompt_path.read_text(encoding="utf-8").strip()
 
 
 class Sphene:
@@ -30,7 +36,7 @@ class Sphene:
 
 # ユーザーごとの会話インスタンスを保持する辞書
 user_conversations: DefaultDict[str, Sphene] = defaultdict(
-    lambda: Sphene(system_setting="あなたはアシスタントです。会話を開始します。")
+    lambda: Sphene(system_setting=load_system_prompt())
 )
 
 intents = discord.Intents.all()
@@ -63,7 +69,7 @@ async def on_message(message: discord.Message) -> None:
                     "ごめん！会話が長くなってきたからリセットするね！🔄"
                 )
                 user_conversations[user_id] = Sphene(
-                    system_setting="あなたはアシスタントです。会話を開始します。"
+                    system_setting=load_system_prompt()
                 )
                 api = user_conversations[user_id]
                 api.input_message(question)
