@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: sphene
-        image: ghcr.io/feelingover/sphene:main
+        image: ghcr.io/feelingover/sphene:build-9
         imagePullPolicy: Always
         envFrom:
           - secretRef:

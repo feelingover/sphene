@@ -8,11 +8,6 @@ import config
 
 aiclient = OpenAI(api_key=config.OPENAI_API_KEY)
 
-# ユーザーごとの会話インスタンスを保持する辞書
-user_conversations: DefaultDict[str, Sphene] = defaultdict(
-    lambda: Sphene(system_setting="あなたはアシスタントです。会話を開始します。")
-)
-
 
 class Sphene:
     def __init__(self, system_setting: str) -> None:
@@ -25,13 +20,18 @@ class Sphene:
     def input_message(self, input_text: str) -> None:
         self.input_list.append({"role": "user", "content": input_text})
         result = aiclient.chat.completions.create(
-            model="gpt-3.5-turbo", messages=self.input_list  # モデル名も修正したよ！
+            model="gpt-3.5-turbo", messages=self.input_list
         )
         self.logs.append(result)
         self.input_list.append(
             {"role": "assistant", "content": result.choices[0].message.content}
         )
 
+
+# ユーザーごとの会話インスタンスを保持する辞書
+user_conversations: DefaultDict[str, Sphene] = defaultdict(
+    lambda: Sphene(system_setting="あなたはアシスタントです。会話を開始します。")
+)
 
 intents = discord.Intents.all()
 client = discord.Client(intents=intents)
