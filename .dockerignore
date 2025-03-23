@@ -4,6 +4,7 @@ Dockerfile
 README.md
 .github
 .git
+.clinerules
 k8s/
 
 # Byte-compiled / optimized / DLL files

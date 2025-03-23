@@ -1,6 +1,17 @@
 import os
+from typing import List
+
 from dotenv import load_dotenv
+
 load_dotenv()
 
-OPENAI_API_KEY: str = str(os.getenv('OPENAI_API_KEY'))
-DISCORD_TOKEN: str = str(os.getenv('DISCORD_TOKEN'))
+OPENAI_API_KEY: str = str(os.getenv("OPENAI_API_KEY"))
+DISCORD_TOKEN: str = str(os.getenv("DISCORD_TOKEN"))
+
+# 許可されたチャンネルのID（環境変数から取得、カンマ区切りで設定）
+ALLOWED_CHANNEL_IDS: List[int] = []
+channel_ids_str = os.getenv("ALLOWED_CHANNEL_IDS", "")
+if channel_ids_str:
+    ALLOWED_CHANNEL_IDS = [
+        int(channel_id.strip()) for channel_id in channel_ids_str.split(",")
+    ]

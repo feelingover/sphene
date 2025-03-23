@@ -21,6 +21,4 @@ RUN <<EOF
   pip install --user -r requirements.txt
 EOF
 
-ENV PYTHONUSERBASE=/home/$USER_NAME/.local PATH=$PYTHONUSERBASE/bin:$PATH
-
 CMD ["python", "app.py"]
