@@ -75,7 +75,6 @@ async def on_ready() -> None:
         )
     else:
         logger.error("Discordボットのユーザー情報を取得できませんでした")
-    print("ready to go.")
 
 
 async def handle_channel_list_command(message: discord.Message) -> bool:
@@ -124,9 +123,75 @@ async def handle_channel_list_command(message: discord.Message) -> bool:
     return True
 
 
+async def is_bot_mentioned(message: discord.Message) -> tuple[bool, str]:
+    """メッセージがボットに対するものかどうかを判断し、質問内容を抽出する
+
+    Args:
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        tuple[bool, str]: (ボットに対するメッセージかどうか, 質問内容)
+    """
+    if message.content is None:
+        return False, ""
+
+    content: str = message.content
+    user_id = str(message.author.id)
+
+    # メンションされた場合
+    if client.user in message.mentions:
+        question = content[4:] if len(content) > 4 else ""
+        preview = question[:30] + "..." if len(question) > 30 else question
+        logger.info(
+            f"メンション検出: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
+        )
+        return True, question
+
+    # 設定された名前で呼ばれた場合
+    if config.BOT_NAME in content:
+        question = content  # メッセージ全体を質問として扱う
+        preview = question[:30] + "..." if len(question) > 30 else question
+        logger.info(
+            f"名前で呼ばれました: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
+        )
+        return True, question
+
+    return False, ""
+
+
+async def process_conversation(message: discord.Message, question: str) -> None:
+    """ユーザーとの会話を処理する
+
+    Args:
+        message: Discordメッセージオブジェクト
+        question: 質問内容
+    """
+    user_id = str(message.author.id)
+
+    # ユーザーの会話インスタンスを取得
+    api = user_conversations[user_id]
+    api.input_message(question)
+    answer = api.input_list[-1]["content"]
+
+    # 長くなりすぎた会話履歴をリセット（10往復を超えたら）
+    if len(api.input_list) > 21:  # system(1) + 10往復(20) = 21
+        logger.info(
+            f"ユーザーID {user_id} の会話履歴をリセット (メッセージ数: {len(api.input_list)})"
+        )
+        await message.channel.send("ごめん！会話が長くなってきたからリセットするね！🔄")
+        user_conversations[user_id] = Sphene(system_setting=load_system_prompt())
+        api = user_conversations[user_id]
+        api.input_message(question)
+        answer = api.input_list[-1]["content"]
+
+    logger.info(f"応答送信: ユーザーID {user_id}, 応答: {answer[:30]}...")
+    await message.channel.send(answer)
+
+
 @client.event
 async def on_message(message: discord.Message) -> None:
     try:
+        # 自分自身やボットのメッセージは無視
         if message.author == client.user or message.author.bot:
             return
 
@@ -146,41 +211,10 @@ async def on_message(message: discord.Message) -> None:
                 return
             return
 
-        # メンションされたときだけ応答
-        if client.user in message.mentions and message.content is not None:
-            # 型チェック後にスライシングする
-            content: str = message.content  # 型を明示的に指定
-            question = content[4:] if len(content) > 4 else ""
-            user_id = str(message.author.id)
-
-            # プレビュー用の安全な文字列を生成
-            preview = question[:30] + "..." if len(question) > 30 else question
-            logger.info(
-                f"メンション検出: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
-            )
-
-            # ユーザーの会話インスタンスを取得
-            api = user_conversations[user_id]
-            api.input_message(question)
-            answer = api.input_list[-1]["content"]
-
-            # 長くなりすぎた会話履歴をリセット（10往復を超えたら）
-            if len(api.input_list) > 21:  # system(1) + 10往復(20) = 21
-                logger.info(
-                    f"ユーザーID {user_id} の会話履歴をリセット (メッセージ数: {len(api.input_list)})"
-                )
-                await message.channel.send(
-                    "ごめん！会話が長くなってきたからリセットするね！🔄"
-                )
-                user_conversations[user_id] = Sphene(
-                    system_setting=load_system_prompt()
-                )
-                api = user_conversations[user_id]
-                api.input_message(question)
-                answer = api.input_list[-1]["content"]
-
-            logger.info(f"応答送信: ユーザーID {user_id}, 応答: {answer[:30]}...")
-            await message.channel.send(answer)
+        # ボットが呼ばれたかどうかをチェック
+        is_mentioned, question = await is_bot_mentioned(message)
+        if is_mentioned:
+            await process_conversation(message, question)
 
     except Exception as e:
         logger.error(f"エラー発生: {str(e)}", exc_info=True)
