@@ -77,6 +77,63 @@ async def on_ready() -> None:
         logger.error("Discordボットのユーザー情報を取得できませんでした")
 
 
+async def handle_nickname_command(message: discord.Message) -> bool:
+    """ニックネーム変更コマンドを処理する
+
+    Args:
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        bool: コマンドが処理された場合はTrue
+    """
+    # メッセージ内容と管理者権限のチェック
+    if message.content != "!sphene nickname":
+        return False
+
+    # Memberタイプであることの確認と管理者権限チェック
+    if (
+        not isinstance(message.author, discord.Member)
+        or not message.author.guild_permissions.administrator
+    ):
+        await message.channel.send("👮 このコマンドは管理者権限が必要だよ！")
+        return True
+
+    # 現在のギルドとクライアントのメンバー情報を取得
+    guild = message.guild
+    if not guild or not isinstance(message.guild, discord.Guild):
+        await message.channel.send(
+            "😵 サーバー情報の取得に失敗したよ！DMではこの機能使えないよ〜"
+        )
+        return True
+
+    # このギルドでのbotのメンバー情報を取得
+    bot_member = guild.get_member(client.user.id) if client.user else None
+    if not bot_member:
+        await message.channel.send("😵 ボットのメンバー情報の取得に失敗しちゃった...")
+        return True
+
+    try:
+        # BOT_NAMEに設定したニックネームに変更
+        await bot_member.edit(nick=config.BOT_NAME)
+        await message.channel.send(
+            f"✨ ニックネームを「{config.BOT_NAME}」に変更したよ！"
+        )
+        logger.info(
+            f"ニックネーム変更: サーバーID {guild.id}, 新しい名前: {config.BOT_NAME}"
+        )
+        return True
+    except discord.Forbidden:
+        await message.channel.send(
+            "😭 権限が足りなくてニックネームを変更できなかったよ！BOTの権限を確認してね！"
+        )
+        logger.error(f"ニックネーム変更失敗: 権限不足, サーバーID {guild.id}")
+        return True
+    except Exception as e:
+        await message.channel.send(f"😱 エラーが発生しちゃった: {str(e)}")
+        logger.error(f"ニックネーム変更失敗: {str(e)}", exc_info=True)
+        return True
+
+
 async def handle_channel_list_command(message: discord.Message) -> bool:
     """チャンネル一覧コマンドを処理する
 
@@ -156,6 +213,22 @@ async def is_bot_mentioned(message: discord.Message) -> tuple[bool, str]:
         )
         return True, question
 
+    # ボットの発言へのリプライの場合
+    if message.reference and message.reference.resolved:
+        # リプライ先のメッセージがボット自身のものか確認
+        if (
+            hasattr(message.reference.resolved, "author")
+            and message.reference.resolved.author is not None  # 追加！
+            and client.user is not None  # 追加！
+            and message.reference.resolved.author.id == client.user.id
+        ):
+            question = content  # リプライのメッセージ内容をそのまま質問として扱う
+            preview = question[:30] + "..." if len(question) > 30 else question
+            logger.info(
+                f"リプライ検出: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
+            )
+            return True, question
+
     return False, ""
 
 
@@ -207,7 +280,9 @@ async def on_message(message: discord.Message) -> None:
             not in config.ALLOWED_CHANNEL_IDS  # IDが許可リストにない
         ):
             # 管理者コマンドのチェック
-            if await handle_channel_list_command(message):
+            if await handle_nickname_command(
+                message
+            ) or await handle_channel_list_command(message):
                 return
             return
 
