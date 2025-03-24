@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import DefaultDict
 
 import discord
+from discord import app_commands
+from discord.ext import commands
 from openai import OpenAI
 
 import config
@@ -63,102 +65,76 @@ user_conversations: DefaultDict[str, Sphene] = defaultdict(
     lambda: Sphene(system_setting=load_system_prompt())
 )
 
-intents = discord.Intents.all()
-client = discord.Client(intents=intents)
+# Botの初期化
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-@client.event
-async def on_ready() -> None:
-    if client.user:
-        logger.info(
-            f"Discordボット起動完了: {client.user.name}#{client.user.discriminator}"
+# コマンドグループ
+command_group = app_commands.Group(
+    name=config.COMMAND_GROUP_NAME, description=f"{config.BOT_NAME}ボットのコマンド"
+)
+
+
+@command_group.command(name="nickname", description="ボットのニックネームを変更します")
+@app_commands.checks.has_permissions(administrator=True)
+async def change_nickname(interaction: discord.Interaction) -> None:
+    """ニックネーム変更コマンドを処理する"""
+    # ギルド情報を取得
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "😵 サーバー情報の取得に失敗したよ！DMではこの機能使えないよ〜",
+            ephemeral=True,
         )
-    else:
-        logger.error("Discordボットのユーザー情報を取得できませんでした")
-
-
-async def handle_nickname_command(message: discord.Message) -> bool:
-    """ニックネーム変更コマンドを処理する
-
-    Args:
-        message: Discordメッセージオブジェクト
-
-    Returns:
-        bool: コマンドが処理された場合はTrue
-    """
-    # メッセージ内容と管理者権限のチェック
-    if message.content != "!sphene nickname":
-        return False
-
-    # Memberタイプであることの確認と管理者権限チェック
-    if (
-        not isinstance(message.author, discord.Member)
-        or not message.author.guild_permissions.administrator
-    ):
-        await message.channel.send("👮 このコマンドは管理者権限が必要だよ！")
-        return True
-
-    # 現在のギルドとクライアントのメンバー情報を取得
-    guild = message.guild
-    if not guild or not isinstance(message.guild, discord.Guild):
-        await message.channel.send(
-            "😵 サーバー情報の取得に失敗したよ！DMではこの機能使えないよ〜"
-        )
-        return True
+        return
 
     # このギルドでのbotのメンバー情報を取得
-    bot_member = guild.get_member(client.user.id) if client.user else None
+    bot_member = interaction.guild.get_member(bot.user.id) if bot.user else None
     if not bot_member:
-        await message.channel.send("😵 ボットのメンバー情報の取得に失敗しちゃった...")
-        return True
+        await interaction.response.send_message(
+            "😵 ボットのメンバー情報の取得に失敗しちゃった...", ephemeral=True
+        )
+        return
 
     try:
         # BOT_NAMEに設定したニックネームに変更
         await bot_member.edit(nick=config.BOT_NAME)
-        await message.channel.send(
+        await interaction.response.send_message(
             f"✨ ニックネームを「{config.BOT_NAME}」に変更したよ！"
         )
         logger.info(
-            f"ニックネーム変更: サーバーID {guild.id}, 新しい名前: {config.BOT_NAME}"
+            f"ニックネーム変更: サーバーID {interaction.guild.id}, 新しい名前: {config.BOT_NAME}"
         )
-        return True
     except discord.Forbidden:
-        await message.channel.send(
-            "😭 権限が足りなくてニックネームを変更できなかったよ！BOTの権限を確認してね！"
+        await interaction.response.send_message(
+            "😭 権限が足りなくてニックネームを変更できなかったよ！BOTの権限を確認してね！",
+            ephemeral=True,
         )
-        logger.error(f"ニックネーム変更失敗: 権限不足, サーバーID {guild.id}")
-        return True
+        logger.error(
+            f"ニックネーム変更失敗: 権限不足, サーバーID {interaction.guild.id}"
+        )
     except Exception as e:
-        await message.channel.send(f"😱 エラーが発生しちゃった: {str(e)}")
+        await interaction.response.send_message(
+            f"😱 エラーが発生しちゃった: {str(e)}", ephemeral=True
+        )
         logger.error(f"ニックネーム変更失敗: {str(e)}", exc_info=True)
-        return True
 
 
-async def handle_channel_list_command(message: discord.Message) -> bool:
-    """チャンネル一覧コマンドを処理する
-
-    Args:
-        message: Discordメッセージオブジェクト
-
-    Returns:
-        bool: コマンドが処理された場合はTrue
-    """
-    # メッセージ内容と管理者権限のチェック
-    if message.content != "!sphene channels":
-        return False
-
-    # Memberタイプであることの確認と管理者権限チェック
-    if (
-        not isinstance(message.author, discord.Member)
-        or not message.author.guild_permissions.administrator
-    ):
-        return False
-
-    channel_info = "👑 **Sphene使用可能チャンネル一覧**:\n"
+@command_group.command(
+    name="channels",
+    description=f"{config.BOT_NAME}が使用可能なチャンネル一覧を表示します",
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def list_channels(interaction: discord.Interaction) -> None:
+    """チャンネル一覧コマンドを処理する"""
+    channel_info = f"👑 **{config.BOT_NAME}使用可能チャンネル一覧**:\n"
 
     # チャンネルリストの作成
     for channel_id in config.ALLOWED_CHANNEL_IDS:
-        channel = client.get_channel(channel_id)
+        channel = bot.get_channel(channel_id)
         # チャンネルが存在し、名前属性があるかチェック
         if channel and hasattr(channel, "name"):
             channel_name = getattr(channel, "name")
@@ -176,8 +152,24 @@ async def handle_channel_list_command(message: discord.Message) -> bool:
     channel_info += "\n制限の設定方法: `.env`ファイルの`ALLOWED_CHANNEL_IDS`に使用可能なチャンネルIDをカンマ区切りで設定してね！"
 
     # メッセージ送信
-    await message.channel.send(channel_info)
-    return True
+    await interaction.response.send_message(channel_info)
+
+
+@command_group.command(name="reset", description="あなたとの会話履歴をリセットします")
+async def reset_conversation(interaction: discord.Interaction) -> None:
+    """会話履歴リセットコマンドを処理する"""
+    user_id = str(interaction.user.id)
+
+    if user_id in user_conversations:
+        user_conversations[user_id] = Sphene(system_setting=load_system_prompt())
+        await interaction.response.send_message(
+            "🔄 会話履歴をリセットしたよ！また一から話そうね！"
+        )
+        logger.info(f"ユーザーID {user_id} の会話履歴を手動リセット")
+    else:
+        await interaction.response.send_message(
+            "🤔 まだ話したことがないみたいだね！これから仲良くしようね！"
+        )
 
 
 async def is_bot_mentioned(message: discord.Message) -> tuple[bool, str]:
@@ -196,8 +188,10 @@ async def is_bot_mentioned(message: discord.Message) -> tuple[bool, str]:
     user_id = str(message.author.id)
 
     # メンションされた場合
-    if client.user in message.mentions:
-        question = content[4:] if len(content) > 4 else ""
+    if bot.user and bot.user in message.mentions:
+        # bot.userがNoneではないことを確認済みなので、安全にidにアクセス可能
+        bot_id = bot.user.id
+        question = content.replace(f"<@{bot_id}>", "").strip()
         preview = question[:30] + "..." if len(question) > 30 else question
         logger.info(
             f"メンション検出: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
@@ -218,9 +212,9 @@ async def is_bot_mentioned(message: discord.Message) -> tuple[bool, str]:
         # リプライ先のメッセージがボット自身のものか確認
         if (
             hasattr(message.reference.resolved, "author")
-            and message.reference.resolved.author is not None  # 追加！
-            and client.user is not None  # 追加！
-            and message.reference.resolved.author.id == client.user.id
+            and message.reference.resolved.author is not None
+            and bot.user is not None
+            and message.reference.resolved.author.id == bot.user.id
         ):
             question = content  # リプライのメッセージ内容をそのまま質問として扱う
             preview = question[:30] + "..." if len(question) > 30 else question
@@ -261,11 +255,24 @@ async def process_conversation(message: discord.Message, question: str) -> None:
     await message.channel.send(answer)
 
 
-@client.event
+@bot.event
+async def on_ready() -> None:
+    await bot.add_cog(commands.Cog(name="Management"))
+    # コマンドグループを追加（戻り値を捨てる）
+    bot.tree.add_command(command_group)  # type: ignore
+    await bot.tree.sync()
+
+    if bot.user:
+        logger.info(f"Discordボット起動完了: {bot.user.name}#{bot.user.discriminator}")
+    else:
+        logger.error("Discordボットのユーザー情報を取得できませんでした")
+
+
+@bot.event
 async def on_message(message: discord.Message) -> None:
     try:
         # 自分自身やボットのメッセージは無視
-        if message.author == client.user or message.author.bot:
+        if message.author == bot.user or message.author.bot:
             return
 
         if message.content is None:
@@ -279,11 +286,6 @@ async def on_message(message: discord.Message) -> None:
             and message.channel.id
             not in config.ALLOWED_CHANNEL_IDS  # IDが許可リストにない
         ):
-            # 管理者コマンドのチェック
-            if await handle_nickname_command(
-                message
-            ) or await handle_channel_list_command(message):
-                return
             return
 
         # ボットが呼ばれたかどうかをチェック
@@ -296,5 +298,22 @@ async def on_message(message: discord.Message) -> None:
         await message.channel.send(f"ごめん！エラーが発生しちゃった...😢: {str(e)}")
 
 
+@bot.tree.error
+async def on_app_command_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+) -> None:
+    """スラッシュコマンドエラーハンドラ"""
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        await interaction.response.send_message(
+            "👮 このコマンドは管理者権限が必要だよ！", ephemeral=True
+        )
+        return
+
+    logger.error(f"コマンドエラー発生: {str(error)}", exc_info=True)
+    await interaction.response.send_message(
+        f"😱 コマンド実行中にエラーが発生しちゃった: {str(error)}", ephemeral=True
+    )
+
+
 logger.info("Discordボットの起動を開始")
-client.run(config.DISCORD_TOKEN)
+bot.run(config.DISCORD_TOKEN)

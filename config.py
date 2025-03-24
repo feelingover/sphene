@@ -8,6 +8,7 @@ load_dotenv()
 OPENAI_API_KEY: str = str(os.getenv("OPENAI_API_KEY"))
 DISCORD_TOKEN: str = str(os.getenv("DISCORD_TOKEN"))
 BOT_NAME: str = str(os.getenv("BOT_NAME", "スフェーン"))
+COMMAND_GROUP_NAME: str = str(os.getenv("COMMAND_GROUP_NAME", "sphene"))
 
 # 許可されたチャンネルのID（環境変数から取得、カンマ区切りで設定）
 ALLOWED_CHANNEL_IDS: List[int] = []
