@@ -4,6 +4,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  INFRA_REPO: feelingover/sphene-infra
 
 on:
   push:
@@ -57,3 +58,53 @@ jobs:
           cache-to: type=gha,mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          
+      - name: Extract image tag
+        id: extract-tag
+        run: |
+          echo "IMAGE_TAG=build-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          
+      - name: Checkout infrastructure repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.INFRA_REPO }}
+          path: infra
+          token: ${{ secrets.GIT_HUB_TOKEN }}
+          
+      - name: Update deployment.yaml with new image tag
+        run: |
+          cd infra
+          IMAGE_TAG=${{ steps.extract-tag.outputs.IMAGE_TAG }}
+          DEPLOYMENT_FILE="environments/prod/deployment.yaml"
+          
+          # Replace the image tag in deployment.yaml
+          sed -i -e "s|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}|g" $DEPLOYMENT_FILE
+          
+          # Check if there are changes
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "Changes detected, creating PR"
+            
+            # Setup git credentials
+            git config --global user.name "GitHub Actions"
+            git config --global user.email "actions@github.com"
+            
+            # Create a new branch
+            NEW_BRANCH="update-image-tag-${IMAGE_TAG}"
+            git checkout -b $NEW_BRANCH
+            
+            # Commit and push changes
+            git add $DEPLOYMENT_FILE
+            git commit -m "Update image tag to ${IMAGE_TAG}"
+            git push -u origin $NEW_BRANCH
+            
+            # Create PR
+            gh auth login --with-token <<< "${{ secrets.GIT_HUB_TOKEN }}"
+            gh pr create \
+              --repo ${{ env.INFRA_REPO }} \
+              --title "Update image tag to ${IMAGE_TAG}" \
+              --body "Automated PR to update deployment with the latest image tag: ${IMAGE_TAG}" \
+              --base main \
+              --head $NEW_BRANCH
+          else
+            echo "No changes detected in deployment file"
+          fi
