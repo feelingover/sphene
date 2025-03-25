@@ -90,6 +90,13 @@ jobs:
           branch: update-image-${{ steps.extract-tag.outputs.IMAGE_TAG }}
           title: Update image to ${{ steps.extract-tag.outputs.IMAGE_TAG }}
           body: |
-            自動PRだよ！
-            - イメージタグを更新: `${{ steps.extract-tag.outputs.IMAGE_TAG }}`
-            - ビルド: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            ### ＼ﾜｧｰｲヽ(♡´∀`)ﾉ♡／ 新しいイメージがきたよ！
+
+            🚀 マージしたら本番環境にデプロイされちゃうからね！
+            ちょっと確認してみてね〜！
+
+            #### 📝 更新内容とか
+            - 🏷️ 新しいイメージタグ: `${{ steps.extract-tag.outputs.IMAGE_TAG }}`
+            - 🔨 ビルドの様子: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            問題なさそうだったらマージボタン押しちゃって〜！(๑˃̵ᴗ˂̵)و

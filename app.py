@@ -79,50 +79,6 @@ command_group = app_commands.Group(
 )
 
 
-@command_group.command(name="nickname", description="ボットのニックネームを変更します")
-@app_commands.checks.has_permissions(administrator=True)
-async def change_nickname(interaction: discord.Interaction) -> None:
-    """ニックネーム変更コマンドを処理する"""
-    # ギルド情報を取得
-    if not interaction.guild:
-        await interaction.response.send_message(
-            "😵 サーバー情報の取得に失敗したよ！DMではこの機能使えないよ〜",
-            ephemeral=True,
-        )
-        return
-
-    # このギルドでのbotのメンバー情報を取得
-    bot_member = interaction.guild.get_member(bot.user.id) if bot.user else None
-    if not bot_member:
-        await interaction.response.send_message(
-            "😵 ボットのメンバー情報の取得に失敗しちゃった...", ephemeral=True
-        )
-        return
-
-    try:
-        # BOT_NAMEに設定したニックネームに変更
-        await bot_member.edit(nick=config.BOT_NAME)
-        await interaction.response.send_message(
-            f"✨ ニックネームを「{config.BOT_NAME}」に変更したよ！"
-        )
-        logger.info(
-            f"ニックネーム変更: サーバーID {interaction.guild.id}, 新しい名前: {config.BOT_NAME}"
-        )
-    except discord.Forbidden:
-        await interaction.response.send_message(
-            "😭 権限が足りなくてニックネームを変更できなかったよ！BOTの権限を確認してね！",
-            ephemeral=True,
-        )
-        logger.error(
-            f"ニックネーム変更失敗: 権限不足, サーバーID {interaction.guild.id}"
-        )
-    except Exception as e:
-        await interaction.response.send_message(
-            f"😱 エラーが発生しちゃった: {str(e)}", ephemeral=True
-        )
-        logger.error(f"ニックネーム変更失敗: {str(e)}", exc_info=True)
-
-
 @command_group.command(
     name="channels",
     description=f"{config.BOT_NAME}が使用可能なチャンネル一覧を表示します",
