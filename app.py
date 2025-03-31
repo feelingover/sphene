@@ -105,7 +105,7 @@ async def list_channels(interaction: discord.Interaction) -> None:
         )
 
     # 設定方法の説明を追加
-    channel_info += "\n制限の設定方法: `.env`ファイルの`ALLOWED_CHANNEL_IDS`に使用可能なチャンネルIDをカンマ区切りで設定してね！"
+    channel_info += "\n制限の設定方法: 環境変数`ALLOWED_CHANNEL_IDS`に使用可能なチャンネルIDをカンマ区切りで設定してね！"
 
     # メッセージ送信
     await interaction.response.send_message(channel_info)
@@ -196,16 +196,15 @@ async def process_conversation(message: discord.Message, question: str) -> None:
     api.input_message(question)
     answer = api.input_list[-1]["content"]
 
-    # 長くなりすぎた会話履歴をリセット（10往復を超えたら）
+    # 長くなりすぎた会話履歴の管理（古いメッセージから削除して直近10往復を保持）
     if len(api.input_list) > 21:  # system(1) + 10往復(20) = 21
         logger.info(
-            f"ユーザーID {user_id} の会話履歴をリセット (メッセージ数: {len(api.input_list)})"
+            f"ユーザーID {user_id} の会話履歴を整理 (メッセージ数: {len(api.input_list)})"
         )
-        await message.channel.send("ごめん！会話が長くなってきたからリセットするね！🔄")
-        user_conversations[user_id] = Sphene(system_setting=load_system_prompt())
-        api = user_conversations[user_id]
-        api.input_message(question)
-        answer = api.input_list[-1]["content"]
+        # システムメッセージを保持し、古いメッセージペアを削除
+        system_message = api.input_list[0]  # システムメッセージを保存
+        # 直近の20メッセージ（10往復分）だけを残す
+        api.input_list = [system_message] + api.input_list[-20:]
 
     logger.info(f"応答送信: ユーザーID {user_id}, 応答: {answer[:30]}...")
     await message.channel.send(answer)
