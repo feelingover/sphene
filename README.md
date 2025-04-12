@@ -82,13 +82,29 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 ```
 /
-├── app.py         # メインアプリケーション
-├── config.py      # 設定ファイル
-├── Dockerfile     # Dockerビルド設定
-├── prompts/       # プロンプト関連ファイル
-│   └── system.txt # システムプロンプト
-├── .env.sample    # 環境変数サンプル
-└── README.md      # このファイル
+├── app.py                # メインアプリケーション
+├── config.py             # 設定ファイル
+├── Dockerfile            # Dockerビルド設定
+├── requirements.txt      # 依存パッケージリスト
+├── .env.sample           # 環境変数サンプル
+├── README.md             # このファイル
+├── ai/                   # AI関連機能
+│   ├── __init__.py
+│   ├── client.py         # OpenAI API クライアント
+│   └── conversation.py   # 会話管理ロジック
+├── bot/                  # Discordボット機能
+│   ├── __init__.py
+│   ├── commands.py       # スラッシュコマンド定義
+│   ├── discord_bot.py    # ボットコア実装
+│   └── events.py         # イベントハンドラ
+├── log_utils/            # ロギング機能
+│   ├── __init__.py
+│   └── logger.py         # ロガー設定
+├── prompts/              # プロンプト関連ファイル
+│   └── system.txt        # システムプロンプト
+└── utils/                # ユーティリティ機能
+    ├── __init__.py
+    └── text_utils.py     # テキスト処理ユーティリティ
 ```
 
 ## 📊 技術仕様
