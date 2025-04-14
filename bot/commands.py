@@ -15,10 +15,10 @@ async def cmd_list_channels(
         bot: Discordクライアント
         interaction: インタラクションオブジェクト
     """
-    channel_info = f"👑 **{config.BOT_NAME}使用可能チャンネル一覧**:\n"
+    channel_info = f"🚫 **{config.BOT_NAME}使用禁止チャンネル一覧**:\n"
 
-    # チャンネルリストの作成
-    for channel_id in config.ALLOWED_CHANNEL_IDS:
+    # 禁止チャンネルリストの作成
+    for channel_id in config.DENIED_CHANNEL_IDS:
         channel = bot.get_channel(channel_id)
         # チャンネルが存在し、名前属性があるかチェック
         if channel and hasattr(channel, "name"):
@@ -27,14 +27,14 @@ async def cmd_list_channels(
             channel_name = f"不明なチャンネル (ID: {channel_id})"
         channel_info += f"• {channel_name} (ID: {channel_id})\n"
 
-    # 許可チャンネルがない場合の表示
-    if not config.ALLOWED_CHANNEL_IDS:
+    # 禁止チャンネルがない場合の表示 (つまり制限なし)
+    if not config.DENIED_CHANNEL_IDS:
         channel_info += (
             "現在、全てのチャンネルで使用可能です（チャンネル制限なし）！🎉\n"
         )
 
     # 設定方法の説明を追加
-    channel_info += "\n制限の設定方法: 環境変数`ALLOWED_CHANNEL_IDS`に使用可能なチャンネルIDをカンマ区切りで設定してね！"
+    channel_info += "\n制限の設定方法: 環境変数`DENIED_CHANNEL_IDS`に使用を禁止するチャンネルIDをカンマ区切りで設定してね！"
 
     # メッセージ送信
     await interaction.response.send_message(channel_info)
@@ -99,7 +99,7 @@ def setup_commands(bot: discord.Client) -> app_commands.Group:
     # チャンネル一覧コマンド
     @command_group.command(
         name="channels",
-        description=f"{config.BOT_NAME}が使用可能なチャンネル一覧を表示します",
+        description=f"{config.BOT_NAME}の使用が禁止されているチャンネル一覧を表示します",
     )
     @app_commands.checks.has_permissions(administrator=True)
     async def list_channels(interaction: discord.Interaction) -> None:
