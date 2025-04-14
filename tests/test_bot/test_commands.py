@@ -19,9 +19,9 @@ async def test_cmd_list_channels(
     mock_discord_client: MagicMock, mock_discord_interaction: MagicMock
 ) -> None:
     """チャンネル一覧コマンドのテスト"""
-    # 許可チャンネルIDのモック
-    allowed_channels = [123456789, 987654321]
-    with patch.object(config, "ALLOWED_CHANNEL_IDS", allowed_channels):
+    # 禁止チャンネルIDのモック
+    denied_channels = [123456789, 987654321]  # テスト用の禁止チャンネルID
+    with patch.object(config, "DENIED_CHANNEL_IDS", denied_channels):
         # コマンド実行
         await cmd_list_channels(mock_discord_client, mock_discord_interaction)
 
@@ -30,7 +30,7 @@ async def test_cmd_list_channels(
 
         # レスポンスに必要な情報が含まれているかチェック
         args = mock_discord_interaction.response.send_message.call_args[0][0]
-        assert "使用可能チャンネル一覧" in args
+        assert "使用禁止チャンネル一覧" in args
         assert "テストチャンネル" in args
         assert "123456789" in args
         assert "987654321" in args
@@ -41,8 +41,8 @@ async def test_cmd_list_channels_no_restrictions(
     mock_discord_client: MagicMock, mock_discord_interaction: MagicMock
 ) -> None:
     """チャンネル制限なしの場合のテスト"""
-    # 許可チャンネルIDが空のケース
-    with patch.object(config, "ALLOWED_CHANNEL_IDS", []):
+    # 禁止チャンネルIDが空のケース (つまり制限なし)
+    with patch.object(config, "DENIED_CHANNEL_IDS", []):
         # コマンド実行
         await cmd_list_channels(mock_discord_client, mock_discord_interaction)
 
