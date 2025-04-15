@@ -11,10 +11,10 @@ BOT_NAME: str = str(os.getenv("BOT_NAME", "アサヒ"))
 COMMAND_GROUP_NAME: str = str(os.getenv("COMMAND_GROUP_NAME", "asahi"))
 SYSTEM_PROMPT_FILENAME: str = str(os.getenv("SYSTEM_PROMPT_FILENAME", "system.txt"))
 
-# 許可されたチャンネルのID（環境変数から取得、カンマ区切りで設定）
-ALLOWED_CHANNEL_IDS: List[int] = []
-channel_ids_str = os.getenv("ALLOWED_CHANNEL_IDS", "")
+# 禁止されたチャンネルのID（環境変数から取得、カンマ区切りで設定）
+DENIED_CHANNEL_IDS: List[int] = []
+channel_ids_str = os.getenv("DENIED_CHANNEL_IDS", "")
 if channel_ids_str:
-    ALLOWED_CHANNEL_IDS = [
+    DENIED_CHANNEL_IDS = [
         int(channel_id.strip()) for channel_id in channel_ids_str.split(",")
     ]

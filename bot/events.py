@@ -2,15 +2,19 @@ from typing import Tuple
 
 import discord
 from discord import app_commands
+from discord.ext import commands  # commands をインポート
 
 import config
-from ai.conversation import user_conversations
+
+# Sphene と load_system_prompt をインポート
+from ai.conversation import Sphene, load_system_prompt, user_conversations
 from log_utils.logger import logger
 from utils.text_utils import truncate_text
 
 
+# bot の型ヒントを commands.Bot に変更
 async def is_bot_mentioned(
-    bot: discord.Client, message: discord.Message
+    bot: commands.Bot, message: discord.Message
 ) -> Tuple[bool, str]:
     """メッセージがボットに対するものかどうかを判断し、質問内容を抽出する
 
@@ -78,7 +82,8 @@ async def process_conversation(message: discord.Message, question: str) -> None:
     # 期限切れなら会話をリセット
     if user_conversations[user_id].is_expired():
         logger.info(f"ユーザーID {user_id} の会話が期限切れのためリセット")
-        user_conversations[user_id] = user_conversations.default_factory()
+        # 新しい Sphene インスタンスを作成してリセット
+        user_conversations[user_id] = Sphene(system_setting=load_system_prompt())
 
     # ユーザーの会話インスタンスを取得
     api = user_conversations[user_id]
@@ -93,7 +98,8 @@ async def process_conversation(message: discord.Message, question: str) -> None:
         )
 
 
-async def handle_message(bot: discord.Client, message: discord.Message) -> None:
+# bot の型ヒントを commands.Bot に変更
+async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
     """メッセージ受信イベントの処理
 
     Args:
@@ -110,11 +116,13 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
 
         # チャンネル制限のチェック
         if (
-            config.ALLOWED_CHANNEL_IDS  # リストが空でない場合
-            and message.channel.id
-            not in config.ALLOWED_CHANNEL_IDS  # IDが許可リストにない
+            config.DENIED_CHANNEL_IDS  # リストが空でない場合
+            and message.channel.id in config.DENIED_CHANNEL_IDS  # IDが禁止リストにある
         ):
-            return
+            logger.info(
+                f"禁止チャンネルでの発言を無視: ユーザーID {message.author.id}, チャンネルID {message.channel.id}"
+            )
+            return  # 処理を中断
 
         # ボットが呼ばれたかどうかをチェック
         is_mentioned, question = await is_bot_mentioned(bot, message)
@@ -126,7 +134,8 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
         await message.channel.send(f"ごめん！エラーが発生しちゃった...😢: {str(e)}")
 
 
-def setup_events(bot: discord.Client, command_group: app_commands.Group) -> None:
+# bot の型ヒントを discord.Client から commands.Bot に変更
+def setup_events(bot: commands.Bot, command_group: app_commands.Group) -> None:
     """イベントハンドラのセットアップ
 
     Args:

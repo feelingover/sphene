@@ -16,7 +16,7 @@ def mock_env_vars(monkeypatch: MonkeyPatch) -> Dict[str, str]:
         "DISCORD_TOKEN": "test-discord-token",
         "BOT_NAME": "テストボット",
         "COMMAND_GROUP_NAME": "test",
-        "ALLOWED_CHANNEL_IDS": "123456789,987654321",
+        "DENIED_CHANNEL_IDS": "123456789,987654321",  # 禁止リストとして扱うチャンネルID
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)
