@@ -12,7 +12,7 @@ from openai.types.chat import (
 )
 
 from ai.client import client as aiclient
-from config import SYSTEM_PROMPT_FILENAME
+from config import OPENAI_MODEL, SYSTEM_PROMPT_FILENAME
 from log_utils.logger import logger
 from utils.text_utils import truncate_text
 
@@ -112,9 +112,9 @@ class Sphene:
 
         try:
             # OpenAI APIにリクエストを送信
-            logger.info("OpenAI APIリクエスト送信")
+            logger.info(f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}）")
             result = aiclient.chat.completions.create(
-                model="gpt-4o-mini", messages=self.input_list
+                model=OPENAI_MODEL, messages=self.input_list
             )
             self.logs.append(result)
 
