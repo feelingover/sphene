@@ -15,7 +15,7 @@ from utils.text_utils import truncate_text
 # bot の型ヒントを commands.Bot に変更
 async def is_bot_mentioned(
     bot: commands.Bot, message: discord.Message
-) -> Tuple[bool, str]:
+) -> Tuple[bool, str, bool]:
     """メッセージがボットに対するものかどうかを判断し、質問内容を抽出する
 
     Args:
@@ -23,7 +23,7 @@ async def is_bot_mentioned(
         message: Discordメッセージオブジェクト
 
     Returns:
-        Tuple[bool, str]: (ボットに対するメッセージかどうか, 質問内容)
+        Tuple[bool, str, bool]: (ボットに対するメッセージかどうか, 質問内容, リプライかどうか)
     """
     if message.content is None:
         return False, ""
@@ -40,7 +40,7 @@ async def is_bot_mentioned(
         logger.info(
             f"メンション検出: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
         )
-        return True, question
+        return True, question, True
 
     # 設定された名前で呼ばれた場合
     if config.BOT_NAME in content:
@@ -49,7 +49,7 @@ async def is_bot_mentioned(
         logger.info(
             f"名前で呼ばれました: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
         )
-        return True, question
+        return True, question, False
 
     # ボットの発言へのリプライの場合
     if message.reference and message.reference.resolved:
@@ -65,17 +65,20 @@ async def is_bot_mentioned(
             logger.info(
                 f"リプライ検出: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
             )
-            return True, question
+            return True, question, True
 
-    return False, ""
+    return False, "", False
 
 
-async def process_conversation(message: discord.Message, question: str) -> None:
+async def process_conversation(
+    message: discord.Message, question: str, is_reply: bool = False
+) -> None:
     """ユーザーとの会話を処理する
 
     Args:
         message: Discordメッセージオブジェクト
         question: 質問内容
+        is_reply: リプライによるメッセージかどうか
     """
     user_id = str(message.author.id)
 
@@ -90,12 +93,26 @@ async def process_conversation(message: discord.Message, question: str) -> None:
     answer = api.input_message(question)
 
     if answer:
-        logger.info(f"応答送信: ユーザーID {user_id}, 応答: {truncate_text(answer)}")
-        await message.channel.send(answer)
+        if is_reply:
+            logger.info(
+                f"リプライとして応答送信: ユーザーID {user_id}, 応答: {truncate_text(answer)}"
+            )
+            await message.channel.send(answer, reference=message)
+        else:
+            logger.info(
+                f"通常応答送信: ユーザーID {user_id}, 応答: {truncate_text(answer)}"
+            )
+            await message.channel.send(answer)
     else:
-        await message.channel.send(
-            "ごめん！応答の生成中にエラーが発生しちゃった...😢 もう一度試してみてね！"
-        )
+        if is_reply:
+            await message.channel.send(
+                "ごめん！応答の生成中にエラーが発生しちゃった...😢 もう一度試してみてね！",
+                reference=message,
+            )
+        else:
+            await message.channel.send(
+                "ごめん！応答の生成中にエラーが発生しちゃった...😢 もう一度試してみてね！"
+            )
 
 
 # bot の型ヒントを commands.Bot に変更
@@ -125,9 +142,9 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
             return  # 処理を中断
 
         # ボットが呼ばれたかどうかをチェック
-        is_mentioned, question = await is_bot_mentioned(bot, message)
+        is_mentioned, question, is_reply = await is_bot_mentioned(bot, message)
         if is_mentioned:
-            await process_conversation(message, question)
+            await process_conversation(message, question, is_reply)
 
     except Exception as e:
         logger.error(f"エラー発生: {str(e)}", exc_info=True)
