@@ -16,9 +16,10 @@ def test_load_system_prompt() -> None:
     """システムプロンプトの読み込みをテスト"""
     # テスト用のシステムプロンプトを設定
     test_content = "これはテスト用のシステムプロンプトです。\n"
+    test_filename = "test_system.txt"
 
-    # テスト用の実際のファイルパスを使用してパッチ
-    with patch(
+    # 環境変数とファイル読み込みをパッチ
+    with patch("ai.conversation.SYSTEM_PROMPT_FILENAME", test_filename), patch(
         "ai.conversation.Path.read_text", return_value=test_content
     ) as mock_read:
         result = load_system_prompt()

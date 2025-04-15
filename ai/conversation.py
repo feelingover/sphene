@@ -12,6 +12,7 @@ from openai.types.chat import (
 )
 
 from ai.client import client as aiclient
+from config import SYSTEM_PROMPT_FILENAME
 from log_utils.logger import logger
 from utils.text_utils import truncate_text
 
@@ -26,7 +27,7 @@ def load_system_prompt() -> str:
     Returns:
         str: システムプロンプトの内容
     """
-    prompt_path = Path(__file__).parent.parent / "prompts" / "system.txt"
+    prompt_path = Path(__file__).parent.parent / "prompts" / SYSTEM_PROMPT_FILENAME
     logger.info(f"システムプロンプトを読み込み: {prompt_path}")
     return prompt_path.read_text(encoding="utf-8").strip()
 
