@@ -130,7 +130,7 @@ def test_input_message(mock_openai_response: MagicMock) -> None:
 
         # APIが正しく呼び出されたか
         mock_create.assert_called_once()
-        mock_create.assert_called_with(model="gpt-4o-mini", messages=sphene.input_list)
+        mock_create.assert_called_with(model="gpt-4.1-mini", messages=sphene.input_list)
 
         # 応答が正しく処理されたか
         assert response == "これはテスト応答です。"

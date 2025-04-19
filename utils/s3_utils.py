@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -61,3 +61,12 @@ class S3Helper:
         except Exception as e:
             logger.error(f"S3アクセス中に予期せぬエラーが発生: {str(e)}", exc_info=True)
             return None
+
+
+# S3Client = S3Helper としたいが、mypy向けに以下のように定義
+# TYPE_CHECKINGフラグを使うことで、実行時には評価されないがmypyには認識される
+if TYPE_CHECKING:
+    S3Client = S3Helper
+else:
+    # 実行時に使用される定義
+    S3Client = S3Helper
