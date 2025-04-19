@@ -109,10 +109,12 @@ class ChannelConfig:
             )
             # 環境変数の値からデフォルト設定を作成
             self._initialize_from_env()
+            # DENIED_CHANNEL_IDSが存在するかチェックしてログ出力
+            denied_channels = getattr(config, "DENIED_CHANNEL_IDS", [])
             logger.info(
                 f"環境変数から初期化: モード={self.get_behavior()}({self.get_mode_display_name()}), "
                 f"チャンネル数={len(self.get_channels())}, "
-                f"DENIED_CHANNEL_IDS={config.DENIED_CHANNEL_IDS}"
+                f"DENIED_CHANNEL_IDS={denied_channels}"
             )
             # 設定ファイルを作成
             try:
@@ -126,7 +128,9 @@ class ChannelConfig:
     def _initialize_from_env(self) -> None:
         """環境変数の設定値から初期設定を作成"""
         channels = []
-        for channel_id in config.DENIED_CHANNEL_IDS:
+        # DENIED_CHANNEL_IDSが存在するかチェックしてから使用
+        denied_channel_ids = getattr(config, "DENIED_CHANNEL_IDS", [])
+        for channel_id in denied_channel_ids:
             channels.append(
                 {
                     "id": channel_id,

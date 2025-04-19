@@ -5,7 +5,7 @@ README.md
 .github
 .git
 .clinerules
-k8s/
+storage/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

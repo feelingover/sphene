@@ -102,7 +102,8 @@ class TestChannelConfig:
     def test_initialize_from_env(self):
         """環境変数からの初期化テスト"""
         # DENIED_CHANNEL_IDSをモックして設定
-        with patch.object(config, "DENIED_CHANNEL_IDS", [111, 222]):
+        # configにDENIED_CHANNEL_IDSがない場合に対応するように修正
+        with patch.dict(config.__dict__, {"DENIED_CHANNEL_IDS": [111, 222]}):
             conf = ChannelConfig(debug_mode=True)
             conf._initialize_from_env()
 
