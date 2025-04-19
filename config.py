@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -27,12 +27,3 @@ PROMPT_STORAGE_TYPE: str = str(os.getenv("PROMPT_STORAGE_TYPE", "local"))
 S3_BUCKET_NAME: str = str(os.getenv("S3_BUCKET_NAME", ""))
 # S3フォルダパス（オプション）
 S3_FOLDER_PATH: Optional[str] = os.getenv("S3_FOLDER_PATH")
-
-# 禁止されたチャンネルのID（環境変数から取得、カンマ区切りで設定）
-# 注: 新しいチャンネル設定システムに移行中。この設定は後方互換性のために残してある
-DENIED_CHANNEL_IDS: List[int] = []
-channel_ids_str = os.getenv("DENIED_CHANNEL_IDS", "")
-if channel_ids_str:
-    DENIED_CHANNEL_IDS = [
-        int(channel_id.strip()) for channel_id in channel_ids_str.split(",")
-    ]
