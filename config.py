@@ -16,12 +16,6 @@ OPENAI_MODEL: str = str(os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
 CHANNEL_CONFIG_STORAGE_TYPE: str = str(
     os.getenv("CHANNEL_CONFIG_STORAGE_TYPE", "local")
 )
-# チャンネル設定ファイルのパス（ローカル保存時）
-CHANNEL_CONFIG_PATH: str = str(
-    os.getenv("CHANNEL_CONFIG_PATH", "storage/channel_config.json")
-    if os.getenv("CHANNEL_CONFIG_STORAGE_TYPE", "local").lower() == "local"
-    else str(os.getenv("CHANNEL_CONFIG_PATH", "channel_config/channel_config.json"))
-)
 
 # プロンプトの保存場所設定（local または s3）
 PROMPT_STORAGE_TYPE: str = str(os.getenv("PROMPT_STORAGE_TYPE", "local"))

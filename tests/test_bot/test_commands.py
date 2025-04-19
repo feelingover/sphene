@@ -21,6 +21,11 @@ async def test_cmd_list_channels(
     """チャンネル一覧コマンドのテスト"""
     # チャンネル一覧のテスト
 
+    # guildのモック
+    mock_guild = MagicMock()
+    mock_guild.id = 54321
+    mock_discord_interaction.guild = mock_guild
+
     # チャンネル設定のモック
     mock_channel_config = MagicMock()
     mock_channel_config.get_behavior.return_value = "deny"
@@ -31,10 +36,17 @@ async def test_cmd_list_channels(
         {"id": 987654321, "name": "テストチャンネル2"},
     ]
 
-    # チャンネル設定をパッチ
-    with patch("bot.commands.channel_config", mock_channel_config):
+    # ConfigManagerのモック
+    mock_config_manager = MagicMock()
+    mock_config_manager.get_config.return_value = mock_channel_config
+
+    # ConfigManagerをパッチ
+    with patch("bot.commands.config_manager", mock_config_manager):
         # コマンド実行
         await cmd_list_channels(mock_discord_client, mock_discord_interaction)
+
+        # config_manager.get_configが呼ばれたかチェック
+        mock_config_manager.get_config.assert_called_once_with(54321)
 
         # レスポンスが送信されたかチェック
         mock_discord_interaction.response.send_message.assert_called_once()
@@ -50,6 +62,11 @@ async def test_cmd_list_channels_no_restrictions(
     mock_discord_client: MagicMock, mock_discord_interaction: MagicMock
 ) -> None:
     """チャンネル制限なしの場合のテスト"""
+    # guildのモック
+    mock_guild = MagicMock()
+    mock_guild.id = 54321
+    mock_discord_interaction.guild = mock_guild
+
     # チャンネル設定のモック
     mock_channel_config = MagicMock()
     mock_channel_config.get_behavior.return_value = "deny"
@@ -58,10 +75,17 @@ async def test_cmd_list_channels_no_restrictions(
     # 空のチャンネルリストを設定
     mock_channel_config.get_channels.return_value = []
 
-    # チャンネル設定をパッチ
-    with patch("bot.commands.channel_config", mock_channel_config):
+    # ConfigManagerのモック
+    mock_config_manager = MagicMock()
+    mock_config_manager.get_config.return_value = mock_channel_config
+
+    # ConfigManagerをパッチ
+    with patch("bot.commands.config_manager", mock_config_manager):
         # コマンド実行
         await cmd_list_channels(mock_discord_client, mock_discord_interaction)
+
+        # config_manager.get_configが呼ばれたかチェック
+        mock_config_manager.get_config.assert_called_once_with(54321)
 
         # レスポンスに「全てのチャンネルで発言可能」が含まれているか
         args = mock_discord_interaction.response.send_message.call_args[0][0]
