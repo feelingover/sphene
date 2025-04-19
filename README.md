@@ -7,9 +7,10 @@ Spheneは、OpenAI APIを活用した会話機能を持つ、シンプルでパ�
 - 💬 OpenAIのGPT-4o-miniを使用した高度な会話機能
 - 👋 メンション、名前呼び、リプライによる柔軟な反応
 - 🔄 会話履歴リセットコマンド
-- 📋 利用可能チャンネル一覧表示
+- 📋 禁止チャンネル一覧表示
 - ⏱️ 30分の会話タイムアウトによるコンテキストリセット
-- 🛡️ 特定チャンネルのみでの応答制限機能
+- 🛡️ 特定チャンネルでの応答制限機能
+- 🎭 カスタマイズ可能なシステムプロンプトでボットのキャラクター設定が自由に変更可能
 
 ## 🚀 セットアップ方法
 
@@ -22,9 +23,20 @@ OPENAI_API_KEY=your_openai_api_key
 DISCORD_TOKEN=your_discord_bot_token
 BOT_NAME=スフェーン  # ボットの呼び名（デフォルト: スフェーン）
 COMMAND_GROUP_NAME=sphene  # コマンドグループ名（デフォルト: sphene）
+OPENAI_MODEL=gpt-4o-mini  # 使用するOpenAIのモデル
 
-# 許可するチャンネルIDをカンマ区切りで指定（空の場合は全チャンネルで応答）
-ALLOWED_CHANNEL_IDS=
+# システムプロンプトの設定
+SYSTEM_PROMPT_FILENAME=system.txt
+# プロンプトのストレージタイプ: local または s3
+PROMPT_STORAGE_TYPE=local
+# S3バケット名（PROMPT_STORAGE_TYPE=s3 の場合に使用）
+S3_BUCKET_NAME=your-bucket-name
+# S3フォルダパス（オプション、指定しない場合はバケットのルートに配置）
+S3_FOLDER_PATH=prompts
+
+# 使用を禁止するチャンネルIDをカンマ区切りで指定（例: 123456789012345678,876543210987654321）
+# 空の場合や設定しない場合は全チャンネルで応答します（制限なし）
+DENIED_CHANNEL_IDS=
 ```
 
 ### 必要なパッケージのインストール
@@ -76,7 +88,8 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ### スラッシュコマンド
 
 - `/sphene reset` - 会話履歴をリセットします
-- `/sphene channels` - ボットが使用可能なチャンネル一覧を表示します（管理者のみ）
+- `/sphene channels` - ボットが使用禁止のチャンネル一覧を表示します（管理者のみ）
+- `/sphene reload_prompt` - システムプロンプトを再読み込みします（管理者のみ）
 
 ## 🛠️ プロジェクト構成
 
@@ -102,9 +115,10 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 │   └── logger.py         # ロガー設定
 ├── prompts/              # プロンプト関連ファイル
 │   └── system.txt        # システムプロンプト
-└── utils/                # ユーティリティ機能
-    ├── __init__.py
-    └── text_utils.py     # テキスト処理ユーティリティ
+├── utils/                # ユーティリティ機能
+│   ├── __init__.py
+│   ├── s3_utils.py       # S3関連ユーティリティ
+│   └── text_utils.py     # テキスト処理ユーティリティ
 ```
 
 ## 📊 技術仕様
@@ -114,12 +128,27 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - OpenAI API - GPT-4o-mini会話モデル
 - Docker - コンテナ化
 - Kubernetes - オプショナルデプロイ環境
+- AWS S3 (オプション) - システムプロンプトのリモートストレージ
 
 ## 🔒 セキュリティ情報
 
 - APIキーなどの秘密情報は`.env`ファイルまたはKubernetes Secretに保存してください
-- チャンネル制限を設定することで、特定のチャンネルでのみボットを使用できます
+- チャンネル制限を設定することで、特定のチャンネルでのボットの使用を制限できます
+
+## 📝 システムプロンプトのカスタマイズ
+
+ボットのキャラクター設定やふるまいは、システムプロンプトをカスタマイズすることで自由に変更できます。
+プロンプトは`prompts/system.txt`（ローカルストレージの場合）または指定したS3バケット内（S3ストレージの場合）に配置します。
+
+### プロンプトストレージオプション
+
+- **ローカルストレージ（デフォルト）**: `.env`で`PROMPT_STORAGE_TYPE=local`を設定
+  - プロンプトファイルは`prompts/`ディレクトリに配置
+
+- **S3ストレージ**: `.env`で`PROMPT_STORAGE_TYPE=s3`を設定
+  - S3バケット名とオプションのフォルダパスを指定
+  - プロンプトファイルはS3バケットの指定されたパスに配置
 
 ---
 
-開発者向けメモ: システムプロンプトのカスタマイズやボットの挙動変更が必要な場合は、`prompts/system.txt`を編集してください。
+開発者向けメモ: システムプロンプトのカスタマイズやボットの挙動変更が必要な場合は、`prompts/system.txt`または対応するS3内のファイルを編集してください。

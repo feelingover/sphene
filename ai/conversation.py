@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import DefaultDict, List, Optional
+from typing import DefaultDict, Dict, List, Optional
 
 from openai.types.chat import (
     ChatCompletion,
@@ -12,24 +12,121 @@ from openai.types.chat import (
 )
 
 from ai.client import client as aiclient
-from config import OPENAI_MODEL, SYSTEM_PROMPT_FILENAME
+from config import (
+    OPENAI_MODEL,
+    PROMPT_STORAGE_TYPE,
+    S3_BUCKET_NAME,
+    S3_FOLDER_PATH,
+    SYSTEM_PROMPT_FILENAME,
+)
 from log_utils.logger import logger
+from utils.s3_utils import S3Helper
 from utils.text_utils import truncate_text
 
 # 定数の定義
 MAX_CONVERSATION_AGE_MINUTES = 30
 MAX_CONVERSATION_TURNS = 10  # 往復数の上限
 
+# プロンプトのキャッシュ
+_prompt_cache: Dict[str, str] = {}
 
-def load_system_prompt() -> str:
+
+def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) -> str:
     """システムプロンプトをファイルから読み込む
+    初回のみストレージからロードし、以降はキャッシュから取得する
+
+    Args:
+        force_reload: キャッシュを無視して強制的に再読込する場合はTrue
+        fail_on_error: 読み込みに失敗した場合に例外をスローするかどうか
 
     Returns:
         str: システムプロンプトの内容
+
+    Raises:
+        RuntimeError: fail_on_error=Trueで読み込みに失敗した場合
     """
-    prompt_path = Path(__file__).parent.parent / "prompts" / SYSTEM_PROMPT_FILENAME
-    logger.info(f"システムプロンプトを読み込み: {prompt_path}")
-    return prompt_path.read_text(encoding="utf-8").strip()
+    # キャッシュがあり、強制再読込でない場合はキャッシュから返す
+    if SYSTEM_PROMPT_FILENAME in _prompt_cache and not force_reload:
+        logger.info(f"キャッシュからシステムプロンプト利用: {SYSTEM_PROMPT_FILENAME}")
+        return _prompt_cache[SYSTEM_PROMPT_FILENAME]
+
+    # ストレージからプロンプトを読み込む
+    prompt_content = None
+    errors = []
+
+    # S3から読み込む場合
+    if PROMPT_STORAGE_TYPE.lower() == "s3":
+        if not S3_BUCKET_NAME:
+            error_msg = (
+                "S3バケット名が設定されていません。ローカルファイルを使用します。"
+            )
+            logger.warning(error_msg)
+            errors.append(error_msg)
+        else:
+            logger.info(f"S3からシステムプロンプトを読み込み: {SYSTEM_PROMPT_FILENAME}")
+            prompt_content = S3Helper.read_file_from_s3(
+                S3_BUCKET_NAME, SYSTEM_PROMPT_FILENAME, S3_FOLDER_PATH
+            )
+            if prompt_content:
+                logger.info("S3からプロンプトを読み込みました")
+            else:
+                error_msg = "S3からプロンプトの読み込みに失敗。ローカルにフォールバック"
+                logger.warning(error_msg)
+                errors.append(error_msg)
+
+    # ローカルから読み込む場合（S3読み込み失敗時を含む）
+    if not prompt_content:
+        prompt_path = Path(__file__).parent.parent / "prompts" / SYSTEM_PROMPT_FILENAME
+        logger.info(f"ローカルからシステムプロンプトを読み込み: {prompt_path}")
+        try:
+            prompt_content = prompt_path.read_text(encoding="utf-8").strip()
+            logger.info("ローカルからプロンプトを読み込みました")
+        except Exception as e:
+            error_msg = f"プロンプト読み込みエラー: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            errors.append(error_msg)
+
+            if fail_on_error:
+                raise RuntimeError(
+                    f"システムプロンプトの読み込みに失敗しました: {error_msg}"
+                )
+
+            # デフォルトの最小限のプロンプト
+            prompt_content = "あなたは役立つAIアシスタントです。"
+            logger.info("デフォルトプロンプトを使用")
+
+    # 両方失敗し、fail_on_errorがTrueの場合は例外をスロー
+    if not prompt_content and fail_on_error:
+        error_msg = "S3とローカルの両方からプロンプトの読み込みに失敗しました"
+        logger.error(error_msg)
+        raise RuntimeError(f"{error_msg}: {'; '.join(errors)}")
+
+    # キャッシュに保存
+    _prompt_cache[SYSTEM_PROMPT_FILENAME] = prompt_content
+
+    return prompt_content
+
+
+def reload_system_prompt(fail_on_error: bool = False) -> bool:
+    """システムプロンプトを強制的に再読み込みする
+
+    Args:
+        fail_on_error: 読み込みに失敗した場合に例外をスローするかどうか
+
+    Returns:
+        bool: 成功した場合はTrue
+
+    Raises:
+        RuntimeError: fail_on_error=Trueで読み込みに失敗した場合
+    """
+    try:
+        load_system_prompt(force_reload=True, fail_on_error=fail_on_error)
+        return True
+    except Exception as e:
+        logger.error(f"プロンプト再読み込みエラー: {str(e)}", exc_info=True)
+        if fail_on_error:
+            raise
+        return False
 
 
 class Sphene:
