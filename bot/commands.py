@@ -1,5 +1,5 @@
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 
 import config
 from ai.conversation import (
@@ -9,40 +9,317 @@ from ai.conversation import (
     user_conversations,
 )
 from log_utils.logger import logger
+from utils.channel_config import ChannelConfig
+
+# チャンネル設定のシングルトンインスタンスを取得
+channel_config = ChannelConfig.get_instance()
+
+
+class ModeSelect(ui.Select):
+    """評価モード選択ドロップダウン"""
+
+    def __init__(self) -> None:
+        options = [
+            discord.SelectOption(
+                label="限定モード",
+                description="ボットの発言はリストに含まれるチャンネルのみ許可",
+                value="allow",
+            ),
+            discord.SelectOption(
+                label="全体モード",
+                description="ボットの発言はリストに含まれるチャンネル以外で許可",
+                value="deny",
+            ),
+        ]
+        super().__init__(
+            placeholder="モードを選択してください",
+            options=options,
+            min_values=1,
+            max_values=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """モード選択時の処理"""
+        selected_mode = self.values[0]
+        success = channel_config.set_behavior(selected_mode)
+
+        if success:
+            # 設定保存後にリストを再読み込み
+            channel_config.load_config()
+            mode_name = "限定モード" if selected_mode == "allow" else "全体モード"
+            await interaction.response.send_message(
+                f"✅ 評価モードを「{mode_name}」に変更しました！\n"
+                f"現在のリストは「{channel_config.get_list_display_name()}」として扱われます"
+            )
+        else:
+            await interaction.response.send_message("❌ 評価モードの変更に失敗しました")
+
+
+class ModeView(ui.View):
+    """評価モード選択ビュー"""
+
+    def __init__(self) -> None:
+        super().__init__(timeout=60)  # 60秒でタイムアウト
+        self.add_item(ModeSelect())
+
+
+class ClearConfirmView(ui.View):
+    """チャンネルリストクリア確認ビュー"""
+
+    def __init__(self) -> None:
+        super().__init__(timeout=60)  # 60秒でタイムアウト
+
+    @discord.ui.button(label="はい", style=discord.ButtonStyle.danger)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        """確認ボタンのコールバック"""
+        success = channel_config.clear_channels()
+
+        if success:
+            # 設定保存後にリストを再読み込み
+            channel_config.load_config()
+            await interaction.response.send_message(
+                f"✅ {channel_config.get_list_display_name()}をクリアしました！"
+            )
+        else:
+            await interaction.response.send_message("❌ リストのクリアに失敗しました")
+
+    @discord.ui.button(label="いいえ", style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        """キャンセルボタンのコールバック"""
+        await interaction.response.send_message("✅ キャンセルしました")
+
+
+async def cmd_mode(interaction: discord.Interaction) -> None:
+    """評価モード切替コマンドを処理する
+
+    Args:
+        interaction: インタラクションオブジェクト
+    """
+    # 現在のモード情報表示
+    current_mode = channel_config.get_mode_display_name()
+    list_type = channel_config.get_list_display_name()
+
+    await interaction.response.send_message(
+        f"🔄 **現在の評価モード**: {current_mode}\n"
+        f"📋 **現在のリスト**: {list_type}\n\n"
+        "👇 変更する場合は、下のメニューから選択してください",
+        view=ModeView(),
+    )
+
+
+def _build_channel_list_header(behavior: str, mode_name: str, list_name: str) -> str:
+    """チャンネルリスト表示のヘッダーを作成する
+
+    Args:
+        behavior: 評価モード ("allow" または "deny")
+        mode_name: 表示用モード名
+        list_name: 表示用リスト名
+
+    Returns:
+        str: 作成されたヘッダー文字列
+    """
+    emoji = "✅" if behavior == "allow" else "🚫"
+    return (
+        f"{emoji} **{config.BOT_NAME} {list_name}**\n"
+        f"現在の評価モード: **{mode_name}**\n\n"
+    )
+
+
+def _format_channel_info(channel_data: dict, bot: discord.Client) -> str:
+    """チャンネル情報を整形する
+
+    Args:
+        channel_data: チャンネルのデータ辞書
+        bot: Discordクライアント
+
+    Returns:
+        str: フォーマットされたチャンネル情報
+    """
+    channel_id = channel_data.get("id")
+    channel_name = channel_data.get("name", f"不明なチャンネル (ID: {channel_id})")
+
+    # チャンネルが存在するか確認して名前を更新
+    if channel_id is not None:
+        try:
+            channel_id_int = int(channel_id)
+            channel = bot.get_channel(channel_id_int)
+            if channel is not None and hasattr(channel, "name"):
+                channel_name = str(getattr(channel, "name"))
+        except (ValueError, TypeError):
+            pass  # channel_idをint型に変換できない場合は何もしない
+
+    return f"• {channel_name} (ID: {channel_id})\n"
 
 
 async def cmd_list_channels(
-    bot: discord.Client, interaction: discord.Interaction
+    bot: discord.Client, interaction: discord.Interaction, page: int = 1
 ) -> None:
     """チャンネル一覧コマンドを処理する
 
     Args:
         bot: Discordクライアント
         interaction: インタラクションオブジェクト
+        page: 表示するページ番号（1始まり）
     """
-    channel_info = f"🚫 **{config.BOT_NAME}使用禁止チャンネル一覧**:\n"
+    # 現在のモードを取得
+    behavior = channel_config.get_behavior()
+    mode_name = channel_config.get_mode_display_name()
+    list_name = channel_config.get_list_display_name()
 
-    # 禁止チャンネルリストの作成
-    for channel_id in config.DENIED_CHANNEL_IDS:
-        channel = bot.get_channel(channel_id)
-        # チャンネルが存在し、名前属性があるかチェック
-        if channel and hasattr(channel, "name"):
-            channel_name = getattr(channel, "name")
+    # チャンネルリストを取得とページング
+    channels = channel_config.get_channels()
+    per_page = 10  # 1ページあたりの表示数
+    total_pages = (len(channels) + per_page - 1) // per_page if channels else 1
+
+    # ページ番号の調整
+    page = max(1, min(page, total_pages))
+
+    # 表示するチャンネルのスライス
+    start_idx = (page - 1) * per_page
+    end_idx = min(start_idx + per_page, len(channels))
+    display_channels = channels[start_idx:end_idx]
+
+    # ヘッダー構築
+    channel_info = _build_channel_list_header(behavior, mode_name, list_name)
+
+    # チャンネル情報を追加
+    if display_channels:
+        for channel_data in display_channels:
+            channel_info += _format_channel_info(channel_data, bot)
+    else:
+        if behavior == "allow":
+            channel_info += (
+                "現在、リストは空です（どのチャンネルでも発言できません）！\n"
+            )
         else:
-            channel_name = f"不明なチャンネル (ID: {channel_id})"
-        channel_info += f"• {channel_name} (ID: {channel_id})\n"
+            channel_info += (
+                "現在、リストは空です（全てのチャンネルで発言可能です）！🎉\n"
+            )
 
-    # 禁止チャンネルがない場合の表示 (つまり制限なし)
-    if not config.DENIED_CHANNEL_IDS:
-        channel_info += (
-            "現在、全てのチャンネルで使用可能です（チャンネル制限なし）！🎉\n"
-        )
-
-    # 設定方法の説明を追加
-    channel_info += "\n制限の設定方法: 環境変数`DENIED_CHANNEL_IDS`に使用を禁止するチャンネルIDをカンマ区切りで設定してね！"
+    # ページ情報
+    if total_pages > 1:
+        channel_info += f"\nページ: {page}/{total_pages}"
 
     # メッセージ送信
     await interaction.response.send_message(channel_info)
+
+
+async def cmd_add_channel(interaction: discord.Interaction) -> None:
+    """現在のチャンネルをリストに追加するコマンドを処理する
+
+    Args:
+        interaction: インタラクションオブジェクト
+    """
+    channel = interaction.channel
+    if channel is None:
+        await interaction.response.send_message(
+            "❌ チャンネル情報を取得できませんでした"
+        )
+        return
+
+    channel_id = channel.id
+    channel_name = ""
+    if hasattr(channel, "name"):
+        channel_name = str(channel.name)
+    else:
+        channel_name = f"チャンネルID: {channel_id}"
+
+    # 確実に文字列型にする
+    safe_channel_name = (
+        str(channel_name) if channel_name else f"チャンネルID: {channel_id}"
+    )
+
+    # リストに追加
+    success = channel_config.add_channel(channel_id, safe_channel_name)
+    list_name = channel_config.get_list_display_name()
+
+    if success:
+        # 設定保存後にリストを再読み込み
+        channel_config.load_config()
+        await interaction.response.send_message(
+            f"✅ チャンネル「{channel_name}」を{list_name}に追加しました！"
+        )
+    else:
+        await interaction.response.send_message("❌ チャンネルの追加に失敗しました")
+
+
+async def cmd_remove_channel(interaction: discord.Interaction) -> None:
+    """現在のチャンネルをリストから削除するコマンドを処理する
+
+    Args:
+        interaction: インタラクションオブジェクト
+    """
+    channel = interaction.channel
+    if channel is None:
+        await interaction.response.send_message(
+            "❌ チャンネル情報を取得できませんでした"
+        )
+        return
+
+    channel_id = channel.id
+    channel_name = ""
+    if hasattr(channel, "name"):
+        channel_name = str(channel.name)
+    else:
+        channel_name = f"チャンネルID: {channel_id}"
+
+    # リストから削除
+    success = channel_config.remove_channel(channel_id)
+    list_name = channel_config.get_list_display_name()
+
+    if success:
+        # 設定保存後にリストを再読み込み
+        channel_config.load_config()
+        # チャンネルがリストにまだ存在するかチェック
+        if channel_config.is_channel_in_list(channel_id):
+            # 削除に失敗している場合（まだリストに存在する）
+            await interaction.response.send_message(
+                f"❌ チャンネル「{channel_name}」の削除に失敗しました（まだ{list_name}に含まれています）"
+            )
+        else:
+            # 削除成功（もうリストに存在しない）
+            await interaction.response.send_message(
+                f"✅ チャンネル「{channel_name}」を{list_name}から削除しました！"
+            )
+    else:
+        await interaction.response.send_message("❌ チャンネルの削除に失敗しました")
+
+
+async def cmd_clear_channels(interaction: discord.Interaction) -> None:
+    """チャンネルリストをクリアするコマンドを処理する
+
+    Args:
+        interaction: インタラクションオブジェクト
+    """
+    list_name = channel_config.get_list_display_name()
+
+    await interaction.response.send_message(
+        f"❓ {list_name}をクリアしますか？\n" f"この操作は元に戻せません。",
+        view=ClearConfirmView(),
+    )
+
+
+async def cmd_update_list(interaction: discord.Interaction) -> None:
+    """チャンネルリストを手動で保存するコマンドを処理する
+
+    Args:
+        interaction: インタラクションオブジェクト
+    """
+    success = channel_config.save_config()
+    list_name = channel_config.get_list_display_name()
+
+    if success:
+        # 設定保存後にリストを再読み込み
+        channel_config.load_config()
+        await interaction.response.send_message(
+            f"✅ {list_name}を保存しました！\n" f"保存先: {channel_config.storage_type}"
+        )
+    else:
+        await interaction.response.send_message(f"❌ {list_name}の保存に失敗しました")
 
 
 async def cmd_reset_conversation(interaction: discord.Interaction) -> None:
@@ -131,14 +408,61 @@ def setup_commands(bot: discord.Client) -> app_commands.Group:
         description=f"{config.BOT_NAME}ボットのコマンド",
     )
 
+    # 評価モード切替コマンド
+    @command_group.command(
+        name="mode",
+        description=f"{config.BOT_NAME}の評価モード（限定/全体）を切り替えます",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def mode_command(interaction: discord.Interaction) -> None:
+        await cmd_mode(interaction)
+
     # チャンネル一覧コマンド
     @command_group.command(
         name="channels",
-        description=f"{config.BOT_NAME}の使用が禁止されているチャンネル一覧を表示します",
+        description=f"{config.BOT_NAME}のチャンネルリスト・評価モードを表示します",
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def list_channels(interaction: discord.Interaction) -> None:
-        await cmd_list_channels(bot, interaction)
+    async def list_channels_command(
+        interaction: discord.Interaction, page: int = 1
+    ) -> None:
+        await cmd_list_channels(bot, interaction, page)
+
+    # チャンネル追加コマンド
+    @command_group.command(
+        name="addlist",
+        description="現在のチャンネルをリストに追加します",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def add_channel_command(interaction: discord.Interaction) -> None:
+        await cmd_add_channel(interaction)
+
+    # チャンネル削除コマンド
+    @command_group.command(
+        name="removelist",
+        description="現在のチャンネルをリストから削除します",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def remove_channel_command(interaction: discord.Interaction) -> None:
+        await cmd_remove_channel(interaction)
+
+    # チャンネルリストクリアコマンド
+    @command_group.command(
+        name="clearlist",
+        description="チャンネルリストをクリアします",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def clear_channels_command(interaction: discord.Interaction) -> None:
+        await cmd_clear_channels(interaction)
+
+    # チャンネルリスト保存コマンド
+    @command_group.command(
+        name="updatelist",
+        description="チャンネルリストと評価モードを手動で保存します",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def update_list_command(interaction: discord.Interaction) -> None:
+        await cmd_update_list(interaction)
 
     # リセットコマンド
     @command_group.command(

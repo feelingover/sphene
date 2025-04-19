@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -12,17 +12,18 @@ COMMAND_GROUP_NAME: str = str(os.getenv("COMMAND_GROUP_NAME", "asahi"))
 SYSTEM_PROMPT_FILENAME: str = str(os.getenv("SYSTEM_PROMPT_FILENAME", "system.txt"))
 OPENAI_MODEL: str = str(os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
 
+# チャンネル設定の保存場所設定（local または s3）
+CHANNEL_CONFIG_STORAGE_TYPE: str = str(
+    os.getenv("CHANNEL_CONFIG_STORAGE_TYPE", "local")
+)
+# チャンネル設定ファイルのパス（ローカル保存時）
+CHANNEL_CONFIG_PATH: str = str(
+    os.getenv("CHANNEL_CONFIG_PATH", "channel_config/channel_config.json")
+)
+
 # プロンプトの保存場所設定（local または s3）
 PROMPT_STORAGE_TYPE: str = str(os.getenv("PROMPT_STORAGE_TYPE", "local"))
 # S3バケット名（S3使用時のみ）
 S3_BUCKET_NAME: str = str(os.getenv("S3_BUCKET_NAME", ""))
 # S3フォルダパス（オプション）
 S3_FOLDER_PATH: Optional[str] = os.getenv("S3_FOLDER_PATH")
-
-# 禁止されたチャンネルのID（環境変数から取得、カンマ区切りで設定）
-DENIED_CHANNEL_IDS: List[int] = []
-channel_ids_str = os.getenv("DENIED_CHANNEL_IDS", "")
-if channel_ids_str:
-    DENIED_CHANNEL_IDS = [
-        int(channel_id.strip()) for channel_id in channel_ids_str.split(",")
-    ]

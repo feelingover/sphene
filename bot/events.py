@@ -9,6 +9,7 @@ import config
 # Sphene と load_system_prompt をインポート
 from ai.conversation import Sphene, load_system_prompt, user_conversations
 from log_utils.logger import logger
+from utils.channel_config import ChannelConfig
 from utils.text_utils import truncate_text
 
 
@@ -116,6 +117,10 @@ async def process_conversation(
 
 
 # bot の型ヒントを commands.Bot に変更
+# チャンネル設定のシングルトンインスタンスを取得
+channel_config = ChannelConfig.get_instance()
+
+
 async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
     """メッセージ受信イベントの処理
 
@@ -131,13 +136,24 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
         if message.content is None:
             return
 
-        # チャンネル制限のチェック
-        if (
-            config.DENIED_CHANNEL_IDS  # リストが空でない場合
-            and message.channel.id in config.DENIED_CHANNEL_IDS  # IDが禁止リストにある
-        ):
+        # チャンネル設定に基づいて発言可能かどうかをチェック
+        channel_id = message.channel.id
+        behavior = channel_config.get_behavior()
+        in_list = channel_config.is_channel_in_list(channel_id)
+        can_speak = channel_config.can_bot_speak(channel_id)
+
+        # デバッグ用の詳細なログ出力
+        logger.info(
+            f"チャンネル評価: チャンネルID={channel_id}, "
+            f"リスト含まれる={in_list}, "
+            f"評価モード={behavior}({channel_config.get_mode_display_name()}), "
+            f"発言可能={can_speak}"
+        )
+
+        if not can_speak:
             logger.info(
-                f"禁止チャンネルでの発言を無視: ユーザーID {message.author.id}, チャンネルID {message.channel.id}"
+                f"チャンネルでの発言をスキップ: モード={channel_config.get_mode_display_name()}, "
+                f"ユーザーID={message.author.id}, チャンネルID={message.channel.id}"
             )
             return  # 処理を中断
 

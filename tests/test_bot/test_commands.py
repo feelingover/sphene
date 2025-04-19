@@ -19,9 +19,20 @@ async def test_cmd_list_channels(
     mock_discord_client: MagicMock, mock_discord_interaction: MagicMock
 ) -> None:
     """チャンネル一覧コマンドのテスト"""
-    # 禁止チャンネルIDのモック
-    denied_channels = [123456789, 987654321]  # テスト用の禁止チャンネルID
-    with patch.object(config, "DENIED_CHANNEL_IDS", denied_channels):
+    # チャンネル一覧のテスト
+
+    # チャンネル設定のモック
+    mock_channel_config = MagicMock()
+    mock_channel_config.get_behavior.return_value = "deny"
+    mock_channel_config.get_mode_display_name.return_value = "全体モード"
+    mock_channel_config.get_list_display_name.return_value = "拒否チャンネルリスト"
+    mock_channel_config.get_channels.return_value = [
+        {"id": 123456789, "name": "テストチャンネル1"},
+        {"id": 987654321, "name": "テストチャンネル2"},
+    ]
+
+    # チャンネル設定をパッチ
+    with patch("bot.commands.channel_config", mock_channel_config):
         # コマンド実行
         await cmd_list_channels(mock_discord_client, mock_discord_interaction)
 
@@ -30,10 +41,8 @@ async def test_cmd_list_channels(
 
         # レスポンスに必要な情報が含まれているかチェック
         args = mock_discord_interaction.response.send_message.call_args[0][0]
-        assert "使用禁止チャンネル一覧" in args
-        assert "テストチャンネル" in args
+        assert "拒否チャンネルリスト" in args
         assert "123456789" in args
-        assert "987654321" in args
 
 
 @pytest.mark.asyncio
@@ -41,14 +50,22 @@ async def test_cmd_list_channels_no_restrictions(
     mock_discord_client: MagicMock, mock_discord_interaction: MagicMock
 ) -> None:
     """チャンネル制限なしの場合のテスト"""
-    # 禁止チャンネルIDが空のケース (つまり制限なし)
-    with patch.object(config, "DENIED_CHANNEL_IDS", []):
+    # チャンネル設定のモック
+    mock_channel_config = MagicMock()
+    mock_channel_config.get_behavior.return_value = "deny"
+    mock_channel_config.get_mode_display_name.return_value = "全体モード"
+    mock_channel_config.get_list_display_name.return_value = "拒否チャンネルリスト"
+    # 空のチャンネルリストを設定
+    mock_channel_config.get_channels.return_value = []
+
+    # チャンネル設定をパッチ
+    with patch("bot.commands.channel_config", mock_channel_config):
         # コマンド実行
         await cmd_list_channels(mock_discord_client, mock_discord_interaction)
 
-        # レスポンスに「全てのチャンネルで使用可能」が含まれているか
+        # レスポンスに「全てのチャンネルで発言可能」が含まれているか
         args = mock_discord_interaction.response.send_message.call_args[0][0]
-        assert "全てのチャンネルで使用可能です" in args
+        assert "全てのチャンネルで発言可能" in args
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ Spheneは、OpenAI APIを活用した会話機能を持つ、シンプルでパ�
 - 🔄 会話履歴リセットコマンド
 - 📋 禁止チャンネル一覧表示
 - ⏱️ 30分の会話タイムアウトによるコンテキストリセット
-- 🛡️ 特定チャンネルでの応答制限機能
+- 🛡️ チャンネルごとの応答制限機能（全体モード/限定モード）
 - 🎭 カスタマイズ可能なシステムプロンプトでボットのキャラクター設定が自由に変更可能
 
 ## 🚀 セットアップ方法
@@ -34,8 +34,13 @@ S3_BUCKET_NAME=your-bucket-name
 # S3フォルダパス（オプション、指定しない場合はバケットのルートに配置）
 S3_FOLDER_PATH=prompts
 
+# チャンネル設定の保存先: local または s3
+CHANNEL_CONFIG_STORAGE_TYPE=local
+# チャンネル設定ファイルのパス（ローカルの場合）
+CHANNEL_CONFIG_PATH=channel_config.json
+
 # 使用を禁止するチャンネルIDをカンマ区切りで指定（例: 123456789012345678,876543210987654321）
-# 空の場合や設定しない場合は全チャンネルで応答します（制限なし）
+# 注: 後方互換性のために残っていますが、新システムではファイルベースの設定に移行しています
 DENIED_CHANNEL_IDS=
 ```
 
@@ -88,7 +93,12 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ### スラッシュコマンド
 
 - `/sphene reset` - 会話履歴をリセットします
-- `/sphene channels` - ボットが使用禁止のチャンネル一覧を表示します（管理者のみ）
+- `/sphene mode` - 評価モード（全体モード/限定モード）を切り替えます（管理者のみ）
+- `/sphene channels` - チャンネルリストと現在の評価モードを表示します（管理者のみ）
+- `/sphene addlist` - 現在のチャンネルをリストに追加します（管理者のみ）
+- `/sphene removelist` - 現在のチャンネルをリストから削除します（管理者のみ）
+- `/sphene clearlist` - チャンネルリストをクリアします（管理者のみ）
+- `/sphene updatelist` - チャンネル設定を手動で保存します（管理者のみ）
 - `/sphene reload_prompt` - システムプロンプトを再読み込みします（管理者のみ）
 
 ## 🛠️ プロジェクト構成
@@ -117,6 +127,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 │   └── system.txt        # システムプロンプト
 ├── utils/                # ユーティリティ機能
 │   ├── __init__.py
+│   ├── channel_config.py # チャンネル設定管理
 │   ├── s3_utils.py       # S3関連ユーティリティ
 │   └── text_utils.py     # テキスト処理ユーティリティ
 ```
@@ -133,7 +144,9 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ## 🔒 セキュリティ情報
 
 - APIキーなどの秘密情報は`.env`ファイルまたはKubernetes Secretに保存してください
-- チャンネル制限を設定することで、特定のチャンネルでのボットの使用を制限できます
+- チャンネル制限機能を使用することで、ボットの応答可能なチャンネルを制御できます：
+  - **全体モード（deny）**: リストに含まれるチャンネル以外で応答可能
+  - **限定モード（allow）**: リストに含まれるチャンネルのみで応答可能
 
 ## 📝 システムプロンプトのカスタマイズ
 
