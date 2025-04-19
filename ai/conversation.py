@@ -18,6 +18,7 @@ from config import (
     S3_BUCKET_NAME,
     S3_FOLDER_PATH,
     SYSTEM_PROMPT_FILENAME,
+    SYSTEM_PROMPT_PATH,
 )
 from log_utils.logger import logger
 from utils.s3_utils import S3Helper
@@ -29,6 +30,78 @@ MAX_CONVERSATION_TURNS = 10  # 往復数の上限
 
 # プロンプトのキャッシュ
 _prompt_cache: Dict[str, str] = {}
+
+
+def _load_prompt_from_s3() -> tuple[Optional[str], List[str]]:
+    """S3からシステムプロンプトを読み込む
+
+    Returns:
+        tuple: (プロンプトの内容, エラーメッセージのリスト)
+    """
+    errors = []
+    prompt_content = None
+
+    if not S3_BUCKET_NAME:
+        error_msg = "S3バケット名が設定されていません。ローカルファイルを使用します。"
+        logger.warning(error_msg)
+        errors.append(error_msg)
+        return None, errors
+
+    logger.info(f"S3からシステムプロンプトを読み込み: {SYSTEM_PROMPT_FILENAME}")
+    prompt_content = S3Helper.read_file_from_s3(
+        S3_BUCKET_NAME, SYSTEM_PROMPT_FILENAME, S3_FOLDER_PATH
+    )
+    if prompt_content:
+        logger.info("S3からプロンプトを読み込みました")
+    else:
+        error_msg = "S3からプロンプトの読み込みに失敗。ローカルにフォールバック"
+        logger.warning(error_msg)
+        errors.append(error_msg)
+
+    return prompt_content, errors
+
+
+def _load_prompt_from_local(
+    fail_on_error: bool = False,
+) -> tuple[Optional[str], List[str]]:
+    """ローカルファイルからシステムプロンプトを読み込む
+
+    Args:
+        fail_on_error: 読み込みに失敗した場合に例外をスローするかどうか
+
+    Returns:
+        tuple: (プロンプトの内容, エラーメッセージのリスト)
+
+    Raises:
+        RuntimeError: fail_on_error=Trueで読み込みに失敗した場合
+    """
+    errors = []
+    prompt_content = None
+
+    if PROMPT_STORAGE_TYPE.lower() == "local":
+        prompt_path = Path(SYSTEM_PROMPT_PATH)
+    else:
+        prompt_path = Path(__file__).parent.parent / "prompts" / SYSTEM_PROMPT_FILENAME
+
+    logger.info(f"ローカルからシステムプロンプトを読み込み: {prompt_path}")
+    try:
+        prompt_content = prompt_path.read_text(encoding="utf-8").strip()
+        logger.info("ローカルからプロンプトを読み込みました")
+    except Exception as e:
+        error_msg = f"プロンプト読み込みエラー: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        errors.append(error_msg)
+
+        if fail_on_error:
+            raise RuntimeError(
+                f"システムプロンプトの読み込みに失敗しました: {error_msg}"
+            )
+
+        # デフォルトの最小限のプロンプト
+        prompt_content = "あなたは役立つAIアシスタントです。"
+        logger.info("デフォルトプロンプトを使用")
+
+    return prompt_content, errors
 
 
 def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) -> str:
@@ -56,44 +129,18 @@ def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) 
 
     # S3から読み込む場合
     if PROMPT_STORAGE_TYPE.lower() == "s3":
-        if not S3_BUCKET_NAME:
-            error_msg = (
-                "S3バケット名が設定されていません。ローカルファイルを使用します。"
-            )
-            logger.warning(error_msg)
-            errors.append(error_msg)
-        else:
-            logger.info(f"S3からシステムプロンプトを読み込み: {SYSTEM_PROMPT_FILENAME}")
-            prompt_content = S3Helper.read_file_from_s3(
-                S3_BUCKET_NAME, SYSTEM_PROMPT_FILENAME, S3_FOLDER_PATH
-            )
-            if prompt_content:
-                logger.info("S3からプロンプトを読み込みました")
-            else:
-                error_msg = "S3からプロンプトの読み込みに失敗。ローカルにフォールバック"
-                logger.warning(error_msg)
-                errors.append(error_msg)
+        prompt_content, s3_errors = _load_prompt_from_s3()
+        errors.extend(s3_errors)
 
     # ローカルから読み込む場合（S3読み込み失敗時を含む）
     if not prompt_content:
-        prompt_path = Path(__file__).parent.parent / "prompts" / SYSTEM_PROMPT_FILENAME
-        logger.info(f"ローカルからシステムプロンプトを読み込み: {prompt_path}")
         try:
-            prompt_content = prompt_path.read_text(encoding="utf-8").strip()
-            logger.info("ローカルからプロンプトを読み込みました")
-        except Exception as e:
-            error_msg = f"プロンプト読み込みエラー: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            errors.append(error_msg)
-
+            prompt_content, local_errors = _load_prompt_from_local(fail_on_error=False)
+            errors.extend(local_errors)
+        except RuntimeError as e:
             if fail_on_error:
-                raise RuntimeError(
-                    f"システムプロンプトの読み込みに失敗しました: {error_msg}"
-                )
-
-            # デフォルトの最小限のプロンプト
-            prompt_content = "あなたは役立つAIアシスタントです。"
-            logger.info("デフォルトプロンプトを使用")
+                raise
+            logger.error(f"ローカルからの読み込みエラー: {str(e)}", exc_info=True)
 
     # 両方失敗し、fail_on_errorがTrueの場合は例外をスロー
     if not prompt_content and fail_on_error:
@@ -101,10 +148,22 @@ def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) 
         logger.error(error_msg)
         raise RuntimeError(f"{error_msg}: {'; '.join(errors)}")
 
-    # キャッシュに保存
-    _prompt_cache[SYSTEM_PROMPT_FILENAME] = prompt_content
+    # prompt_contentがNoneの場合はデフォルト値を設定
+    if prompt_content is None:
+        prompt_content = "あなたは役立つAIアシスタントです。"
+        logger.info("デフォルトプロンプトを使用")
 
-    return prompt_content
+    # この時点でprompt_contentは必ずstr型なので、明示的に型を保証
+    final_prompt: str = (
+        prompt_content
+        if prompt_content is not None
+        else "あなたは役立つAIアシスタントです。"
+    )
+
+    # キャッシュに保存
+    _prompt_cache[SYSTEM_PROMPT_FILENAME] = final_prompt
+
+    return final_prompt
 
 
 def reload_system_prompt(fail_on_error: bool = False) -> bool:

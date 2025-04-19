@@ -9,16 +9,17 @@ from ai.conversation import (
     user_conversations,
 )
 from log_utils.logger import logger
-from utils.channel_config import ChannelConfig
+from utils.channel_config import ChannelConfigManager
 
-# チャンネル設定のシングルトンインスタンスを取得
-channel_config = ChannelConfig.get_instance()
+# チャンネル設定マネージャーのシングルトンインスタンスを取得
+config_manager = ChannelConfigManager.get_instance()
 
 
 class ModeSelect(ui.Select):
     """評価モード選択ドロップダウン"""
 
-    def __init__(self) -> None:
+    def __init__(self, guild_id: int) -> None:
+        self.guild_id = guild_id
         options = [
             discord.SelectOption(
                 label="限定モード",
@@ -40,6 +41,9 @@ class ModeSelect(ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """モード選択時の処理"""
+        # 保存済みのguild_idを使用
+        channel_config = config_manager.get_config(self.guild_id)
+
         selected_mode = self.values[0]
         success = channel_config.set_behavior(selected_mode)
 
@@ -58,22 +62,26 @@ class ModeSelect(ui.Select):
 class ModeView(ui.View):
     """評価モード選択ビュー"""
 
-    def __init__(self) -> None:
+    def __init__(self, guild_id: int) -> None:
         super().__init__(timeout=60)  # 60秒でタイムアウト
-        self.add_item(ModeSelect())
+        self.add_item(ModeSelect(guild_id))
 
 
 class ClearConfirmView(ui.View):
     """チャンネルリストクリア確認ビュー"""
 
-    def __init__(self) -> None:
+    def __init__(self, guild_id: int) -> None:
         super().__init__(timeout=60)  # 60秒でタイムアウト
+        self.guild_id = guild_id
 
     @discord.ui.button(label="はい", style=discord.ButtonStyle.danger)
     async def confirm(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         """確認ボタンのコールバック"""
+        # 保存済みのguild_idを使用
+        channel_config = config_manager.get_config(self.guild_id)
+
         success = channel_config.clear_channels()
 
         if success:
@@ -99,6 +107,16 @@ async def cmd_mode(interaction: discord.Interaction) -> None:
     Args:
         interaction: インタラクションオブジェクト
     """
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "❌ このコマンドはサーバー内でのみ使用できます"
+        )
+        return
+
+    # ギルド固有の設定を取得
+    guild_id = interaction.guild.id
+    channel_config = config_manager.get_config(guild_id)
+
     # 現在のモード情報表示
     current_mode = channel_config.get_mode_display_name()
     list_type = channel_config.get_list_display_name()
@@ -107,7 +125,7 @@ async def cmd_mode(interaction: discord.Interaction) -> None:
         f"🔄 **現在の評価モード**: {current_mode}\n"
         f"📋 **現在のリスト**: {list_type}\n\n"
         "👇 変更する場合は、下のメニューから選択してください",
-        view=ModeView(),
+        view=ModeView(guild_id),
     )
 
 
@@ -165,6 +183,16 @@ async def cmd_list_channels(
         interaction: インタラクションオブジェクト
         page: 表示するページ番号（1始まり）
     """
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "❌ このコマンドはサーバー内でのみ使用できます"
+        )
+        return
+
+    # ギルド固有の設定を取得
+    guild_id = interaction.guild.id
+    channel_config = config_manager.get_config(guild_id)
+
     # 現在のモードを取得
     behavior = channel_config.get_behavior()
     mode_name = channel_config.get_mode_display_name()
@@ -214,6 +242,16 @@ async def cmd_add_channel(interaction: discord.Interaction) -> None:
     Args:
         interaction: インタラクションオブジェクト
     """
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "❌ このコマンドはサーバー内でのみ使用できます"
+        )
+        return
+
+    # ギルド固有の設定を取得
+    guild_id = interaction.guild.id
+    channel_config = config_manager.get_config(guild_id)
+
     channel = interaction.channel
     if channel is None:
         await interaction.response.send_message(
@@ -253,6 +291,16 @@ async def cmd_remove_channel(interaction: discord.Interaction) -> None:
     Args:
         interaction: インタラクションオブジェクト
     """
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "❌ このコマンドはサーバー内でのみ使用できます"
+        )
+        return
+
+    # ギルド固有の設定を取得
+    guild_id = interaction.guild.id
+    channel_config = config_manager.get_config(guild_id)
+
     channel = interaction.channel
     if channel is None:
         await interaction.response.send_message(
@@ -295,11 +343,21 @@ async def cmd_clear_channels(interaction: discord.Interaction) -> None:
     Args:
         interaction: インタラクションオブジェクト
     """
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "❌ このコマンドはサーバー内でのみ使用できます"
+        )
+        return
+
+    # ギルド固有の設定を取得
+    guild_id = interaction.guild.id
+    channel_config = config_manager.get_config(guild_id)
+
     list_name = channel_config.get_list_display_name()
 
     await interaction.response.send_message(
         f"❓ {list_name}をクリアしますか？\n" f"この操作は元に戻せません。",
-        view=ClearConfirmView(),
+        view=ClearConfirmView(guild_id),
     )
 
 
@@ -309,6 +367,16 @@ async def cmd_update_list(interaction: discord.Interaction) -> None:
     Args:
         interaction: インタラクションオブジェクト
     """
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "❌ このコマンドはサーバー内でのみ使用できます"
+        )
+        return
+
+    # ギルド固有の設定を取得
+    guild_id = interaction.guild.id
+    channel_config = config_manager.get_config(guild_id)
+
     success = channel_config.save_config()
     list_name = channel_config.get_list_display_name()
 

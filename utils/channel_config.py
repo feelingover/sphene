@@ -1,91 +1,200 @@
 """
 チャンネル設定（チャンネルリスト・評価モード）を管理するモジュール
-シングルトンパターンで実装し、複数ファイルからのアクセスでも同じ設定を共有する
+ギルド毎に独立した設定ファイルを管理する
 """
 
 import json
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import config
 from log_utils.logger import logger
 
-# S3クライアントはboto3を直接使用するように変更
-
 # シングルトンインスタンスを格納する変数
-_channel_config_instance = None
+_channel_config_manager_instance = None
 
 
-class ChannelConfig:
+class ChannelConfigManager:
     """
-    チャンネルリストと評価モード（許可/拒否）の設定を管理するクラス。
-    設定をJSONファイルとして保存・読み込みできる。
-    シングルトン実装：クラスごとに一つのインスタンスのみ維持。
+    ギルド毎のチャンネル設定を管理するクラス
+    シングルトンパターンで実装
     """
 
     @staticmethod
-    def get_instance(
-        storage_type: Optional[str] = None, debug_mode: bool = False
-    ) -> "ChannelConfig":
+    def get_instance(debug_mode: bool = False) -> "ChannelConfigManager":
         """
         シングルトンインスタンスを取得する
 
         Args:
-            storage_type: 'local' or 's3' or None (Noneの場合はconfig設定を使用)
             debug_mode: テスト時などにTrue、実際のファイル/S3操作をスキップ
 
         Returns:
-            ChannelConfig: シングルトンインスタンス
+            ChannelConfigManager: シングルトンインスタンス
         """
-        global _channel_config_instance
+        global _channel_config_manager_instance
 
         # テスト時はdebug_mode=Trueでそれぞれ独立したインスタンスを生成する
         if debug_mode:
-            logger.debug("ChannelConfig: テスト用の独立インスタンスを生成")
-            return ChannelConfig(storage_type, debug_mode, is_singleton_call=True)
+            logger.debug("ChannelConfigManager: テスト用の独立インスタンスを生成")
+            return ChannelConfigManager(debug_mode=True)
 
         # 通常はシングルトンインスタンスを返す
-        if _channel_config_instance is None:
-            logger.info("ChannelConfig: シングルトンインスタンスを初期化")
-            _channel_config_instance = ChannelConfig(
-                storage_type, debug_mode, is_singleton_call=True
-            )
-        else:
-            # 必要に応じて設定を再読み込み
-            logger.debug("ChannelConfig: 既存のシングルトンインスタンスを再利用")
-            if not _channel_config_instance.debug_mode:
-                _channel_config_instance.load_config()
+        if _channel_config_manager_instance is None:
+            logger.info("ChannelConfigManager: シングルトンインスタンスを初期化")
+            _channel_config_manager_instance = ChannelConfigManager()
 
-        return _channel_config_instance
+        return _channel_config_manager_instance
+
+    def __init__(self, debug_mode: bool = False):
+        """初期化"""
+        self.debug_mode = debug_mode
+        self.guild_configs: dict[str, "ChannelConfig"] = {}  # {guild_id: ChannelConfig}
+
+    def get_config(self, guild_id: Any) -> "ChannelConfig":
+        """
+        指定ギルドの設定を取得（なければ作成）
+
+        Args:
+            guild_id: ギルドID（文字列または整数）
+
+        Returns:
+            ChannelConfig: ギルドの設定インスタンス
+        """
+        guild_id = str(guild_id)  # 文字列に変換
+
+        if guild_id not in self.guild_configs:
+            logger.info(f"ギルドID {guild_id} の設定を新規作成")
+            self.guild_configs[guild_id] = ChannelConfig(
+                guild_id=guild_id, debug_mode=self.debug_mode
+            )
+
+        return self.guild_configs[guild_id]
+
+    def create_guild_config(self, guild_id: Any) -> "ChannelConfig":
+        """
+        新ギルドの設定を作成
+
+        Args:
+            guild_id: ギルドID（文字列または整数）
+
+        Returns:
+            ChannelConfig: 作成した設定インスタンス
+        """
+        guild_id = str(guild_id)
+        config = ChannelConfig(guild_id=guild_id, debug_mode=self.debug_mode)
+        config.save_config()
+        self.guild_configs[guild_id] = config
+        logger.info(f"ギルドID {guild_id} の設定ファイルを作成")
+        return config
+
+    def delete_guild_config(self, guild_id: Any) -> bool:
+        """
+        ギルドの設定を削除
+
+        Args:
+            guild_id: ギルドID（文字列または整数）
+
+        Returns:
+            bool: 削除が成功したかどうか
+        """
+        guild_id = str(guild_id)
+        success = True
+
+        # メモリから削除
+        if guild_id in self.guild_configs:
+            logger.info(f"ギルドID {guild_id} の設定をメモリから削除")
+            del self.guild_configs[guild_id]
+
+        # ファイルから削除
+        if not self.debug_mode:
+            storage_type = config.CHANNEL_CONFIG_STORAGE_TYPE
+            if storage_type == "s3":
+                success = self._delete_s3_file(guild_id)
+            else:
+                success = self._delete_local_file(guild_id)
+
+        return success
+
+    def _delete_local_file(self, guild_id: str) -> bool:
+        """
+        ローカルの設定ファイルを削除
+
+        Args:
+            guild_id: ギルドID
+
+        Returns:
+            bool: 削除が成功したかどうか
+        """
+        import os
+
+        file_path = f"storage/channel_list.{guild_id}.json"
+
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.info(f"ギルド設定ファイル削除: {file_path}")
+                return True
+            return True  # ファイルが存在しなくても成功とみなす
+        except Exception as e:
+            logger.error(f"ギルド設定ファイル削除エラー: {str(e)}")
+            return False
+
+    def _delete_s3_file(self, guild_id: str) -> bool:
+        """
+        S3の設定ファイルを削除
+
+        Args:
+            guild_id: ギルドID
+
+        Returns:
+            bool: 削除が成功したかどうか
+        """
+        try:
+            import boto3
+
+            from config import S3_BUCKET_NAME
+
+            # S3クライアント
+            s3_client = boto3.client("s3")
+
+            # ファイルキー
+            base_path = config.S3_FOLDER_PATH + "/" if config.S3_FOLDER_PATH else ""
+            file_key = f"{base_path}channel_list.{guild_id}.json"
+
+            # ファイル削除
+            s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=file_key)
+            logger.info(f"S3ギルド設定ファイル削除: {file_key}")
+            return True
+        except Exception as e:
+            logger.error(f"S3ギルド設定ファイル削除エラー: {str(e)}")
+            return False
+
+
+class ChannelConfig:
+    """
+    特定ギルドのチャンネルリストと評価モードの設定を管理するクラス
+    設定をJSONファイルとして保存・読み込みできる
+    """
 
     def __init__(
         self,
+        guild_id: Any,
         storage_type: Optional[str] = None,
         debug_mode: bool = False,
-        is_singleton_call: bool = False,
     ):
         """
-        初期化 - 直接呼び出し禁止！get_instanceメソッドを使用すること
+        初期化
 
         Args:
-            storage_type: 'local' or 's3' or None (Noneの場合はconfig設定を使用)
-            debug_mode: テスト時などにTrue、実際のファイル/S3操作をスキップ
-            is_singleton_call: シングルトンからの呼び出しかどうか（内部使用）
-        """
-        if not (debug_mode or is_singleton_call):
-            logger.warning(
-                "ChannelConfigの直接インスタンス化は非推奨です。"
-                "ChannelConfig.get_instance()を使用してください。"
-            )
-        """
-        Args:
+            guild_id: ギルドID
             storage_type: 'local' or 's3' or None (Noneの場合はconfig設定を使用)
             debug_mode: テスト時などにTrue、実際のファイル/S3操作をスキップ
         """
+        self.guild_id = str(guild_id)  # 文字列に変換して保存
         self.debug_mode = debug_mode
         self.storage_type = storage_type or config.CHANNEL_CONFIG_STORAGE_TYPE
-        self.config_data: Dict[str, Any] = {
+        self.config_data: dict[str, Any] = {
             "behavior": "deny",  # デフォルトは全体モード
             "channels": [],
             "updated_at": datetime.now().isoformat(),
@@ -93,52 +202,24 @@ class ChannelConfig:
 
         # 初期化時のデバッグ情報
         logger.info(
-            f"ChannelConfig初期化: storage_type={self.storage_type}, debug_mode={self.debug_mode}"
+            f"ChannelConfig初期化: ギルドID={self.guild_id}, "
+            f"storage_type={self.storage_type}, debug_mode={self.debug_mode}"
         )
 
         # 設定を読み込み
         try:
             self.load_config()
             logger.info(
-                f"設定読み込み成功: モード={self.get_behavior()}({self.get_mode_display_name()}), "
+                f"ギルドID {self.guild_id} の設定読み込み成功: "
+                f"モード={self.get_behavior()}({self.get_mode_display_name()}), "
                 f"チャンネル数={len(self.get_channels())}"
             )
         except Exception as e:
             logger.warning(
-                f"チャンネル設定の読み込みに失敗しました。デフォルト設定を使用します: {str(e)}"
+                f"ギルドID {self.guild_id} の設定読み込みに失敗しました。"
+                f"デフォルト設定を使用します: {str(e)}"
             )
-            # 環境変数の値からデフォルト設定を作成
-            self._initialize_from_env()
-            logger.info(
-                f"環境変数から初期化: モード={self.get_behavior()}({self.get_mode_display_name()}), "
-                f"チャンネル数={len(self.get_channels())}, "
-                f"DENIED_CHANNEL_IDS={config.DENIED_CHANNEL_IDS}"
-            )
-            # 設定ファイルを作成
-            try:
-                self.save_config()
-                logger.info("デフォルト設定ファイルを作成しました")
-            except Exception as save_error:
-                logger.error(
-                    f"デフォルト設定ファイルの作成に失敗しました: {str(save_error)}"
-                )
-
-    def _initialize_from_env(self) -> None:
-        """環境変数の設定値から初期設定を作成"""
-        channels = []
-        for channel_id in config.DENIED_CHANNEL_IDS:
-            channels.append(
-                {
-                    "id": channel_id,
-                    "name": f"チャンネルID: {channel_id}",  # 初期化時には名前不明
-                }
-            )
-
-        self.config_data = {
-            "behavior": "deny",  # 従来の動作は全体モード（denyモード）
-            "channels": channels,
-            "updated_at": datetime.now().isoformat(),
-        }
+            # 初期設定のままとする（すでに初期化済み）
 
     def load_config(self) -> None:
         """設定ファイルを読み込む"""
@@ -152,7 +233,7 @@ class ChannelConfig:
 
     def _load_from_local(self) -> None:
         """ローカルファイルから設定を読み込む"""
-        file_path = config.CHANNEL_CONFIG_PATH
+        file_path = self._get_config_file_path()
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
                 self.config_data = json.load(f)
@@ -170,7 +251,7 @@ class ChannelConfig:
 
             from config import S3_BUCKET_NAME
 
-            # 直接S3Helperを使うのではなく、S3Helperの実装内容と同じようにboto3を使う
+            # S3クライアント
             s3_client = boto3.client("s3")
             response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=file_key)
             content = response["Body"].read().decode("utf-8")
@@ -180,10 +261,14 @@ class ChannelConfig:
         except Exception as e:
             raise Exception(f"S3からの設定ファイル読み込みに失敗: {str(e)}")
 
+    def _get_config_file_path(self) -> str:
+        """設定ファイルのパスを取得"""
+        return f"storage/channel_list.{self.guild_id}.json"
+
     def _get_s3_file_key(self) -> str:
         """S3のファイルキーを取得"""
         base_path = config.S3_FOLDER_PATH + "/" if config.S3_FOLDER_PATH else ""
-        return f"{base_path}{os.path.basename(config.CHANNEL_CONFIG_PATH)}"
+        return f"{base_path}channel_list.{self.guild_id}.json"
 
     def save_config(self) -> bool:
         """
@@ -209,7 +294,7 @@ class ChannelConfig:
 
     def _save_to_local(self) -> bool:
         """ローカルファイルに設定を保存"""
-        file_path = config.CHANNEL_CONFIG_PATH
+        file_path = self._get_config_file_path()
         try:
             # ディレクトリが存在しない場合は作成
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -269,7 +354,7 @@ class ChannelConfig:
         self.config_data["behavior"] = behavior
         return self.save_config()
 
-    def get_channels(self) -> List[Dict[str, Any]]:
+    def get_channels(self) -> list[dict[str, Any]]:
         """
         チャンネルリストを取得
 
@@ -311,7 +396,7 @@ class ChannelConfig:
 
         # 詳細なログ記録
         logger.info(
-            f"can_bot_speak: チャンネルID={channel_id}, "
+            f"can_bot_speak: ギルドID={self.guild_id}, チャンネルID={channel_id}, "
             f"behavior={behavior}, in_list={in_list}, "
             f"チャンネル数={len(self.get_channels())}"
         )

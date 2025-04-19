@@ -10,8 +10,8 @@ class TestChannelSpeak:
 
     def test_can_bot_speak_deny_mode(self) -> None:
         """全体モード（deny）でのテスト"""
-        # デバッグモードでインスタンス作成
-        config = ChannelConfig(debug_mode=True)
+        # デバッグモードでインスタンス作成（guild_idが必要）
+        config = ChannelConfig(guild_id="test_guild", debug_mode=True)
 
         # 全体モード（deny）に設定
         config.config_data["behavior"] = "deny"
@@ -31,8 +31,8 @@ class TestChannelSpeak:
 
     def test_can_bot_speak_allow_mode(self) -> None:
         """限定モード（allow）でのテスト"""
-        # デバッグモードでインスタンス作成
-        config = ChannelConfig(debug_mode=True)
+        # デバッグモードでインスタンス作成（guild_idが必要）
+        config = ChannelConfig(guild_id="test_guild", debug_mode=True)
 
         # 限定モード（allow）に設定
         config.config_data["behavior"] = "allow"
@@ -52,9 +52,8 @@ class TestChannelSpeak:
 
     def test_loading_mechanism(self) -> None:
         """設定読み込み後のcan_bot_speak動作確認"""
-        # デバッグモードなしでインスタンス作成
-        # (この場合、_initialize_from_envが呼ばれる可能性がある)
-        config = ChannelConfig(debug_mode=True)
+        # デバッグモードでインスタンス作成（guild_idが必要）
+        config = ChannelConfig(guild_id="test_guild", debug_mode=True)
 
         # 全体モード（deny）に設定
         config.config_data["behavior"] = "deny"

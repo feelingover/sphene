@@ -9,7 +9,7 @@ import config
 # Sphene と load_system_prompt をインポート
 from ai.conversation import Sphene, load_system_prompt, user_conversations
 from log_utils.logger import logger
-from utils.channel_config import ChannelConfig
+from utils.channel_config import ChannelConfigManager
 from utils.text_utils import truncate_text
 
 
@@ -116,9 +116,8 @@ async def process_conversation(
             )
 
 
-# bot の型ヒントを commands.Bot に変更
-# チャンネル設定のシングルトンインスタンスを取得
-channel_config = ChannelConfig.get_instance()
+# チャンネル設定マネージャーのシングルトンインスタンスを取得
+config_manager = ChannelConfigManager.get_instance()
 
 
 async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
@@ -136,6 +135,17 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
         if message.content is None:
             return
 
+        # ギルドIDを取得
+        if message.guild is None:
+            # DMなどギルドがない場合は処理しない
+            logger.info("ギルドなしのメッセージは処理しません")
+            return
+
+        guild_id = message.guild.id
+
+        # ギルド固有の設定を取得
+        channel_config = config_manager.get_config(guild_id)
+
         # チャンネル設定に基づいて発言可能かどうかをチェック
         channel_id = message.channel.id
         behavior = channel_config.get_behavior()
@@ -144,7 +154,7 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
 
         # デバッグ用の詳細なログ出力
         logger.info(
-            f"チャンネル評価: チャンネルID={channel_id}, "
+            f"チャンネル評価: ギルドID={guild_id}, チャンネルID={channel_id}, "
             f"リスト含まれる={in_list}, "
             f"評価モード={behavior}({channel_config.get_mode_display_name()}), "
             f"発言可能={can_speak}"
@@ -152,7 +162,7 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
 
         if not can_speak:
             logger.info(
-                f"チャンネルでの発言をスキップ: モード={channel_config.get_mode_display_name()}, "
+                f"チャンネルでの発言をスキップ: ギルドID={guild_id}, モード={channel_config.get_mode_display_name()}, "
                 f"ユーザーID={message.author.id}, チャンネルID={message.channel.id}"
             )
             return  # 処理を中断
@@ -167,7 +177,66 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
         await message.channel.send(f"ごめん！エラーが発生しちゃった...😢: {str(e)}")
 
 
-# bot の型ヒントを discord.Client から commands.Bot に変更
+async def _handle_on_ready(
+    bot: commands.Bot, command_group: app_commands.Group
+) -> None:
+    """ボットの準備完了時の処理
+
+    Args:
+        bot: Discordクライアント
+        command_group: コマンドグループ
+    """
+    await bot.add_cog(discord.ext.commands.Cog(name="Management"))
+    # コマンドグループを追加
+    bot.tree.add_command(command_group)
+    await bot.tree.sync()
+
+    if bot.user:
+        logger.info(f"Discordボット起動完了: {bot.user.name}#{bot.user.discriminator}")
+    else:
+        logger.error("Discordボットのユーザー情報を取得できませんでした")
+
+    # 各ギルドの設定ファイルを初期化
+    logger.info("ギルドごとのチャンネル設定ファイルを初期化")
+    for guild in bot.guilds:
+        logger.info(f"ギルド {guild.name} (ID: {guild.id}) の設定をチェック")
+        try:
+            config_manager.get_config(guild.id)
+        except Exception as e:
+            logger.error(f"ギルドID {guild.id} の設定初期化中にエラー: {str(e)}")
+
+
+async def _handle_on_guild_join(guild: discord.Guild) -> None:
+    """ギルド参加時の処理
+
+    Args:
+        guild: 参加したDiscordギルド
+    """
+    logger.info(f"新しいギルド {guild.name} (ID: {guild.id}) に参加しました")
+    try:
+        config_manager.create_guild_config(guild.id)
+        logger.info(f"ギルドID {guild.id} の設定ファイルを作成しました")
+    except Exception as e:
+        logger.error(f"ギルドID {guild.id} の設定ファイル作成中にエラー: {str(e)}")
+
+
+async def _handle_on_guild_remove(guild: discord.Guild) -> None:
+    """ギルド脱退時の処理
+
+    Args:
+        guild: 脱退したDiscordギルド
+    """
+    logger.info(f"ギルド {guild.name} (ID: {guild.id}) から脱退しました")
+    try:
+        success = config_manager.delete_guild_config(guild.id)
+        if success:
+            logger.info(f"ギルドID {guild.id} の設定ファイルを削除しました")
+        else:
+            logger.warning(f"ギルドID {guild.id} の設定ファイル削除に失敗しました")
+    except Exception as e:
+        logger.error(f"ギルドID {guild.id} の設定ファイル削除中にエラー: {str(e)}")
+
+
 def setup_events(bot: commands.Bot, command_group: app_commands.Group) -> None:
     """イベントハンドラのセットアップ
 
@@ -180,17 +249,17 @@ def setup_events(bot: commands.Bot, command_group: app_commands.Group) -> None:
     @bot.event
     async def on_ready() -> None:
         """ボットの準備完了時に呼ばれるイベント"""
-        await bot.add_cog(discord.ext.commands.Cog(name="Management"))
-        # コマンドグループを追加
-        bot.tree.add_command(command_group)
-        await bot.tree.sync()
+        await _handle_on_ready(bot, command_group)
 
-        if bot.user:
-            logger.info(
-                f"Discordボット起動完了: {bot.user.name}#{bot.user.discriminator}"
-            )
-        else:
-            logger.error("Discordボットのユーザー情報を取得できませんでした")
+    @bot.event
+    async def on_guild_join(guild: discord.Guild) -> None:
+        """ギルド参加時に呼ばれるイベント"""
+        await _handle_on_guild_join(guild)
+
+    @bot.event
+    async def on_guild_remove(guild: discord.Guild) -> None:
+        """ギルド脱退時に呼ばれるイベント"""
+        await _handle_on_guild_remove(guild)
 
     @bot.event
     async def on_message(message: discord.Message) -> None:
