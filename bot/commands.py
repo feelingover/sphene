@@ -2,7 +2,12 @@ import discord
 from discord import app_commands
 
 import config
-from ai.conversation import Sphene, load_system_prompt, user_conversations
+from ai.conversation import (
+    Sphene,
+    load_system_prompt,
+    reload_system_prompt,
+    user_conversations,
+)
 from log_utils.logger import logger
 
 
@@ -60,6 +65,36 @@ async def cmd_reset_conversation(interaction: discord.Interaction) -> None:
         )
 
 
+async def cmd_reload_prompt(interaction: discord.Interaction) -> None:
+    """システムプロンプト再読み込みコマンドを処理する
+
+    Args:
+        interaction: インタラクションオブジェクト
+    """
+    # 応答を遅延送信（処理に時間がかかる可能性があるため）
+    await interaction.response.defer(ephemeral=True)
+
+    # 手動再読み込みではfail_on_error=Falseを指定（エラー時にボットを停止しない）
+    success = reload_system_prompt(fail_on_error=False)
+
+    if success:
+        logger.info(
+            f"システムプロンプト再読み込み成功（実行者: {interaction.user.name}）"
+        )
+        await interaction.followup.send(
+            "✅ システムプロンプトを再読み込みしました！\n"
+            f"ストレージタイプ: **{config.PROMPT_STORAGE_TYPE}**\n"
+            f"プロンプトファイル: **{config.SYSTEM_PROMPT_FILENAME}**"
+        )
+    else:
+        logger.error(
+            f"システムプロンプト再読み込み失敗（実行者: {interaction.user.name}）"
+        )
+        await interaction.followup.send(
+            "❌ システムプロンプトの再読み込みに失敗しました。ログを確認してください。"
+        )
+
+
 async def handle_command_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
 ) -> None:
@@ -111,5 +146,13 @@ def setup_commands(bot: discord.Client) -> app_commands.Group:
     )
     async def reset_conversation_command(interaction: discord.Interaction) -> None:
         await cmd_reset_conversation(interaction)
+
+    # システムプロンプト再読み込みコマンド
+    @command_group.command(
+        name="reload_prompt", description="システムプロンプトを再読み込みします"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def reload_prompt_command(interaction: discord.Interaction) -> None:
+        await cmd_reload_prompt(interaction)
 
     return command_group
