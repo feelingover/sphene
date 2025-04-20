@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 import config
 from log_utils.logger import logger
+from utils.aws_clients import get_s3_client
 
 # シングルトンインスタンスを格納する変数
 _channel_config_manager_instance = None
@@ -151,12 +152,10 @@ class ChannelConfigManager:
             bool: 削除が成功したかどうか
         """
         try:
-            import boto3
-
             from config import S3_BUCKET_NAME
 
             # S3クライアント
-            s3_client = boto3.client("s3")
+            s3_client = get_s3_client()
 
             # ファイルキー
             base_path = config.S3_FOLDER_PATH + "/" if config.S3_FOLDER_PATH else ""
@@ -247,12 +246,10 @@ class ChannelConfig:
         file_key = self._get_s3_file_key()
 
         try:
-            import boto3
-
             from config import S3_BUCKET_NAME
 
             # S3クライアント
-            s3_client = boto3.client("s3")
+            s3_client = get_s3_client()
             response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=file_key)
             content = response["Body"].read().decode("utf-8")
             if content is None:
@@ -309,11 +306,9 @@ class ChannelConfig:
     def _save_to_s3(self) -> bool:
         """S3に設定を保存"""
         try:
-            import boto3
-
             from config import S3_BUCKET_NAME
 
-            s3_client = boto3.client("s3")
+            s3_client = get_s3_client()
             file_key = self._get_s3_file_key()
             content = json.dumps(self.config_data, ensure_ascii=False, indent=2).encode(
                 "utf-8"

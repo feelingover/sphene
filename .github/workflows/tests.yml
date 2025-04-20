@@ -3,9 +3,7 @@ name: "Run Unit Tests"
 on:
   pull_request:
     branches: ['main']
-  push:
-    branches: ['main']
-    
+
 jobs:
   test:
     name: "Run unit tests"

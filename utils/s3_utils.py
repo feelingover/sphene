@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING, Optional
 
-import boto3
 from botocore.exceptions import ClientError
 
 from log_utils.logger import logger
+from utils.aws_clients import get_s3_client
 
 
 class S3Helper:
@@ -24,7 +24,7 @@ class S3Helper:
             Optional[str]: ファイルの内容、エラー時はNone
         """
         try:
-            s3_client = boto3.client("s3")
+            s3_client = get_s3_client()
 
             # フォルダパスがある場合は結合
             full_key = (
