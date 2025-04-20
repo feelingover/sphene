@@ -1,8 +1,24 @@
+import logging
+import traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import DefaultDict, Dict, List, Optional
+from typing import DefaultDict, Dict, List, Optional, Tuple, Type
 
+# OpenAI エラータイプをインポート
+from openai import (
+    APIConnectionError,
+    APIError,
+    APIResponseValidationError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    InternalServerError,
+    NotFoundError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionAssistantMessageParam,
@@ -239,33 +255,96 @@ class Sphene:
                 f"会話履歴を整理しました（残りメッセージ数: {len(self.input_list)}）"
             )
 
-    def input_message(self, input_text: Optional[str]) -> Optional[str]:
-        """ユーザーからのメッセージを処理し、AIからの応答を返す
+    # エラータイプと対応するメッセージ、ログレベルをマッピング
+    _OPENAI_ERROR_HANDLERS: Dict[Type[APIError], Tuple[int, str, str]] = {
+        AuthenticationError: (
+            logging.ERROR,
+            "OpenAI API認証エラー: {}",
+            "ごめんね、AIとの接続設定で問題が発生しているみたい…😢 管理者に連絡してみてね。",
+        ),
+        PermissionDeniedError: (
+            logging.ERROR,
+            "OpenAI API権限エラー: {}",
+            "ごめんね、AIを使うための権限がないみたい…😢 管理者に確認してみてね。",
+        ),
+        NotFoundError: (
+            logging.ERROR,
+            "OpenAI APIモデルが見つからないエラー: {}",
+            f"ごめんね、指定されたAIモデル「{OPENAI_MODEL}」が見つからないみたい…😢",
+        ),
+        RateLimitError: (
+            logging.WARNING,  # レート制限は警告レベル
+            "OpenAI APIレート制限エラー: {}",
+            "ごめんね、今ちょっとAIが混み合ってるみたい…💦 少し時間を置いてからもう一度話しかけてみてね！",
+        ),
+        APIConnectionError: (  # 接続エラーはAPIErrorのサブクラスだが個別処理
+            logging.ERROR,
+            "OpenAI API接続エラー: {}",
+            "ごめんね、AIとの接続で問題が発生しちゃった…😢 ネットワークを確認してもう一度試してみてね。",
+        ),
+        APITimeoutError: (  # タイムアウトも個別処理
+            logging.ERROR,
+            "OpenAI APIタイムアウトエラー: {}",
+            "ごめんね、AIからの応答が時間内に返ってこなかったみたい…😢 もう一度試してみてくれる？",
+        ),
+        InternalServerError: (
+            logging.ERROR,
+            "OpenAI APIサーバーエラー: {}",
+            "ごめんね、AI側で一時的な問題が発生しているみたい…😢 しばらくしてからもう一度試してみてね。",
+        ),
+        APIStatusError: (  # その他のステータスエラー
+            logging.ERROR,
+            "OpenAI APIステータスエラー (Code: {}): {}",
+            "ごめんね、AIとの通信で予期せぬエラーが発生しちゃった…😢",
+        ),
+        APIResponseValidationError: (
+            logging.ERROR,
+            "OpenAI APIレスポンス検証エラー: {}",
+            "ごめんね、AIからの応答がおかしかったみたい…🤔 もう一度試してみてね。",
+        ),
+        BadRequestError: (
+            logging.ERROR,
+            "OpenAI APIリクエストエラー: {}",
+            "ごめんね、AIへのリクエスト内容に問題があったみたい…😢 メッセージを変えて試してみてね。",
+        ),
+        # APIError は上記以外のAPI関連エラーをキャッチ
+        APIError: (
+            logging.ERROR,
+            "OpenAI API関連エラー: {}",
+            "ごめんね、AIとのやり取りでエラーが発生しちゃった…😢",
+        ),
+    }
 
-        Args:
-            input_text: ユーザーからの入力テキスト
+    def _handle_openai_error(self, error: Exception) -> str:
+        """OpenAI APIエラーを処理し、ユーザーメッセージを返す"""
+        error_body = getattr(error, "body", str(error))
+        status_code = getattr(error, "status_code", None)
+
+        for error_type, (
+            level,
+            log_template,
+            user_msg,
+        ) in self._OPENAI_ERROR_HANDLERS.items():
+            if isinstance(error, error_type):
+                log_args = [error_body]
+                if error_type is APIStatusError and status_code is not None:
+                    log_args.insert(0, status_code)  # ステータスコードを先頭に追加
+                logger.log(level, log_template.format(*log_args), exc_info=True)
+                return user_msg
+
+        # マッピングにない予期せぬエラー
+        tb_str = traceback.format_exc()
+        logger.critical(
+            f"API呼び出し中の予期せぬエラー型 ({type(error).__name__}): {str(error)}\n{tb_str}"
+        )
+        return "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
+
+    def _call_openai_api(self) -> Tuple[bool, str]:
+        """OpenAI APIを呼び出し、結果またはエラーメッセージを返す
 
         Returns:
-            Optional[str]: AIからの応答、エラー時はNone
+            Tuple[bool, str]: (成功フラグ, 応答内容またはエラーメッセージ)
         """
-        if not isinstance(input_text, str) or not input_text.strip():
-            logger.warning("受信したメッセージが無効です")
-            return None
-
-        self.update_interaction_time()
-
-        # 型ガード後の変数を定義してからスライシング
-        input_str: str = input_text
-        preview = truncate_text(input_str)
-        logger.info(f"ユーザーメッセージを受信: {preview}")
-
-        # ユーザーメッセージを追加
-        user_message: ChatCompletionUserMessageParam = {
-            "role": "user",
-            "content": input_text,
-        }
-        self.input_list.append(user_message)
-
         try:
             # OpenAI APIにリクエストを送信
             logger.info(f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}）")
@@ -280,25 +359,69 @@ class Sphene:
                 logger.info(
                     f"OpenAI APIレスポンス受信: {truncate_text(response_content)}"
                 )
+                return True, response_content
             else:
                 logger.warning("OpenAI APIからの応答が空です")
-                return None
+                return False, "ごめんね、AIからの応答が空だったみたい…🤔"
 
-            # 応答をメッセージリストに追加
-            assistant_message: ChatCompletionAssistantMessageParam = {
-                "role": "assistant",
-                "content": response_content,
+        except APIError as e:  # OpenAIのAPI関連エラーをまとめてキャッチ
+            user_message = self._handle_openai_error(e)
+            return False, user_message
+        except Exception as e:  # その他の予期せぬエラー
+            tb_str = traceback.format_exc()
+            logger.critical(f"API呼び出し中の予期せぬエラー: {str(e)}\n{tb_str}")
+            return False, "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
+
+    def input_message(self, input_text: Optional[str]) -> Optional[str]:
+        """ユーザーからのメッセージを処理し、AIからの応答を返す
+
+        Args:
+            input_text: ユーザーからの入力テキスト
+
+        Returns:
+            Optional[str]: AIからの応答、エラー時はNone
+        """
+        if not isinstance(input_text, str) or not input_text.strip():
+            logger.warning("受信したメッセージが無効です")
+            return None
+
+        try:
+            self.update_interaction_time()
+
+            # 型ガード後の変数を定義してからスライシング
+            input_str: str = input_text
+            preview = truncate_text(input_str)
+            logger.info(f"ユーザーメッセージを受信: {preview}")
+
+            # ユーザーメッセージを追加
+            user_message: ChatCompletionUserMessageParam = {
+                "role": "user",
+                "content": input_text,
             }
-            self.input_list.append(assistant_message)
+            self.input_list.append(user_message)
 
-            # 会話履歴の管理
-            self.trim_conversation_history()
+            # OpenAI API呼び出しとエラーハンドリング
+            success, content_or_error_msg = self._call_openai_api()
 
-            return response_content
+            if success:
+                # 成功した場合、応答を履歴に追加して返す
+                assistant_message: ChatCompletionAssistantMessageParam = {
+                    "role": "assistant",
+                    "content": content_or_error_msg,  # 成功時は応答内容
+                }
+                self.input_list.append(assistant_message)
+                self.trim_conversation_history()
+                return content_or_error_msg
+            else:
+                # 失敗した場合、エラーメッセージを返す
+                # 失敗時はAPI呼び出し側でログ出力済み
+                return content_or_error_msg  # 失敗時はエラーメッセージ
 
         except Exception as e:
-            logger.error(f"APIリクエスト中にエラーが発生: {str(e)}", exc_info=True)
-            return None
+            # API呼び出し以外の予期せぬエラー
+            tb_str = traceback.format_exc()
+            logger.critical(f"input_message処理中に予期せぬエラー: {str(e)}\n{tb_str}")
+            return "ごめん！処理中に予期せぬエラーが発生しちゃった...😢"
 
 
 # ユーザーごとの会話インスタンスを保持する辞書

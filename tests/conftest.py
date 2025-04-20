@@ -1,7 +1,7 @@
 """pytestの共通設定と共通fixturesの定義"""
 
-from typing import Dict
-from unittest.mock import AsyncMock, MagicMock
+from typing import Dict, Generator
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from discord import Client, Interaction
@@ -53,3 +53,11 @@ def mock_openai_response() -> MagicMock:
     mock_choice.message.content = "これはテスト応答です。"
     mock_response.choices = [mock_choice]
     return mock_response
+
+
+@pytest.fixture(autouse=True)
+def mock_load_system_prompt() -> Generator[MagicMock, None, None]:
+    """ai.conversation.load_system_promptを自動でモックする"""
+    with patch("ai.conversation.load_system_prompt") as mock_load:
+        mock_load.return_value = "テスト用のシステムプロンプト from fixture"
+        yield mock_load  # テスト関数内でモックを使いたい場合のためにyieldする

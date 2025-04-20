@@ -165,12 +165,12 @@ class TestChannelConfig:
             f"storage/channel_list.{conf.guild_id}.json", "r", encoding="utf-8"
         )
 
-    @patch("boto3.client")
-    def test_load_from_s3(self, mock_boto3_client):
+    @patch("utils.channel_config.get_s3_client")  # クラス内のインポート位置でパッチ
+    def test_load_from_s3(self, mock_get_s3_client):
         """S3からの読み込みテスト"""
-        # boto3のS3クライアントをモック
+        # S3クライアントをモック
         mock_s3_client = MagicMock()
-        mock_boto3_client.return_value = mock_s3_client
+        mock_get_s3_client.return_value = mock_s3_client
 
         # S3からの応答をモック
         mock_body = MagicMock()
@@ -184,24 +184,25 @@ class TestChannelConfig:
 
         mock_s3_client.get_object.return_value = {"Body": mock_body}
 
-        # テスト時に呼び出しをデバッグモードで行う（ファイルI/Oを避ける）
+        # テスト時に呼び出しをデバッグモードで行う
         with patch.object(config, "S3_BUCKET_NAME", "test-bucket"):
             # 一時的にS3_FOLDER_PATHをモックして、実際のS3キーパスをテスト
             with patch.object(config, "S3_FOLDER_PATH", "sphene"):
                 # 重要: debug_mode=Trueに変更して初期化時のファイルI/Oを避ける
+                # 今回はload_configが呼ばれないように完全にデバッグモードで実行
                 conf = ChannelConfig(
                     guild_id="test_guild", storage_type="s3", debug_mode=True
                 )
 
-                # 設定を直接書き換えてテスト用のデータを準備
-                conf.storage_type = "s3"
-                conf.debug_mode = False  # 一時的にdebug_modeを無効化
-
-                # この時点でget_objectの呼び出しカウントをリセット
+                # モックをリセットして確実に追跡
                 mock_s3_client.reset_mock()
+                mock_get_s3_client.reset_mock()
 
                 # テスト対象のメソッドを実行
+                # debug_modeを一時的に無効化して実際のファイル操作を有効に
+                conf.debug_mode = False
                 conf._load_from_s3()
+                conf.debug_mode = True
 
                 # テスト後に元に戻す
                 conf.debug_mode = True
@@ -256,20 +257,25 @@ class TestChannelConfig:
             f"storage/channel_list.{conf.guild_id}.json", "w", encoding="utf-8"
         )
 
-    @patch("boto3.client")
-    def test_save_to_s3(self, mock_boto3_client):
+    @patch("utils.channel_config.get_s3_client")  # クラス内のインポート位置でパッチ
+    def test_save_to_s3(self, mock_get_s3_client):
         """S3への保存テスト"""
-        # boto3のS3クライアントをモック
+        # S3クライアントをモック
         mock_s3_client = MagicMock()
-        mock_boto3_client.return_value = mock_s3_client
+        mock_get_s3_client.return_value = mock_s3_client
 
         # バケット名をモック
         with patch.object(config, "S3_BUCKET_NAME", "test-bucket"):
             # 一時的にS3_FOLDER_PATHをモックして、実際のS3キーパスをテスト
             with patch.object(config, "S3_FOLDER_PATH", "sphene"):
+                # debugモードでインスタンス化して初期のS3アクセスを避ける
                 conf = ChannelConfig(
                     guild_id="test_guild", storage_type="s3", debug_mode=True
                 )
+
+                # モックをリセットして確実に追跡
+                mock_s3_client.reset_mock()
+                mock_get_s3_client.reset_mock()
 
                 # テスト用のデータを設定
                 conf.config_data = {
@@ -278,11 +284,9 @@ class TestChannelConfig:
                     "updated_at": "2025-04-19T10:00:00",  # テスト用に固定
                 }
 
-                # 一時的にdebug_modeを無効化
+                # debug_modeを一時的に無効化して実際のS3処理を有効に
                 conf.debug_mode = False
-
                 result = conf._save_to_s3()
-
                 # テスト後に元に戻す
                 conf.debug_mode = True
 
