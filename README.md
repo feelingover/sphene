@@ -134,7 +134,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 ## 📊 技術仕様
 
-- Python 3.8+
+- Python 3.9+
 - discord.py - Discordボットフレームワーク
 - OpenAI API - GPT-4o-mini会話モデル
 - Docker - コンテナ化

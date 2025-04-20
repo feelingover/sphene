@@ -64,6 +64,13 @@ jobs:
         run: |
           echo "IMAGE_TAG=build-${{ github.run_number }}" >> $GITHUB_OUTPUT
           
+      - name: Get last commit message
+        id: last-commit
+        run: |
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          git log -1 --pretty=%B >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
       - name: Checkout infrastructure repository
         uses: actions/checkout@v4
         with:
@@ -88,7 +95,7 @@ jobs:
           path: infra
           commit-message: Update image to ${{ steps.extract-tag.outputs.IMAGE_TAG }}
           branch: update-image-${{ steps.extract-tag.outputs.IMAGE_TAG }}
-          title: Update image to ${{ steps.extract-tag.outputs.IMAGE_TAG }}
+          title: 🚀新イメージのデプロイリクエスト ${{ steps.extract-tag.outputs.IMAGE_TAG }}
           body: |
             ### ＼ﾜｧｰｲヽ(♡´∀`)ﾉ♡／ 新しいイメージがきたよ！
 
@@ -96,6 +103,7 @@ jobs:
             ちょっと確認してみてね〜！
 
             #### 📝 更新内容とか
+            - ${{ steps.last-commit.outputs.message }}
             - 🏷️ 新しいイメージタグ: `${{ steps.extract-tag.outputs.IMAGE_TAG }}`
             - 🔨 ビルドの様子: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
