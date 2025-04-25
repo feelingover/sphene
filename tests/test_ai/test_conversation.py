@@ -243,6 +243,89 @@ def test_input_message_api_timeout_error() -> None:
         assert expected_message_part in response
 
 
+# --- 画像処理テスト ---
+
+
+def test_process_images(
+    mock_requests_head: MagicMock,
+    mock_requests_get: MagicMock,
+    mock_base64_encode: MagicMock,
+) -> None:
+    """画像処理のハイブリッドアプローチをテスト"""
+    sphene = Sphene(system_setting="テスト")
+
+    # URL方式のケース
+    mock_requests_head.return_value.status_code = 200
+    images = sphene._process_images(["https://test.com/image1.jpg"])
+    assert len(images) == 1
+    assert images[0]["type"] == "image_url"
+    assert images[0]["image_url"]["url"] == "https://test.com/image1.jpg"
+
+    # Base64方式へのフォールバックケース
+    mock_requests_head.return_value.status_code = 404
+    mock_base64_encode.return_value = b"encoded_data"
+
+    images = sphene._process_images(["https://test.com/image2.jpg"])
+    assert len(images) == 1
+    assert images[0]["type"] == "image_url"
+    assert "data:image/jpeg;base64," in images[0]["image_url"]["url"]
+
+
+def test_download_and_encode_image(
+    mock_requests_get: MagicMock, mock_base64_encode: MagicMock
+) -> None:
+    """画像ダウンロードとBase64エンコードをテスト"""
+    sphene = Sphene(system_setting="テスト")
+
+    # 通常のケース（Content-Typeあり）
+    mock_requests_get.return_value.headers = {"Content-Type": "image/png"}
+    mock_base64_encode.return_value = b"encoded_png_data"
+
+    result = sphene._download_and_encode_image("https://test.com/image.png")
+    assert result == "data:image/png;base64,encoded_png_data"
+
+    # Content-Typeなしで拡張子から推測するケース
+    mock_requests_get.return_value.headers = {}
+    result = sphene._download_and_encode_image("https://test.com/image.jpg")
+    assert result == "data:image/jpeg;base64,encoded_png_data"
+
+
+def test_input_message_with_images(
+    mock_openai_response: MagicMock, mock_requests_head: MagicMock
+) -> None:
+    """画像付きメッセージの処理をテスト"""
+    sphene = Sphene(system_setting="テスト")
+
+    with patch(
+        "ai.conversation.aiclient.chat.completions.create"
+    ) as mock_create, patch.object(sphene, "_process_images") as mock_process:
+
+        # 画像処理の結果をモック
+        mock_process.return_value = [
+            {"type": "image_url", "image_url": {"url": "https://test.com/image.jpg"}}
+        ]
+
+        mock_create.return_value = mock_openai_response
+
+        # 画像付きメッセージの処理
+        response = sphene.input_message(
+            "これは画像テストです", ["https://test.com/image.jpg"]
+        )
+
+        # プロセスが呼ばれたことを確認
+        mock_process.assert_called_once_with(["https://test.com/image.jpg"])
+
+        # APIが呼ばれたことを確認
+        mock_create.assert_called_once()
+
+        # 正しい応答が返されたことを確認
+        assert response == "これはテスト応答です。"
+
+        # ユーザーメッセージが正しく追加されたことを確認
+        assert len(sphene.input_list) == 3  # システム + ユーザー + アシスタント
+        assert "content" in sphene.input_list[1]  # ユーザーメッセージのcontentを確認
+
+
 # --- ユーザー別会話テスト ---
 
 

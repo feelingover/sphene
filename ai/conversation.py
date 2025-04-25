@@ -1,9 +1,12 @@
+import base64
 import logging
 import traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import DefaultDict, Dict, List, Optional, Tuple, Type
+from typing import Any, DefaultDict, Dict, List, Optional, Tuple, Type
+
+import requests
 
 # OpenAI エラータイプをインポート
 from openai import (
@@ -339,15 +342,26 @@ class Sphene:
         )
         return "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
 
-    def _call_openai_api(self) -> Tuple[bool, str]:
+    def _call_openai_api(self, with_images: bool = False) -> Tuple[bool, str]:
         """OpenAI APIを呼び出し、結果またはエラーメッセージを返す
+
+        Args:
+            with_images: 画像が含まれているかどうか
 
         Returns:
             Tuple[bool, str]: (成功フラグ, 応答内容またはエラーメッセージ)
         """
         try:
             # OpenAI APIにリクエストを送信
-            logger.info(f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}）")
+            if with_images:
+                logger.info(
+                    f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}, マルチモーダル）"
+                )
+            else:
+                logger.info(
+                    f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}, テキストのみ）"
+                )
+
             result = aiclient.chat.completions.create(
                 model=OPENAI_MODEL, messages=self.input_list
             )
@@ -372,11 +386,14 @@ class Sphene:
             logger.critical(f"API呼び出し中の予期せぬエラー: {str(e)}\n{tb_str}")
             return False, "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
 
-    def input_message(self, input_text: Optional[str]) -> Optional[str]:
+    def input_message(
+        self, input_text: Optional[str], image_urls: List[str] = None
+    ) -> Optional[str]:
         """ユーザーからのメッセージを処理し、AIからの応答を返す
 
         Args:
             input_text: ユーザーからの入力テキスト
+            image_urls: 添付画像のURLリスト
 
         Returns:
             Optional[str]: AIからの応答、エラー時はNone
@@ -387,21 +404,42 @@ class Sphene:
 
         try:
             self.update_interaction_time()
+            with_images = bool(image_urls and len(image_urls) > 0)
 
             # 型ガード後の変数を定義してからスライシング
             input_str: str = input_text
             preview = truncate_text(input_str)
-            logger.debug(f"ユーザーメッセージを受信: {preview}")
+
+            # 画像付きかテキストのみかでログメッセージを変更
+            if with_images:
+                logger.debug(
+                    f"画像付きユーザーメッセージを受信: {preview}, 画像数: {len(image_urls)}"
+                )
+                # 画像処理
+                processed_images = self._process_images(image_urls)
+                if processed_images:
+                    # テキスト + 画像のマルチモーダルメッセージを作成
+                    content = [{"type": "text", "text": input_text}]
+                    for img in processed_images:
+                        content.append(img)
+
+                    user_message = {"role": "user", "content": content}
+                else:
+                    # 画像処理に失敗した場合はテキストのみで処理
+                    logger.warning("画像処理に失敗したため、テキストのみで処理します")
+                    user_message = {"role": "user", "content": input_text}
+            else:
+                # 通常のテキストメッセージ
+                logger.debug(f"テキストのみのユーザーメッセージを受信: {preview}")
+                user_message = {"role": "user", "content": input_text}
 
             # ユーザーメッセージを追加
-            user_message: ChatCompletionUserMessageParam = {
-                "role": "user",
-                "content": input_text,
-            }
             self.input_list.append(user_message)
 
             # OpenAI API呼び出しとエラーハンドリング
-            success, content_or_error_msg = self._call_openai_api()
+            success, content_or_error_msg = self._call_openai_api(
+                with_images=with_images
+            )
 
             if success:
                 # 成功した場合、応答を履歴に追加して返す
@@ -422,6 +460,82 @@ class Sphene:
             tb_str = traceback.format_exc()
             logger.critical(f"input_message処理中に予期せぬエラー: {str(e)}\n{tb_str}")
             return "ごめん！処理中に予期せぬエラーが発生しちゃった...😢"
+
+    def _process_images(self, image_urls: List[str]) -> List[Dict[str, Any]]:
+        """画像URLを処理してOpenAI API用のフォーマットに変換
+
+        Args:
+            image_urls: 画像のURLリスト
+
+        Returns:
+            List[Dict[str, Any]]: OpenAI APIフォーマットの画像リスト
+        """
+        processed_images = []
+
+        for url in image_urls:
+            try:
+                # まずURLとして直接アクセス可能か確認
+                response = requests.head(url, timeout=3)
+                if response.status_code == 200:
+                    # 成功したら直接URL方式
+                    logger.debug(f"画像処理: URLとして使用 - {url}")
+                    processed_images.append(
+                        {"type": "image_url", "image_url": {"url": url}}
+                    )
+                else:
+                    # ステータスコードが200以外ならBase64方式にフォールバック
+                    logger.debug(
+                        f"画像URLアクセス失敗 (ステータスコード: {response.status_code}) - Base64変換実行"
+                    )
+                    image_data = self._download_and_encode_image(url)
+                    processed_images.append(
+                        {"type": "image_url", "image_url": {"url": image_data}}
+                    )
+            except Exception as e:
+                # リクエスト失敗時もBase64方式にフォールバック
+                try:
+                    logger.debug(f"画像URL直接アクセス失敗 ({str(e)}) - Base64変換実行")
+                    image_data = self._download_and_encode_image(url)
+                    processed_images.append(
+                        {"type": "image_url", "image_url": {"url": image_data}}
+                    )
+                except Exception as e2:
+                    logger.error(f"画像処理完全失敗: {url} - {str(e2)}", exc_info=True)
+
+        return processed_images
+
+    def _download_and_encode_image(self, url: str) -> str:
+        """画像をダウンロードしてBase64エンコードする
+
+        Args:
+            url: 画像のURL
+
+        Returns:
+            str: Base64エンコードされた画像データ
+        """
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+
+        image_data = response.content
+        image_b64 = base64.b64encode(image_data).decode("utf-8")
+
+        # MIMEタイプを検出（ヘッダーから取得またはURLから推測）
+        content_type = response.headers.get("Content-Type")
+        if not content_type or not content_type.startswith("image/"):
+            # URLからMIMEタイプを推測
+            if url.lower().endswith(".jpg") or url.lower().endswith(".jpeg"):
+                content_type = "image/jpeg"
+            elif url.lower().endswith(".png"):
+                content_type = "image/png"
+            elif url.lower().endswith(".gif"):
+                content_type = "image/gif"
+            elif url.lower().endswith(".webp"):
+                content_type = "image/webp"
+            else:
+                content_type = "image/jpeg"  # デフォルト
+
+        logger.debug(f"画像処理: Base64変換を使用 - MIME: {content_type}")
+        return f"data:{content_type};base64,{image_b64}"
 
 
 # ユーザーごとの会話インスタンスを保持する辞書
