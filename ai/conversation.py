@@ -356,7 +356,7 @@ class Sphene:
             # 応答を処理
             response_content = result.choices[0].message.content
             if response_content:
-                logger.info(
+                logger.debug(
                     f"OpenAI APIレスポンス受信: {truncate_text(response_content)}"
                 )
                 return True, response_content
@@ -391,7 +391,7 @@ class Sphene:
             # 型ガード後の変数を定義してからスライシング
             input_str: str = input_text
             preview = truncate_text(input_str)
-            logger.info(f"ユーザーメッセージを受信: {preview}")
+            logger.debug(f"ユーザーメッセージを受信: {preview}")
 
             # ユーザーメッセージを追加
             user_message: ChatCompletionUserMessageParam = {
