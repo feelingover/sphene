@@ -73,6 +73,7 @@ class TestEventHandling:
         message.channel.id = 12345
         message.content = "テストメッセージ"
         message.author.id = 67890
+        message.attachments = []  # 添付ファイルなし
         # guildのモック
         message.guild = MagicMock()
         message.guild.id = 54321
@@ -90,7 +91,9 @@ class TestEventHandling:
         # メッセージチェック関数が呼ばれる（許可されるため）
         mock_is_bot_mentioned.assert_called_once()
         # メンションされていれば会話処理が呼ばれる
-        mock_process_conversation.assert_called_once_with(message, "テスト質問", True)
+        mock_process_conversation.assert_called_once_with(
+            message, "テスト質問", True, []
+        )
 
     @pytest.mark.asyncio
     @patch("bot.events.is_bot_mentioned")
@@ -157,6 +160,7 @@ class TestEventHandling:
         message = MagicMock()
         message.author.bot = False
         message.content = None  # 空のコンテンツ
+        message.attachments = []  # 添付ファイルもなし
         message.channel.id = 12345
 
         # ボットのモック
@@ -167,7 +171,58 @@ class TestEventHandling:
         await handle_message(bot, message)
 
         # config_managerはmockしないで、テストの動作だけ確認
-        # 空のコンテンツは早期に無視されるので、モックの検証は不要
+        # 空のコンテンツかつ添付ファイルがない場合は早期に無視されるので、モックの検証は不要
+
+    @pytest.mark.asyncio
+    @patch("bot.events.is_bot_mentioned")
+    @patch("bot.events.process_conversation")
+    @patch("bot.events.config_manager")
+    async def test_handle_message_with_image(
+        self, mock_config_manager, mock_process_conversation, mock_is_bot_mentioned
+    ):
+        """画像添付のあるメッセージのテスト"""
+        # channel_configの設定
+        mock_channel_config = MagicMock()
+        mock_channel_config.can_bot_speak.return_value = True
+        mock_channel_config.get_mode_display_name.return_value = "限定モード"
+        mock_config_manager.get_config.return_value = mock_channel_config
+        mock_is_bot_mentioned.return_value = (True, "テスト質問", True)
+
+        # 画像添付ファイルのモック
+        mock_attachment1 = MagicMock()
+        mock_attachment1.content_type = "image/jpeg"
+        mock_attachment1.url = "https://example.com/test1.jpg"
+
+        mock_attachment2 = MagicMock()
+        mock_attachment2.content_type = "application/pdf"  # 画像ではないタイプ
+        mock_attachment2.url = "https://example.com/test.pdf"
+
+        # メッセージのモック
+        message = MagicMock()
+        message.author.bot = False
+        message.channel.id = 12345
+        message.content = "画像テスト"
+        message.author.id = 67890
+        message.attachments = [mock_attachment1, mock_attachment2]
+        # guildのモック
+        message.guild = MagicMock()
+        message.guild.id = 54321
+
+        # ボットのモック
+        bot = MagicMock()
+        bot.user = MagicMock()
+
+        # コマンド実行
+        await handle_message(bot, message)
+
+        # アサーション
+        mock_config_manager.get_config.assert_called_once()
+        mock_channel_config.can_bot_speak.assert_called_once()
+        mock_is_bot_mentioned.assert_called_once()
+        # 画像URLのみがprocess_conversationに渡されることを確認
+        mock_process_conversation.assert_called_once_with(
+            message, "テスト質問", True, ["https://example.com/test1.jpg"]
+        )
 
     @pytest.mark.asyncio
     @patch("bot.events.is_bot_mentioned")

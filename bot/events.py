@@ -72,7 +72,10 @@ async def is_bot_mentioned(
 
 
 async def process_conversation(
-    message: discord.Message, question: str, is_reply: bool = False
+    message: discord.Message,
+    question: str,
+    is_reply: bool = False,
+    images: list[str] = None,
 ) -> None:
     """ユーザーとの会話を処理する
 
@@ -80,6 +83,7 @@ async def process_conversation(
         message: Discordメッセージオブジェクト
         question: 質問内容
         is_reply: リプライによるメッセージかどうか
+        images: 添付された画像のURLリスト
     """
     user_id = str(message.author.id)
 
@@ -91,7 +95,14 @@ async def process_conversation(
 
     # ユーザーの会話インスタンスを取得
     api = user_conversations[user_id]
-    answer = api.input_message(question)
+    # 画像付きかどうかでログ出力を変える
+    if images and len(images) > 0:
+        logger.info(
+            f"画像付きメッセージを処理: ユーザーID {user_id}, 画像数 {len(images)}"
+        )
+        answer = api.input_message(question, images)
+    else:
+        answer = api.input_message(question)
 
     if answer:
         if is_reply:
@@ -132,7 +143,7 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
         if message.author == bot.user or message.author.bot:
             return
 
-        if message.content is None:
+        if message.content is None and len(message.attachments) == 0:
             return
 
         # ギルドIDを取得
@@ -167,10 +178,19 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
             )
             return  # 処理を中断
 
+        # 画像添付の検出
+        images = []
+        for attachment in message.attachments:
+            if attachment.content_type and attachment.content_type.startswith("image/"):
+                logger.debug(
+                    f"画像検出: {attachment.url}, タイプ: {attachment.content_type}"
+                )
+                images.append(attachment.url)
+
         # ボットが呼ばれたかどうかをチェック
         is_mentioned, question, is_reply = await is_bot_mentioned(bot, message)
         if is_mentioned:
-            await process_conversation(message, question, is_reply)
+            await process_conversation(message, question, is_reply, images)
 
     except Exception as e:
         logger.error(f"エラー発生: {str(e)}", exc_info=True)

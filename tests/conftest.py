@@ -71,3 +71,33 @@ def mock_logger() -> Generator[MagicMock, None, None]:
         mock_logger = MagicMock()
         mock_setup.return_value = mock_logger
         yield mock_logger
+
+
+@pytest.fixture()
+def mock_requests_head() -> Generator[MagicMock, None, None]:
+    """requests.headのモック"""
+    with patch("requests.head") as mock_head:
+        response = MagicMock()
+        response.status_code = 200  # デフォルトで成功を返す
+        mock_head.return_value = response
+        yield mock_head
+
+
+@pytest.fixture()
+def mock_requests_get() -> Generator[MagicMock, None, None]:
+    """requests.getのモック"""
+    with patch("requests.get") as mock_get:
+        response = MagicMock()
+        response.status_code = 200
+        response.content = b"test_image_data"  # テスト用画像データ
+        response.headers = {"Content-Type": "image/jpeg"}  # デフォルトでJPEG
+        mock_get.return_value = response
+        yield mock_get
+
+
+@pytest.fixture()
+def mock_base64_encode() -> Generator[MagicMock, None, None]:
+    """base64.b64encodeのモック"""
+    with patch("base64.b64encode") as mock_encode:
+        mock_encode.return_value = b"encoded_image_data"
+        yield mock_encode
