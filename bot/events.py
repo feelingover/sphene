@@ -38,7 +38,7 @@ async def is_bot_mentioned(
         bot_id = bot.user.id
         question = content.replace(f"<@{bot_id}>", "").strip()
         preview = truncate_text(question)
-        logger.info(
+        logger.debug(
             f"メンション検出: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
         )
         return True, question, True
@@ -47,7 +47,7 @@ async def is_bot_mentioned(
     if config.BOT_NAME in content:
         question = content  # メッセージ全体を質問として扱う
         preview = truncate_text(question)
-        logger.info(
+        logger.debug(
             f"名前で呼ばれました: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
         )
         return True, question, False
@@ -63,7 +63,7 @@ async def is_bot_mentioned(
         ):
             question = content  # リプライのメッセージ内容をそのまま質問として扱う
             preview = truncate_text(question)
-            logger.info(
+            logger.debug(
                 f"リプライ検出: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
             )
             return True, question, True
@@ -153,7 +153,7 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
         can_speak = channel_config.can_bot_speak(channel_id)
 
         # デバッグ用の詳細なログ出力
-        logger.info(
+        logger.debug(
             f"チャンネル評価: ギルドID={guild_id}, チャンネルID={channel_id}, "
             f"リスト含まれる={in_list}, "
             f"評価モード={behavior}({channel_config.get_mode_display_name()}), "

@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ログレベル設定（デフォルトはINFO）
+LOG_LEVEL: str = str(os.getenv("LOG_LEVEL", "INFO"))
+
 OPENAI_API_KEY: str = str(os.getenv("OPENAI_API_KEY"))
 DISCORD_TOKEN: str = str(os.getenv("DISCORD_TOKEN"))
 BOT_NAME: str = str(os.getenv("BOT_NAME", "アサヒ"))

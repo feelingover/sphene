@@ -17,6 +17,7 @@ def mock_env_vars(monkeypatch: MonkeyPatch) -> Dict[str, str]:
         "BOT_NAME": "テストボット",
         "COMMAND_GROUP_NAME": "test",
         "DENIED_CHANNEL_IDS": "123456789,987654321",  # 禁止リストとして扱うチャンネルID
+        "LOG_LEVEL": "DEBUG",  # テスト時はDEBUGレベルで詳細に確認
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)
@@ -61,3 +62,12 @@ def mock_load_system_prompt() -> Generator[MagicMock, None, None]:
     with patch("ai.conversation.load_system_prompt") as mock_load:
         mock_load.return_value = "テスト用のシステムプロンプト from fixture"
         yield mock_load  # テスト関数内でモックを使いたい場合のためにyieldする
+
+
+@pytest.fixture()
+def mock_logger() -> Generator[MagicMock, None, None]:
+    """ロガーのモックと初期化テスト用fixture"""
+    with patch("log_utils.logger.setup_logger") as mock_setup:
+        mock_logger = MagicMock()
+        mock_setup.return_value = mock_logger
+        yield mock_logger
