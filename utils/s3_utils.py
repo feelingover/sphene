@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from botocore.exceptions import ClientError
 
@@ -11,8 +11,8 @@ class S3Helper:
 
     @staticmethod
     def read_file_from_s3(
-        bucket_name: str, file_key: str, folder_path: Optional[str] = None
-    ) -> Optional[str]:
+        bucket_name: str, file_key: str, folder_path: str | None = None
+    ) -> str | None:
         """S3バケットからファイルを読み込む
 
         Args:
@@ -21,7 +21,7 @@ class S3Helper:
             folder_path: フォルダパス（オプション）
 
         Returns:
-            Optional[str]: ファイルの内容、エラー時はNone
+            str | None: ファイルの内容、エラー時はNone
         """
         try:
             s3_client = get_s3_client()
