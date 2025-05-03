@@ -30,8 +30,10 @@ class SpheneBot:
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
+        intents.reactions = True  # リアクションの検知に必要
+        intents.messages = True  # 過去メッセージへのアクセス権を追加
 
-        self.bot = commands.Bot(command_prefix="!", intents=intents)
+        self.bot = commands.Bot(command_prefix="!", intents=intents, max_messages=10000)
 
         # コマンドとイベントのセットアップ
         self._setup()
