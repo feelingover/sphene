@@ -1,5 +1,5 @@
-.clinerules
-storage/channel_config.json
+.clinerules/*_local.md
+storage/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
