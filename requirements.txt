@@ -1,3 +1,4 @@
+# Python 3.13以上が必要です
 openai
 discord.py>=2.0.0
 python-dotenv

@@ -1,5 +1,3 @@
-from typing import Optional
-
 import config
 from ai.client import client as aiclient
 from log_utils.logger import logger
@@ -23,7 +21,7 @@ def truncate_text(text: str, max_length: int = PREVIEW_LENGTH) -> str:
     return text[:max_length] + "..." if len(text) > max_length else text
 
 
-async def translate_to_english(text: str) -> Optional[str]:
+async def translate_to_english(text: str) -> str | None:
     """テキストを英語に翻訳する
 
     Args:
@@ -59,7 +57,7 @@ async def translate_to_english(text: str) -> Optional[str]:
         return None
 
 
-async def translate_to_japanese(text: str) -> Optional[str]:
+async def translate_to_japanese(text: str) -> str | None:
     """テキストを日本語に翻訳する
 
     Args:

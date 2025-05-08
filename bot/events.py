@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import discord
 from discord import app_commands
 from discord.ext import commands  # commands をインポート
@@ -16,7 +14,7 @@ from utils.text_utils import truncate_text
 # bot の型ヒントを commands.Bot に変更
 async def is_bot_mentioned(
     bot: commands.Bot, message: discord.Message
-) -> Tuple[bool, str, bool]:
+) -> tuple[bool, str, bool]:
     """メッセージがボットに対するものかどうかを判断し、質問内容を抽出する
 
     Args:

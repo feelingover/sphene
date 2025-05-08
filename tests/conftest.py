@@ -1,6 +1,6 @@
 """pytestの共通設定と共通fixturesの定義"""
 
-from typing import Dict, Generator
+from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,7 +9,7 @@ from pytest import MonkeyPatch
 
 
 @pytest.fixture()
-def mock_env_vars(monkeypatch: MonkeyPatch) -> Dict[str, str]:
+def mock_env_vars(monkeypatch: MonkeyPatch) -> dict[str, str]:
     """テスト用環境変数のモック化"""
     env_vars = {
         "OPENAI_API_KEY": "test-api-key",

@@ -4,7 +4,7 @@
 
 ### コア技術
 
-- **プログラミング言語**: Python 3.9+
+- **プログラミング言語**: Python 3.13+
 - **Discord連携**: discord.py
 - **AI機能**: OpenAI API (GPT-4o-mini)
 - **設定管理**: dotenv
@@ -33,7 +33,7 @@ boto3 (S3使用時)
 
 ### 必要条件
 
-- Python 3.9以上
+- Python 3.13以上
 - OpenAI APIキー
 - Discord開発者アカウントとボットトークン
 - （オプション）AWS認証情報（S3使用時）

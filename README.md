@@ -5,7 +5,9 @@ Spheneは、OpenAI APIを活用した会話機能を持つ、シンプルでパ�
 ## ✨ 主な機能
 
 - 💬 OpenAIのGPT-4o-miniを使用した高度な会話機能
+- 📸 画像処理対応のマルチモーダル会話
 - 👋 メンション、名前呼び、リプライによる柔軟な反応
+- 🌐 国旗リアクションによる自動翻訳機能（🇺🇸 英語 / 🇯🇵 日本語）
 - 🔄 会話履歴リセットコマンド
 - 📋 禁止チャンネル一覧表示
 - ⏱️ 30分の会話タイムアウトによるコンテキストリセット
@@ -90,6 +92,15 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 2. **名前呼び**: `スフェーン、元気？`
 3. **リプライ**: ボットのメッセージに返信する
 
+### 翻訳機能の使い方
+
+メッセージに対して国旗のリアクションを追加するだけで翻訳が実行されます：
+
+1. **英語に翻訳**: メッセージに 🇺🇸 リアクションを追加
+2. **日本語に翻訳**: メッセージに 🇯🇵 リアクションを追加
+
+注: 翻訳機能は管理者によって有効/無効を切り替えることができます。
+
 ### スラッシュコマンド
 
 - `/sphene reset` - 会話履歴をリセットします
@@ -100,6 +111,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - `/sphene clearlist` - チャンネルリストをクリアします（管理者のみ）
 - `/sphene updatelist` - チャンネル設定を手動で保存します（管理者のみ）
 - `/sphene reload_prompt` - システムプロンプトを再読み込みします（管理者のみ）
+- `/sphene translation` - 翻訳機能の有効/無効を切り替えます（管理者のみ）
 
 ## 🛠️ プロジェクト構成
 
@@ -109,6 +121,8 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ├── config.py             # 設定ファイル
 ├── Dockerfile            # Dockerビルド設定
 ├── requirements.txt      # 依存パッケージリスト
+├── requirements-dev.txt  # 開発用依存パッケージ
+├── run_tests.sh          # テスト実行スクリプト
 ├── .env.sample           # 環境変数サンプル
 ├── README.md             # このファイル
 ├── ai/                   # AI関連機能
@@ -123,23 +137,80 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ├── log_utils/            # ロギング機能
 │   ├── __init__.py
 │   └── logger.py         # ロガー設定
-├── prompts/              # プロンプト関連ファイル
-│   └── system.txt        # システムプロンプト
-├── utils/                # ユーティリティ機能
+├── memory-bank/          # プロジェクト知識ベース
+│   ├── activeContext.md  # 現在の作業コンテキスト
+│   ├── productContext.md # 製品コンテキスト
+│   ├── progress.md       # 進捗状況
+│   ├── projectbrief.md   # プロジェクト概要
+│   ├── systemPatterns.md # システム設計パターン
+│   └── techContext.md    # 技術コンテキスト
+├── storage/              # ストレージ関連ファイル
+│   └── system.txt        # システムプロンプト(存在する場合)
+├── tests/                # テストコード
 │   ├── __init__.py
-│   ├── channel_config.py # チャンネル設定管理
-│   ├── s3_utils.py       # S3関連ユーティリティ
-│   └── text_utils.py     # テキスト処理ユーティリティ
+│   ├── conftest.py       # テスト設定
+│   ├── test_ai/          # AI機能テスト
+│   ├── test_bot/         # ボット機能テスト
+│   └── test_utils/       # ユーティリティテスト
+└── utils/                # ユーティリティ機能
+    ├── __init__.py
+    ├── aws_clients.py    # AWS関連ユーティリティ
+    ├── channel_config.py # チャンネル設定管理
+    ├── s3_utils.py       # S3関連ユーティリティ
+    └── text_utils.py     # テキスト処理ユーティリティ
 ```
 
 ## 📊 技術仕様
 
-- Python 3.9+
+- Python 3.13+
 - discord.py - Discordボットフレームワーク
-- OpenAI API - GPT-4o-mini会話モデル
+- OpenAI API - GPT-4o-mini会話モデル（マルチモーダル対応）
 - Docker - コンテナ化
 - Kubernetes - オプショナルデプロイ環境
 - AWS S3 (オプション) - システムプロンプトのリモートストレージ
+
+## 📋 開発状況
+
+### 現在実装済みの機能
+
+✅ **基本インフラ**
+- Discord接続と基本的なボット機能
+- OpenAI API連携
+- 環境変数による設定
+- ログ記録システム
+
+✅ **コアボット機能**
+- メンションによる応答
+- 名前呼びによる応答
+- リプライによる応答
+- スラッシュコマンド処理
+
+✅ **AIチャット機能**
+- GPT-4o-miniモデルとの対話
+- マルチモーダル対応（画像処理）
+- 会話履歴の管理
+- 会話タイムアウト（30分）
+- 会話履歴制限（最大10ターン）
+
+✅ **翻訳機能**
+- 国旗リアクションによる翻訳（🇺🇸 英語 / 🇯🇵 日本語）
+- 翻訳機能の有効/無効切り替え
+- スレッド内での翻訳サポート
+
+✅ **管理機能**
+- 会話リセットコマンド
+- チャンネルモード切替（全体/限定）
+- チャンネルリスト表示
+- チャンネル追加/削除/クリア
+- システムプロンプト再読み込み
+
+### 今後の開発予定
+
+- チャンネル固有のカスタムプロンプト
+- 使用統計の収集と分析
+- パフォーマンス最適化
+- モニタリングとアラート機能
+- 複数のAIモデル選択オプション
 
 ## 🔒 セキュリティ情報
 
@@ -151,17 +222,33 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ## 📝 システムプロンプトのカスタマイズ
 
 ボットのキャラクター設定やふるまいは、システムプロンプトをカスタマイズすることで自由に変更できます。
-プロンプトは`prompts/system.txt`（ローカルストレージの場合）または指定したS3バケット内（S3ストレージの場合）に配置します。
+プロンプトは`storage/system.txt`（ローカルストレージの場合）または指定したS3バケット内（S3ストレージの場合）に配置します。
 
 ### プロンプトストレージオプション
 
 - **ローカルストレージ（デフォルト）**: `.env`で`PROMPT_STORAGE_TYPE=local`を設定
-  - プロンプトファイルは`prompts/`ディレクトリに配置
+  - プロンプトファイルは`storage/`ディレクトリに配置
 
 - **S3ストレージ**: `.env`で`PROMPT_STORAGE_TYPE=s3`を設定
   - S3バケット名とオプションのフォルダパスを指定
   - プロンプトファイルはS3バケットの指定されたパスに配置
 
+## 📚 メモリーバンク
+
+Spheneプロジェクトでは、`memory-bank/`ディレクトリに重要なプロジェクト情報を整理して保存しています。
+これは開発者間の知識共有や、プロジェクトの継続的な発展をサポートするためのものです。
+
+### メモリーバンクの構成
+
+- **projectbrief.md** - プロジェクトの基本定義と要件
+- **productContext.md** - 製品の存在理由と解決する問題
+- **systemPatterns.md** - システムアーキテクチャと設計パターン
+- **techContext.md** - 技術スタックと開発環境
+- **activeContext.md** - 現在の作業状況と決定事項
+- **progress.md** - 実装状況と今後の課題
+
+開発者向けにこのメモリーバンクを参照することで、プロジェクトの全体像を素早く把握できます。
+
 ---
 
-開発者向けメモ: システムプロンプトのカスタマイズやボットの挙動変更が必要な場合は、`prompts/system.txt`または対応するS3内のファイルを編集してください。
+開発者向けメモ: システムプロンプトのカスタマイズやボットの挙動変更が必要な場合は、`storage/system.txt`または対応するS3内のファイルを編集してください。
