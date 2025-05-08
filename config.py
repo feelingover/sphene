@@ -1,5 +1,4 @@
 import os
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -31,4 +30,4 @@ SYSTEM_PROMPT_PATH: str = str(
 # S3バケット名（S3使用時のみ）
 S3_BUCKET_NAME: str = str(os.getenv("S3_BUCKET_NAME", ""))
 # S3フォルダパス（オプション）
-S3_FOLDER_PATH: Optional[str] = os.getenv("S3_FOLDER_PATH")
+S3_FOLDER_PATH: str | None = os.getenv("S3_FOLDER_PATH")

@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import discord
 from discord import app_commands
 from discord.ext import commands  # commands をインポート
@@ -16,7 +14,7 @@ from utils.text_utils import truncate_text
 # bot の型ヒントを commands.Bot に変更
 async def is_bot_mentioned(
     bot: commands.Bot, message: discord.Message
-) -> Tuple[bool, str, bool]:
+) -> tuple[bool, str, bool]:
     """メッセージがボットに対するものかどうかを判断し、質問内容を抽出する
 
     Args:
@@ -75,7 +73,7 @@ async def process_conversation(
     message: discord.Message,
     question: str,
     is_reply: bool = False,
-    images: list[str] = None,
+    images: list[str] | None = None,
 ) -> None:
     """ユーザーとの会話を処理する
 
@@ -257,6 +255,179 @@ async def _handle_on_guild_remove(guild: discord.Guild) -> None:
         logger.error(f"ギルドID {guild.id} の設定ファイル削除中にエラー: {str(e)}")
 
 
+def get_message_type(message: discord.Message) -> str:
+    """メッセージの種類（通常/リプライ/スレッド）を判定する
+
+    Args:
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        str: メッセージタイプ（"normal", "reply", "thread"）
+    """
+    if message.reference:  # リプライメッセージ
+        return "reply"
+    elif hasattr(message, "thread") and message.thread:  # スレッド内メッセージ
+        return "thread"
+    else:
+        return "normal"
+
+
+async def send_translation_response(
+    message: discord.Message, translated_text: str, language_flag: str
+) -> None:
+    """メッセージタイプに応じた適切な方法で翻訳結果を送信する
+
+    Args:
+        message: 元のDiscordメッセージ
+        translated_text: 翻訳されたテキスト、またはエラーメッセージ
+        language_flag: 言語を示す絵文字 (🇺🇸 または 🇯🇵)
+    """
+    message_type = get_message_type(message)
+
+    if message_type == "thread" and message.thread:
+        # スレッド内のメッセージの場合は、そのスレッド内に返信
+        await message.thread.send(
+            f"{language_flag} {translated_text}", reference=message
+        )
+    else:
+        # 通常メッセージやリプライの場合は今までどおり
+        await message.channel.send(
+            f"{language_flag} {translated_text}", reference=message
+        )
+
+
+async def translate_and_reply(
+    message: discord.Message, target_language: str = "english"
+) -> None:
+    """メッセージを指定した言語に翻訳してリプライする
+
+    Args:
+        message: 翻訳対象のDiscordメッセージ
+        target_language: 翻訳先言語 ("english" または "japanese")
+    """
+    # メッセージ内容がなければ処理しない
+    if not message.content:
+        logger.debug("翻訳対象メッセージの内容が空のため処理をスキップ")
+        return
+
+    # デバッグ用のログ追加：翻訳対象メッセージの詳細情報
+    logger.debug(
+        f"翻訳対象メッセージ詳細: ID={message.id}, 作成日時={message.created_at}, "
+        f"チャネルID={message.channel.id}, 著者ID={message.author.id}"
+    )
+
+    content = message.content
+    user_id = str(message.author.id)
+    message_type = get_message_type(message)
+
+    logger.info(
+        f"{target_language}翻訳リクエスト: タイプ={message_type}, ユーザーID={user_id}, "
+        f"メッセージ: {truncate_text(content)}"
+    )
+
+    # 言語に応じて翻訳関数とフラグを選択
+    from utils.text_utils import translate_to_english, translate_to_japanese
+
+    if target_language == "japanese":
+        translate_func = translate_to_japanese
+        language_flag = "🇯🇵"
+        error_message = "翻訳中にエラーが発生しました 😢"
+    else:  # デフォルトは英語
+        translate_func = translate_to_english
+        language_flag = "🇺🇸"
+        error_message = "翻訳中にエラーが発生しました 😢"
+
+    # 翻訳実行
+    translated_text = await translate_func(content)
+
+    if translated_text:
+        # 適切な方法で翻訳結果を送信
+        await send_translation_response(message, translated_text, language_flag)
+        logger.info(f"翻訳結果を送信: {truncate_text(translated_text)}")
+    else:
+        # エラー時も同様に対応
+        await send_translation_response(message, error_message, language_flag)
+        logger.warning(
+            f"翻訳エラー: タイプ={message_type}, ユーザーID={user_id}, メッセージ: {truncate_text(content)}"
+        )
+
+
+async def handle_reaction(
+    bot: commands.Bot, reaction: discord.Reaction, user: discord.User
+) -> None:
+    """リアクション追加時の処理
+
+    Args:
+        bot: Discordクライアント
+        reaction: 追加されたリアクション
+        user: リアクションを追加したユーザー
+    """
+    try:
+        # デバッグ用のログ追加：リアクション検出時の詳細情報
+        logger.debug(
+            f"リアクション検出: 絵文字={str(reaction.emoji)}, メッセージID={reaction.message.id}, "
+            f"ユーザーID={user.id}, メッセージ作成日時={reaction.message.created_at}"
+        )
+        # ボット自身のリアクションは無視
+        if user.bot:
+            return
+
+        # リアクション追加されたメッセージを取得
+        message = reaction.message
+
+        # メッセージがギルドに所属していない場合は処理しない
+        if message.guild is None:
+            return
+
+        guild_id = message.guild.id
+
+        # ギルド固有の設定を取得して発言可能かチェック
+        channel_config = config_manager.get_config(guild_id)
+        channel_id = message.channel.id
+        can_speak = channel_config.can_bot_speak(channel_id)
+
+        if not can_speak:
+            logger.debug(
+                f"リアクション処理スキップ: ギルドID={guild_id}, チャンネルID={channel_id}, 発言不可"
+            )
+            return
+
+        # 翻訳機能が有効かチェック
+        translation_enabled = channel_config.get_translation_enabled()
+        if not translation_enabled:
+            logger.debug(
+                f"翻訳機能が無効のためスキップ: ギルドID={guild_id}, チャンネルID={channel_id}"
+            )
+            return
+
+        # 絵文字によって処理を分岐
+        emoji_str = str(reaction.emoji)
+
+        # アメリカ国旗絵文字のチェック
+        if emoji_str == "🇺🇸" or emoji_str == "flag_us":
+            logger.info(
+                f"アメリカ国旗リアクション検出: ユーザーID={user.id}, メッセージID={message.id}"
+            )
+            await translate_and_reply(message, "english")
+
+        # 日本国旗絵文字のチェック
+        elif emoji_str == "🇯🇵" or emoji_str == "flag_jp":
+            logger.info(
+                f"日本国旗リアクション検出: ユーザーID={user.id}, メッセージID={message.id}"
+            )
+            await translate_and_reply(message, "japanese")
+
+    except Exception as e:
+        logger.error(f"リアクション処理エラー: {str(e)}", exc_info=True)
+        # エラーが発生した場合、可能であればチャンネルにメッセージを送信
+        try:
+            await reaction.message.channel.send(
+                f"リアクション処理中にエラーが発生しました 😢: {str(e)}"
+            )
+        except Exception:
+            pass
+
+
 def setup_events(bot: commands.Bot, command_group: app_commands.Group) -> None:
     """イベントハンドラのセットアップ
 
@@ -285,6 +456,11 @@ def setup_events(bot: commands.Bot, command_group: app_commands.Group) -> None:
     async def on_message(message: discord.Message) -> None:
         """メッセージ受信時に呼ばれるイベント"""
         await handle_message(bot, message)
+
+    @bot.event
+    async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> None:
+        """リアクション追加時に呼ばれるイベント"""
+        await handle_reaction(bot, reaction, user)
 
     @bot.tree.error
     async def on_app_command_error(

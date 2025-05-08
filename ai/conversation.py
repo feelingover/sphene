@@ -4,7 +4,7 @@ import traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, DefaultDict, Dict, List, Optional, Tuple, Type
+from typing import Any, Type
 
 import requests
 
@@ -27,7 +27,6 @@ from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
 )
 
 from ai.client import client as aiclient
@@ -48,10 +47,10 @@ MAX_CONVERSATION_AGE_MINUTES = 30
 MAX_CONVERSATION_TURNS = 10  # 往復数の上限
 
 # プロンプトのキャッシュ
-_prompt_cache: Dict[str, str] = {}
+_prompt_cache: dict[str, str] = {}
 
 
-def _load_prompt_from_s3() -> tuple[Optional[str], List[str]]:
+def _load_prompt_from_s3() -> tuple[str | None, list[str]]:
     """S3からシステムプロンプトを読み込む
 
     Returns:
@@ -82,7 +81,7 @@ def _load_prompt_from_s3() -> tuple[Optional[str], List[str]]:
 
 def _load_prompt_from_local(
     fail_on_error: bool = False,
-) -> tuple[Optional[str], List[str]]:
+) -> tuple[str | None, list[str]]:
     """ローカルファイルからシステムプロンプトを読み込む
 
     Args:
@@ -220,10 +219,10 @@ class Sphene:
             "role": "system",
             "content": system_setting,
         }
-        self.input_list: List[ChatCompletionMessageParam] = [self.system]
-        self.logs: List[ChatCompletion] = []
+        self.input_list: list[ChatCompletionMessageParam] = [self.system]
+        self.logs: list[ChatCompletion] = []
         # 会話の有効期限を設定（30分）
-        self.last_interaction: Optional[datetime] = datetime.now()
+        self.last_interaction: datetime | None = datetime.now()
         logger.info("Spheneインスタンスを初期化")
 
     def is_expired(self) -> bool:
@@ -259,7 +258,7 @@ class Sphene:
             )
 
     # エラータイプと対応するメッセージ、ログレベルをマッピング
-    _OPENAI_ERROR_HANDLERS: Dict[Type[APIError], Tuple[int, str, str]] = {
+    _OPENAI_ERROR_HANDLERS: dict[Type[APIError], tuple[int, str, str]] = {
         AuthenticationError: (
             logging.ERROR,
             "OpenAI API認証エラー: {}",
@@ -342,14 +341,14 @@ class Sphene:
         )
         return "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
 
-    def _call_openai_api(self, with_images: bool = False) -> Tuple[bool, str]:
+    def _call_openai_api(self, with_images: bool = False) -> tuple[bool, str]:
         """OpenAI APIを呼び出し、結果またはエラーメッセージを返す
 
         Args:
             with_images: 画像が含まれているかどうか
 
         Returns:
-            Tuple[bool, str]: (成功フラグ, 応答内容またはエラーメッセージ)
+            tuple[bool, str]: (成功フラグ, 応答内容またはエラーメッセージ)
         """
         try:
             # OpenAI APIにリクエストを送信
@@ -387,8 +386,8 @@ class Sphene:
             return False, "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
 
     def input_message(
-        self, input_text: Optional[str], image_urls: List[str] = None
-    ) -> Optional[str]:
+        self, input_text: str | None, image_urls: list[str] | None = None
+    ) -> str | None:
         """ユーザーからのメッセージを処理し、AIからの応答を返す
 
         Args:
@@ -396,7 +395,7 @@ class Sphene:
             image_urls: 添付画像のURLリスト
 
         Returns:
-            Optional[str]: AIからの応答、エラー時はNone
+            str | None: AIからの応答、エラー時はNone
         """
         if not isinstance(input_text, str) or not input_text.strip():
             logger.warning("受信したメッセージが無効です")
@@ -404,26 +403,35 @@ class Sphene:
 
         try:
             self.update_interaction_time()
-            with_images = bool(image_urls and len(image_urls) > 0)
-
-            # 型ガード後の変数を定義してからスライシング
-            input_str: str = input_text
+            # 型ガードを行う
+            input_str: str = input_text if isinstance(input_text, str) else ""
             preview = truncate_text(input_str)
+
+            # 画像URLリストの安全な処理
+            safe_image_urls: list[str] = (
+                image_urls if isinstance(image_urls, list) else []
+            )
+            with_images = len(safe_image_urls) > 0
 
             # 画像付きかテキストのみかでログメッセージを変更
             if with_images:
                 logger.debug(
-                    f"画像付きユーザーメッセージを受信: {preview}, 画像数: {len(image_urls)}"
+                    f"画像付きユーザーメッセージを受信: {preview}, 画像数: {len(safe_image_urls)}"
                 )
                 # 画像処理
-                processed_images = self._process_images(image_urls)
+                processed_images = self._process_images(safe_image_urls)
                 if processed_images:
                     # テキスト + 画像のマルチモーダルメッセージを作成
-                    content = [{"type": "text", "text": input_text}]
+                    # マルチモーダルコンテンツは型チェックが厳密なため明示的に無視する
+                    content: list[dict[str, Any]] = [{"type": "text", "text": input_text}]  # type: ignore
                     for img in processed_images:
-                        content.append(img)
+                        content.append(img)  # type: ignore
 
-                    user_message = {"role": "user", "content": content}
+                    # 型チェックを通すためにキャストする
+                    user_message: ChatCompletionMessageParam = {
+                        "role": "user",
+                        "content": content,  # type: ignore
+                    }
                 else:
                     # 画像処理に失敗した場合はテキストのみで処理
                     logger.warning("画像処理に失敗したため、テキストのみで処理します")
@@ -461,14 +469,14 @@ class Sphene:
             logger.critical(f"input_message処理中に予期せぬエラー: {str(e)}\n{tb_str}")
             return "ごめん！処理中に予期せぬエラーが発生しちゃった...😢"
 
-    def _process_images(self, image_urls: List[str]) -> List[Dict[str, Any]]:
+    def _process_images(self, image_urls: list[str]) -> list[dict[str, Any]]:
         """画像URLを処理してOpenAI API用のフォーマットに変換
 
         Args:
             image_urls: 画像のURLリスト
 
         Returns:
-            List[Dict[str, Any]]: OpenAI APIフォーマットの画像リスト
+            list[dict[str, Any]]: OpenAI APIフォーマットの画像リスト
         """
         processed_images = []
 
@@ -539,6 +547,6 @@ class Sphene:
 
 
 # ユーザーごとの会話インスタンスを保持する辞書
-user_conversations: DefaultDict[str, Sphene] = defaultdict(
+user_conversations: defaultdict[str, Sphene] = defaultdict(
     lambda: Sphene(system_setting=load_system_prompt())
 )

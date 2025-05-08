@@ -1,6 +1,5 @@
 import logging
 import os
-from typing import Dict
 from unittest.mock import patch
 
 from log_utils.logger import get_log_level, setup_logger
@@ -18,7 +17,7 @@ def test_get_log_level() -> None:
     assert get_log_level("") == logging.INFO
 
 
-def test_setup_logger_with_env_var(mock_env_vars: Dict[str, str]) -> None:
+def test_setup_logger_with_env_var(mock_env_vars: dict[str, str]) -> None:
     """環境変数からログレベルを取得するテスト"""
     # テストではmock_env_varsで"DEBUG"を設定済み
     with patch("config.LOG_LEVEL", "DEBUG"):
