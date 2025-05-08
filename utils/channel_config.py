@@ -197,6 +197,7 @@ class ChannelConfig:
             "behavior": "deny",  # デフォルトは全体モード
             "channels": [],
             "updated_at": datetime.now().isoformat(),
+            "translation_enabled": False,  # 翻訳機能はデフォルトOFF
         }
 
         # 初期化時のデバッグ情報
@@ -496,3 +497,28 @@ class ChannelConfig:
             return "許可チャンネルリスト"
         else:
             return "拒否チャンネルリスト"
+
+    def get_translation_enabled(self) -> bool:
+        """
+        翻訳機能が有効かどうかを取得
+
+        Returns:
+            bool: 翻訳機能が有効かどうか
+        """
+        return self.config_data.get("translation_enabled", False)
+
+    def set_translation_enabled(self, enabled: bool) -> bool:
+        """
+        翻訳機能の有効・無効を設定
+
+        Args:
+            enabled: 有効にする場合はTrue、無効にする場合はFalse
+
+        Returns:
+            bool: 設定と保存が成功したかどうか
+        """
+        self.config_data["translation_enabled"] = enabled
+        logger.info(
+            f"翻訳機能を{'有効' if enabled else '無効'}に設定: ギルドID={self.guild_id}"
+        )
+        return self.save_config()

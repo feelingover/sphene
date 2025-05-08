@@ -59,12 +59,67 @@ class ModeSelect(ui.Select):
             await interaction.response.send_message("❌ 評価モードの変更に失敗しました")
 
 
+class TranslationSelect(ui.Select):
+    """翻訳機能の有効/無効選択ドロップダウン"""
+
+    def __init__(self, guild_id: int) -> None:
+        self.guild_id = guild_id
+        options = [
+            discord.SelectOption(
+                label="有効",
+                description="国旗リアクションによる翻訳機能を有効にする",
+                value="true",
+            ),
+            discord.SelectOption(
+                label="無効",
+                description="国旗リアクションによる翻訳機能を無効にする",
+                value="false",
+            ),
+        ]
+        super().__init__(
+            placeholder="翻訳機能の状態を選択してください",
+            options=options,
+            min_values=1,
+            max_values=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """翻訳設定選択時の処理"""
+        # 保存済みのguild_idを使用
+        channel_config = config_manager.get_config(self.guild_id)
+
+        selected_value = (
+            self.values[0] == "true"
+        )  # "true" または "false" を boolean に変換
+        success = channel_config.set_translation_enabled(selected_value)
+
+        if success:
+            # 設定保存後にリストを再読み込み
+            channel_config.load_config()
+            status = "有効" if selected_value else "無効"
+            await interaction.response.send_message(
+                f"✅ 翻訳機能を「{status}」に設定しました！"
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ 翻訳機能の設定変更に失敗しました"
+            )
+
+
 class ModeView(ui.View):
     """評価モード選択ビュー"""
 
     def __init__(self, guild_id: int) -> None:
         super().__init__(timeout=60)  # 60秒でタイムアウト
         self.add_item(ModeSelect(guild_id))
+
+
+class TranslationView(ui.View):
+    """翻訳機能設定ビュー"""
+
+    def __init__(self, guild_id: int) -> None:
+        super().__init__(timeout=60)  # 60秒でタイムアウト
+        self.add_item(TranslationSelect(guild_id))
 
 
 class ClearConfirmView(ui.View):
@@ -440,6 +495,40 @@ async def cmd_reload_prompt(interaction: discord.Interaction) -> None:
         )
 
 
+async def cmd_translation(interaction: discord.Interaction) -> None:
+    """翻訳機能の有効/無効切替コマンドを処理する
+
+    Args:
+        interaction: インタラクションオブジェクト
+    """
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "❌ このコマンドはサーバー内でのみ使用できます"
+        )
+        return
+
+    # ギルド固有の設定を取得
+    guild_id = interaction.guild.id
+    channel_config = config_manager.get_config(guild_id)
+
+    # 現在の翻訳機能状態を取得
+    is_enabled = channel_config.get_translation_enabled()
+    status = "有効" if is_enabled else "無効"
+
+    # 翻訳機能の説明メッセージ
+    help_text = (
+        "🇺🇸 アメリカ国旗リアクションで英語翻訳\n"
+        "🇯🇵 日本国旗リアクションで日本語翻訳\n"
+    )
+
+    await interaction.response.send_message(
+        f"🌐 **翻訳機能**: 現在「{status}」です\n\n"
+        f"{help_text}\n"
+        "👇 設定を変更する場合は、下のメニューから選択してください",
+        view=TranslationView(guild_id),
+    )
+
+
 async def handle_command_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
 ) -> None:
@@ -546,5 +635,13 @@ def setup_commands(bot: discord.Client) -> app_commands.Group:
     @app_commands.checks.has_permissions(administrator=True)
     async def reload_prompt_command(interaction: discord.Interaction) -> None:
         await cmd_reload_prompt(interaction)
+
+    # 翻訳機能設定コマンド
+    @command_group.command(
+        name="translation", description="国旗リアクションによる翻訳機能を設定します"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def translation_command(interaction: discord.Interaction) -> None:
+        await cmd_translation(interaction)
 
     return command_group

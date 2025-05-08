@@ -57,3 +57,39 @@ async def translate_to_english(text: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"翻訳処理でエラーが発生: {str(e)}", exc_info=True)
         return None
+
+
+async def translate_to_japanese(text: str) -> Optional[str]:
+    """テキストを日本語に翻訳する
+
+    Args:
+        text: 翻訳するテキスト
+
+    Returns:
+        str: 翻訳されたテキスト、エラー時はNone
+    """
+    try:
+        logger.info(f"日本語翻訳リクエスト: {truncate_text(text)}")
+
+        # OpenAI APIで翻訳実行
+        result = aiclient.chat.completions.create(
+            model=config.OPENAI_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "あなたは翻訳者です。与えられたテキストを日本語に翻訳してください。",
+                },
+                {"role": "user", "content": text},
+            ],
+        )
+
+        translated_text = result.choices[0].message.content
+        if translated_text:
+            logger.info(f"翻訳結果: {truncate_text(translated_text)}")
+            return translated_text
+        else:
+            logger.warning("翻訳APIからの応答が空でした")
+            return None
+    except Exception as e:
+        logger.error(f"翻訳処理でエラーが発生: {str(e)}", exc_info=True)
+        return None

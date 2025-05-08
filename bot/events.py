@@ -275,29 +275,37 @@ def get_message_type(message: discord.Message) -> str:
 
 
 async def send_translation_response(
-    message: discord.Message, translated_text: str
+    message: discord.Message, translated_text: str, language_flag: str
 ) -> None:
     """メッセージタイプに応じた適切な方法で翻訳結果を送信する
 
     Args:
         message: 元のDiscordメッセージ
         translated_text: 翻訳されたテキスト、またはエラーメッセージ
+        language_flag: 言語を示す絵文字 (🇺🇸 または 🇯🇵)
     """
     message_type = get_message_type(message)
 
     if message_type == "thread" and message.thread:
         # スレッド内のメッセージの場合は、そのスレッド内に返信
-        await message.thread.send(f"🇺🇸 {translated_text}", reference=message)
+        await message.thread.send(
+            f"{language_flag} {translated_text}", reference=message
+        )
     else:
         # 通常メッセージやリプライの場合は今までどおり
-        await message.channel.send(f"🇺🇸 {translated_text}", reference=message)
+        await message.channel.send(
+            f"{language_flag} {translated_text}", reference=message
+        )
 
 
-async def translate_and_reply(message: discord.Message) -> None:
-    """メッセージを英語に翻訳してリプライする
+async def translate_and_reply(
+    message: discord.Message, target_language: str = "english"
+) -> None:
+    """メッセージを指定した言語に翻訳してリプライする
 
     Args:
         message: 翻訳対象のDiscordメッセージ
+        target_language: 翻訳先言語 ("english" または "japanese")
     """
     # メッセージ内容がなければ処理しない
     if not message.content:
@@ -315,21 +323,32 @@ async def translate_and_reply(message: discord.Message) -> None:
     message_type = get_message_type(message)
 
     logger.info(
-        f"翻訳リクエスト: タイプ={message_type}, ユーザーID={user_id}, メッセージ: {truncate_text(content)}"
+        f"{target_language}翻訳リクエスト: タイプ={message_type}, ユーザーID={user_id}, "
+        f"メッセージ: {truncate_text(content)}"
     )
 
-    # utils/text_utils.pyの翻訳関数を使用
-    from utils.text_utils import translate_to_english
+    # 言語に応じて翻訳関数とフラグを選択
+    from utils.text_utils import translate_to_english, translate_to_japanese
 
-    translated_text = await translate_to_english(content)
+    if target_language == "japanese":
+        translate_func = translate_to_japanese
+        language_flag = "🇯🇵"
+        error_message = "翻訳中にエラーが発生しました 😢"
+    else:  # デフォルトは英語
+        translate_func = translate_to_english
+        language_flag = "🇺🇸"
+        error_message = "翻訳中にエラーが発生しました 😢"
+
+    # 翻訳実行
+    translated_text = await translate_func(content)
 
     if translated_text:
         # 適切な方法で翻訳結果を送信
-        await send_translation_response(message, translated_text)
+        await send_translation_response(message, translated_text, language_flag)
         logger.info(f"翻訳結果を送信: {truncate_text(translated_text)}")
     else:
         # エラー時も同様に対応
-        await send_translation_response(message, "翻訳中にエラーが発生しました 😢")
+        await send_translation_response(message, error_message, language_flag)
         logger.warning(
             f"翻訳エラー: タイプ={message_type}, ユーザーID={user_id}, メッセージ: {truncate_text(content)}"
         )
@@ -375,13 +394,30 @@ async def handle_reaction(
             )
             return
 
-        # アメリカ国旗絵文字のチェック
+        # 翻訳機能が有効かチェック
+        translation_enabled = channel_config.get_translation_enabled()
+        if not translation_enabled:
+            logger.debug(
+                f"翻訳機能が無効のためスキップ: ギルドID={guild_id}, チャンネルID={channel_id}"
+            )
+            return
+
+        # 絵文字によって処理を分岐
         emoji_str = str(reaction.emoji)
+
+        # アメリカ国旗絵文字のチェック
         if emoji_str == "🇺🇸" or emoji_str == "flag_us":
             logger.info(
                 f"アメリカ国旗リアクション検出: ユーザーID={user.id}, メッセージID={message.id}"
             )
-            await translate_and_reply(message)
+            await translate_and_reply(message, "english")
+
+        # 日本国旗絵文字のチェック
+        elif emoji_str == "🇯🇵" or emoji_str == "flag_jp":
+            logger.info(
+                f"日本国旗リアクション検出: ユーザーID={user.id}, メッセージID={message.id}"
+            )
+            await translate_and_reply(message, "japanese")
 
     except Exception as e:
         logger.error(f"リアクション処理エラー: {str(e)}", exc_info=True)
