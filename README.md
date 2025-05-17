@@ -46,6 +46,24 @@ CHANNEL_CONFIG_PATH=channel_config.json
 DENIED_CHANNEL_IDS=
 ```
 
+### システムプロンプトの用意
+
+プロジェクトルートにある`system.txt.sample`を使用して、ボットのキャラクター設定を行います：
+
+1. ローカルストレージを使用する場合:
+   ```bash
+   # システムプロンプトをローカルストレージにコピー
+   mkdir -p storage
+   cp system.txt.sample storage/system.txt
+   # 必要に応じてsystem.txtを編集してキャラクター設定をカスタマイズ
+   ```
+
+2. S3ストレージを使用する場合:
+   ```bash
+   # AWSコマンドラインツールを使用してS3にアップロード
+   aws s3 cp system.txt.sample s3://your-bucket-name/[folder-path/]system.txt
+   ```
+
 ### 必要なパッケージのインストール
 
 ```bash
