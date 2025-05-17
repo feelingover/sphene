@@ -1,5 +1,6 @@
 .clinerules/*_local.md
 storage/*
+!storage/.gitkeep
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
