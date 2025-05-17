@@ -53,7 +53,6 @@ DENIED_CHANNEL_IDS=
 1. ローカルストレージを使用する場合:
    ```bash
    # システムプロンプトをローカルストレージにコピー
-   mkdir -p storage
    cp system.txt.sample storage/system.txt
    # 必要に応じてsystem.txtを編集してキャラクター設定をカスタマイズ
    ```
