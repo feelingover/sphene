@@ -318,7 +318,14 @@ class Sphene:
     }
 
     def _handle_openai_error(self, error: Exception) -> str:
-        """OpenAI APIエラーを処理し、ユーザーメッセージを返す"""
+        """OpenAI APIエラーを処理し、ユーザーメッセージを返す
+
+        Args:
+            error: 処理するエラー
+
+        Returns:
+            str: ユーザーに表示するエラーメッセージ
+        """
         error_body = getattr(error, "body", str(error))
         status_code = getattr(error, "status_code", None)
 
@@ -341,49 +348,84 @@ class Sphene:
         )
         return "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
 
-    def _call_openai_api(self, with_images: bool = False) -> tuple[bool, str]:
-        """OpenAI APIを呼び出し、結果またはエラーメッセージを返す
+        # ここには到達しないが、型チェックのために追加
+        # mypy向けに未到達コードだが明示的なreturnを追加
+        assert False, "到達しないコード"  # ここには絶対に到達しない
+
+    def _call_openai_api(
+        self, with_images: bool = False, max_retries: int = 2
+    ) -> tuple[bool, str]:
+        """OpenAI APIを呼び出し、必要に応じて再試行し、結果またはエラーメッセージを返す
 
         Args:
             with_images: 画像が含まれているかどうか
+            max_retries: 一時的なエラー時の最大再試行回数
 
         Returns:
             tuple[bool, str]: (成功フラグ, 応答内容またはエラーメッセージ)
         """
-        try:
-            # OpenAI APIにリクエストを送信
-            if with_images:
-                logger.info(
-                    f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}, マルチモーダル）"
+        # 再試行対象のエラータイプ
+        retry_error_types = (APIConnectionError, APITimeoutError, RateLimitError)
+
+        for attempt in range(max_retries + 1):  # 初回 + 最大再試行回数
+            try:
+                # OpenAI APIにリクエストを送信
+                if with_images:
+                    log_msg = f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}, マルチモーダル）"
+                else:
+                    log_msg = f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}, テキストのみ）"
+
+                if attempt > 0:
+                    logger.info(f"再試行 {attempt}/{max_retries}: {log_msg}")
+                else:
+                    logger.info(log_msg)
+
+                result = aiclient.chat.completions.create(
+                    model=OPENAI_MODEL, messages=self.input_list
                 )
-            else:
-                logger.info(
-                    f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}, テキストのみ）"
+                self.logs.append(result)
+
+                # 応答を処理
+                response_content = result.choices[0].message.content
+                if response_content:
+                    logger.debug(
+                        f"OpenAI APIレスポンス受信: {truncate_text(response_content)}"
+                    )
+                    return True, response_content
+                else:
+                    logger.warning("OpenAI APIからの応答が空です")
+                    return False, "ごめんね、AIからの応答が空だったみたい…🤔"
+
+            except retry_error_types as e:  # 再試行可能なエラー
+                if attempt < max_retries:
+                    # 指数バックオフ（徐々に待機時間を増やす）
+                    wait_time = (2**attempt) * 0.5  # 0.5秒, 1秒, 2秒...
+                    logger.warning(
+                        f"一時的なエラーが発生したため再試行します（{attempt + 1}/{max_retries}）: "
+                        f"{e.__class__.__name__}: {str(e)}. {wait_time}秒後に再試行"
+                    )
+
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # 再試行回数を超えた場合はエラー処理
+                    user_message = self._handle_openai_error(e)
+                    return False, user_message
+            except APIError as e:  # その他のOpenAI API関連エラー
+                user_message = self._handle_openai_error(e)
+                return False, user_message
+            except Exception as e:  # その他の予期せぬエラー
+                tb_str = traceback.format_exc()
+                logger.critical(f"API呼び出し中の予期せぬエラー: {str(e)}\n{tb_str}")
+                return (
+                    False,
+                    "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢",
                 )
 
-            result = aiclient.chat.completions.create(
-                model=OPENAI_MODEL, messages=self.input_list
-            )
-            self.logs.append(result)
-
-            # 応答を処理
-            response_content = result.choices[0].message.content
-            if response_content:
-                logger.debug(
-                    f"OpenAI APIレスポンス受信: {truncate_text(response_content)}"
-                )
-                return True, response_content
-            else:
-                logger.warning("OpenAI APIからの応答が空です")
-                return False, "ごめんね、AIからの応答が空だったみたい…🤔"
-
-        except APIError as e:  # OpenAIのAPI関連エラーをまとめてキャッチ
-            user_message = self._handle_openai_error(e)
-            return False, user_message
-        except Exception as e:  # その他の予期せぬエラー
-            tb_str = traceback.format_exc()
-            logger.critical(f"API呼び出し中の予期せぬエラー: {str(e)}\n{tb_str}")
-            return False, "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
+        # 万が一forループが終了した場合のデフォルト戻り値
+        # 理論上はここに到達することはないはずだが、型チェックを通すために追加
+        logger.error("OpenAI API呼び出しが不完全終了：全試行完了したが結果が不明")
+        return False, "ごめん！AIとの通信中に問題が発生しちゃった...😢"
 
     def input_message(
         self, input_text: str | None, image_urls: list[str] | None = None

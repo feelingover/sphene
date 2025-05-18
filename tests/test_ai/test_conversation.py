@@ -22,6 +22,7 @@ from ai.conversation import (
     MAX_CONVERSATION_AGE_MINUTES,
     MAX_CONVERSATION_TURNS,
     Sphene,
+    load_system_prompt,
     user_conversations,
 )
 
@@ -344,3 +345,153 @@ def test_user_conversations() -> None:
     another_user_id = "another_user_456"
     another_conversation = user_conversations[another_user_id]
     assert another_conversation is not conversation
+
+
+def test_load_system_prompt_edge_cases(mock_load_system_prompt: MagicMock) -> None:
+    """システムプロンプト読み込みのエッジケース"""
+    # conftest.pyで自動モックされたload_system_promptを一時的に元の実装に戻す
+    with patch("ai.conversation.load_system_prompt", side_effect=load_system_prompt):
+        # 1. ファイル内容が空の場合
+        with patch("pathlib.Path.read_text", return_value=""):
+            prompt = load_system_prompt(force_reload=True)
+            assert prompt == ""  # 空の文字列が返されることを確認
+
+        # 2. ファイルの権限エラー
+        with patch("pathlib.Path.read_text", side_effect=PermissionError("権限なし")):
+            # S3にもフォールバックできないと想定
+            with patch(
+                "ai.conversation._load_prompt_from_s3", return_value=(None, ["エラー"])
+            ):
+                prompt = load_system_prompt(force_reload=True)
+                # デフォルトプロンプトが使われることを確認
+                assert prompt == "あなたは役立つAIアシスタントです。"
+
+        # 3. S3からの読み込みが失敗し、ローカルにフォールバックする場合
+        with patch(
+            "ai.conversation._load_prompt_from_s3", return_value=(None, ["S3エラー"])
+        ):
+            with patch(
+                "ai.conversation._load_prompt_from_local",
+                return_value=("ローカルプロンプト", []),
+            ):
+                prompt = load_system_prompt(force_reload=True)
+                assert prompt == "ローカルプロンプト"
+
+
+def test_process_images_with_invalid_url() -> None:
+    """無効な画像URLの処理テスト"""
+    sphene = Sphene(system_setting="テスト")
+
+    # 完全に無効なURL
+    with patch.object(
+        sphene, "_download_and_encode_image", side_effect=Exception("無効URL")
+    ):
+        with patch("requests.head", side_effect=Exception("接続エラー")):
+            images = sphene._process_images(["https://invalid-url.xyz/img.jpg"])
+            # 処理に失敗しても安全に空リストを返すことを確認
+            assert len(images) == 0
+
+
+def test_input_message_with_mixed_images() -> None:
+    """一部が成功し一部が失敗する画像付きメッセージの処理テスト"""
+    sphene = Sphene(system_setting="テスト")
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "テスト応答"
+
+    with patch(
+        "ai.conversation.aiclient.chat.completions.create", return_value=mock_response
+    ):
+        # _process_imagesのモックを作成
+        with patch.object(sphene, "_process_images") as mock_process:
+            # 2つのうち1つだけ成功するケース
+            mock_process.return_value = [
+                {"type": "image_url", "image_url": {"url": "成功URL"}}
+            ]
+
+            # 画像付きメッセージの処理
+            response = sphene.input_message("テスト", ["成功URL", "失敗URL"])
+
+            # 画像処理が正しく行われていることを確認
+            mock_process.assert_called_once_with(["成功URL", "失敗URL"])
+
+            # 期待通りの応答が返されることを確認
+            assert response == "テスト応答"
+
+
+def test_input_message_with_non_string_input() -> None:
+    """文字列以外の入力に対する堅牢性テスト"""
+    sphene = Sphene(system_setting="テスト")
+
+    # 様々な型の不正な入力
+    invalid_inputs = [
+        123,  # 整数
+        ["テスト"],  # リスト
+        {"message": "テスト"},  # 辞書
+        0,  # ゼロ
+        False,  # ブール値
+    ]
+
+    for invalid in invalid_inputs:
+        # いずれもエラーなく処理され、Noneを返すことを確認
+        assert sphene.input_message(invalid) is None  # type: ignore
+
+
+def test_api_retry_logic(mock_openai_response: MagicMock) -> None:
+    """一時的なAPIエラーに対するリトライロジックのテスト"""
+    sphene = Sphene(system_setting="テスト")
+
+    with patch(
+        "ai.conversation.aiclient.chat.completions.create"
+    ) as mock_create, patch("time.sleep") as mock_sleep:
+        # 初回は接続エラー、2回目は成功するシナリオ
+        mock_create.side_effect = [
+            APIConnectionError(request=MagicMock()),  # 初回は接続エラー
+            mock_openai_response,  # 2回目は成功
+        ]
+
+        # リトライロジックのテスト実行
+        response = sphene.input_message("リトライテスト")
+
+        # 呼び出し回数を検証
+        assert mock_create.call_count == 2
+
+        # sleep関数が呼ばれたことを確認（指数バックオフ）
+        mock_sleep.assert_called_once()
+
+        # 最終的に成功応答が返ることを確認
+        assert response == "これはテスト応答です。"
+
+        # ユーザーメッセージおよびアシスタント応答が正しく追加されたことを確認
+        assert len(sphene.input_list) == 3  # システム + ユーザー + アシスタント
+        assert sphene.input_list[1]["role"] == "user"
+        assert sphene.input_list[2]["role"] == "assistant"
+
+
+def test_api_retry_max_exceeded(mock_openai_response: MagicMock) -> None:
+    """リトライ回数上限を超えた場合のテスト"""
+    sphene = Sphene(system_setting="テスト")
+
+    with patch(
+        "ai.conversation.aiclient.chat.completions.create"
+    ) as mock_create, patch("time.sleep") as mock_sleep:
+        # すべての呼び出しで一時的なエラーが発生するシナリオ
+        error_to_raise = APIConnectionError(request=MagicMock())
+        mock_create.side_effect = [
+            error_to_raise,
+            error_to_raise,
+            error_to_raise,
+        ]  # 初回+再試行2回すべてエラー
+
+        # リトライロジックのテスト実行
+        response = sphene.input_message("リトライ上限テスト")
+
+        # リトライ回数分（+初回）呼び出されたことを確認
+        assert mock_create.call_count == 3  # 初回 + 再試行2回
+
+        # sleepが2回呼ばれたことを確認（指数バックオフ）
+        assert mock_sleep.call_count == 2
+
+        # エラーメッセージが返されることを確認
+        assert response is not None
+        assert "AIとの接続で問題" in response  # エラーメッセージの確認
