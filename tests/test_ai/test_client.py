@@ -3,6 +3,8 @@
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import config
 from ai.client import create_client
 
@@ -55,3 +57,18 @@ def test_client_global_instance() -> None:
         from ai.client import client as existing_client
 
         assert existing_client is not None
+
+
+def test_create_client_with_api_error() -> None:
+    """APIクライアント作成時にエラーが発生した場合の動作テスト"""
+    with patch("ai.client.OpenAI") as mock_openai, patch(
+        "ai.client.logger"
+    ) as mock_logger:
+        # OpenAIのコンストラクタで例外を発生させる
+        mock_openai.side_effect = Exception("API初期化エラー")
+
+        # 例外が適切にキャッチされ、ログが出力されることを検証
+        with pytest.raises(RuntimeError):
+            create_client()
+
+        mock_logger.error.assert_called_once()
