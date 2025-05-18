@@ -350,7 +350,7 @@ class Sphene:
 
         # ここには到達しないが、型チェックのために追加
         # mypy向けに未到達コードだが明示的なreturnを追加
-        raise RuntimeError("到達しないコード")  # ここには絶対に到達しない
+        assert False, "到達しないコード"  # ここには絶対に到達しない
 
     def _call_openai_api(
         self, with_images: bool = False, max_retries: int = 2
