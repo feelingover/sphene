@@ -404,7 +404,6 @@ class Sphene:
                         f"一時的なエラーが発生したため再試行します（{attempt + 1}/{max_retries}）: "
                         f"{e.__class__.__name__}: {str(e)}. {wait_time}秒後に再試行"
                     )
-                    import time
 
                     time.sleep(wait_time)
                     continue
