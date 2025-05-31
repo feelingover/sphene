@@ -72,7 +72,6 @@ jobs:
           git log -1 --pretty=%B >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # 🤖 AI generated PR title
       - name: Generate PR title with AI
         id: ai-title
         run: |
@@ -80,8 +79,12 @@ jobs:
           IMAGE_TAG="${{ steps.extract-tag.outputs.IMAGE_TAG }}"
           
           echo "🤖 AIにPRタイトルを考えてもらっています..."
+          echo "DEBUG: Commit message: $COMMIT_MSG"
+          echo "DEBUG: Image tag: $IMAGE_TAG"
           
-          TITLE_RESPONSE=$(curl -s "https://models.github.ai/inference/chat/completions" \
+          # GitHub Models APIを呼び出し（デバッグ情報付き）
+          echo "DEBUG: Calling GitHub Models API..."
+          TITLE_RESPONSE=$(curl -s -w "HTTP_CODE:%{http_code}" "https://models.inference.ai.azure.com/chat/completions" \
              -H "Content-Type: application/json" \
              -H "Authorization: Bearer $GITHUB_TOKEN" \
              -d '{
@@ -91,11 +94,27 @@ jobs:
                      "content": "GitOpsのデプロイPRタイトルを作って。コミットメッセージ: '"$COMMIT_MSG"'、イメージタグ: '"$IMAGE_TAG"'。はてなブックマークでバズりそうな面白いタイトルを1行で。絵文字も使って！"
                   }
                ],
-               "model": "openai/gpt-4.1"
-            }' || echo '{"choices":[{"message":{"content":"🚀新イメージのデプロイリクエスト '"$IMAGE_TAG"'"}}]}')
-
-          # JSONレスポンスからタイトルを抽出
-          AI_TITLE=$(echo "$TITLE_RESPONSE" | jq -r '.choices[0].message.content // "🚀新イメージのデプロイリクエスト '"$IMAGE_TAG"'"' | head -1)
+               "model": "gpt-4.1",
+            }')
+          
+          echo "DEBUG: Raw API response:"
+          echo "$TITLE_RESPONSE"
+          
+          # HTTPステータスコードを確認
+          HTTP_CODE=$(echo "$TITLE_RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2)
+          RESPONSE_BODY=$(echo "$TITLE_RESPONSE" | sed 's/HTTP_CODE:[0-9]*$//')
+          
+          echo "DEBUG: HTTP Status: $HTTP_CODE"
+          echo "DEBUG: Response body: $RESPONSE_BODY"
+          
+          # レスポンスが正常かチェック
+          if [[ "$HTTP_CODE" == "200" ]] && echo "$RESPONSE_BODY" | jq empty 2>/dev/null; then
+            echo "✅ API call successful"
+            AI_TITLE=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content // "🚀新イメージのデプロイリクエスト '"$IMAGE_TAG"'"' | head -1)
+          else
+            echo "❌ API call failed or invalid JSON. Using fallback title."
+            AI_TITLE="🚀新イメージのデプロイリクエスト $IMAGE_TAG"
+          fi
           
           echo "Generated title: $AI_TITLE"
           echo "title<<EOF" >> $GITHUB_OUTPUT
