@@ -79,26 +79,40 @@ jobs:
           COMMIT_MSG="${{ steps.last-commit.outputs.message }}"
           IMAGE_TAG="${{ steps.extract-tag.outputs.IMAGE_TAG }}"
           
+          # コミットメッセージの改行・特殊文字をエスケープ
+          ESCAPED_COMMIT_MSG=$(echo "$COMMIT_MSG" | tr -d '\n\r' | sed 's/"/\\"/g' | sed "s/'/\\'/g")
+          ESCAPED_IMAGE_TAG=$(echo "$IMAGE_TAG" | sed 's/"/\\"/g')
+          
           echo "🤖 AIにPRタイトルを考えてもらっています..."
-          echo "DEBUG: Commit message: $COMMIT_MSG"
+          echo "DEBUG: Original commit message: $COMMIT_MSG"
+          echo "DEBUG: Escaped commit message: $ESCAPED_COMMIT_MSG"
           echo "DEBUG: Image tag: $IMAGE_TAG"
           
-          # GitHub Models APIを呼び出し（正しいヘッダー付き）
+          # JSONペイロードを構築（jqを使って安全にエスケープ）
+          JSON_PAYLOAD=$(jq -n \
+            --arg model "openai/gpt-4o" \
+            --arg content "GitOpsのデプロイPRタイトルを作って。コミットメッセージ: $ESCAPED_COMMIT_MSG、イメージタグ: $ESCAPED_IMAGE_TAG。はてなブックマークでバズりそうな面白いタイトルを1行で。絵文字も使って！" \
+            '{
+              "model": $model,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": $content
+                }
+              ]
+            }')
+          
+          echo "DEBUG: JSON Payload:"
+          echo "$JSON_PAYLOAD"
+          
+          # GitHub Models APIを呼び出し
           echo "DEBUG: Calling GitHub Models API..."
           TITLE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" "https://models.github.ai/inference/chat/completions" \
              -H "Accept: application/vnd.github+json" \
              -H "Authorization: Bearer $GITHUB_TOKEN" \
              -H "X-GitHub-Api-Version: 2022-11-28" \
              -H "Content-Type: application/json" \
-             -d '{
-              "model": "openai/gpt-4o",
-              "messages": [
-                  {
-                     "role": "user",
-                     "content": "GitOpsのデプロイPRタイトルを作って。コミットメッセージ: '"$COMMIT_MSG"'、イメージタグ: '"$IMAGE_TAG"'。はてなブックマークでバズりそうな面白いタイトルを1行で。絵文字も使って！"
-                  }
-               ]
-            }')
+             -d "$JSON_PAYLOAD")
           
           echo "DEBUG: Raw API response:"
           echo "$TITLE_RESPONSE"
