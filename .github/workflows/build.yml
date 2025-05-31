@@ -20,6 +20,7 @@ jobs:
         packages: write
         attestations: write
         id-token: write
+        models: read
 
     steps:
 
@@ -70,7 +71,69 @@ jobs:
           echo "message<<EOF" >> $GITHUB_OUTPUT
           git log -1 --pretty=%B >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
+      # 🤖 AI generated PR title
+      - name: Generate PR title with AI
+        id: ai-title
+        run: |
+          COMMIT_MSG="${{ steps.last-commit.outputs.message }}"
+          IMAGE_TAG="${{ steps.extract-tag.outputs.IMAGE_TAG }}"
           
+          echo "🤖 AIにPRタイトルを考えてもらっています..."
+          
+          TITLE_RESPONSE=$(curl -s "https://models.github.ai/inference/chat/completions" \
+             -H "Content-Type: application/json" \
+             -H "Authorization: Bearer $GITHUB_TOKEN" \
+             -d '{
+              "messages": [
+                  {
+                     "role": "user",
+                     "content": "GitOpsのデプロイPRタイトルを作って。コミットメッセージ: '"$COMMIT_MSG"'、イメージタグ: '"$IMAGE_TAG"'。はてなブックマークでバズりそうな面白いタイトルを1行で。絵文字も使って！"
+                  }
+               ],
+               "model": "openai/gpt-4.1"
+            }' || echo '{"choices":[{"message":{"content":"🚀新イメージのデプロイリクエスト '"$IMAGE_TAG"'"}}]}')
+
+          # JSONレスポンスからタイトルを抽出
+          AI_TITLE=$(echo "$TITLE_RESPONSE" | jq -r '.choices[0].message.content // "🚀新イメージのデプロイリクエスト '"$IMAGE_TAG"'"' | head -1)
+          
+          echo "Generated title: $AI_TITLE"
+          echo "title<<EOF" >> $GITHUB_OUTPUT
+          echo "$AI_TITLE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # 🤖 AI generated PR body
+      - name: Generate PR body with AI
+        id: ai-body
+        run: |
+          COMMIT_MSG="${{ steps.last-commit.outputs.message }}"
+          IMAGE_TAG="${{ steps.extract-tag.outputs.IMAGE_TAG }}"
+          BUILD_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          echo "🤖 AIにPR説明文を考えてもらっています..."
+          
+          BODY_RESPONSE=$(curl -s "https://models.github.ai/inference/chat/completions" \
+             -H "Content-Type: application/json" \
+             -H "Authorization: Bearer $GITHUB_TOKEN" \
+             -d '{
+              "messages": [
+                  {
+                     "role": "user",
+                     "content": "GitOpsのデプロイPRの説明文をマークダウンで作って。楽しい感じで！\n\nコミット内容: '"$COMMIT_MSG"'\nイメージタグ: '"$IMAGE_TAG"'\nビルドURL: '"$BUILD_URL"'\n\n以下の情報を含めてね:\n- 🏷️ イメージタグ\n- 📝 変更内容\n- 🔨 ビルドリンク\n- マージボタンを押してもらうお願い\n\n毎回違うテンションで書いて！"
+                  }
+               ],
+               "model": "openai/gpt-4.1"
+            }' || echo '{"choices":[{"message":{"content":"### ＼ﾜｧｰｲヽ(♡´∀`)ﾉ♡／ 新しいイメージがきたよ！\n\n🚀 マージしたら本番環境にデプロイされちゃうからね！\n\n#### 📝 更新内容\n- '"$COMMIT_MSG"'\n- 🏷️ イメージタグ: `'"$IMAGE_TAG"'`\n- 🔨 ビルド: '"$BUILD_URL"'\n\n問題なさそうだったらマージボタン押しちゃって〜！"}}]}')
+
+          # JSONレスポンスから本文を抽出
+          AI_BODY=$(echo "$BODY_RESPONSE" | jq -r '.choices[0].message.content // "### 新しいイメージがきたよ！\n\n🚀 マージしたら本番環境にデプロイされます！\n\n#### 📝 更新内容\n- '"$COMMIT_MSG"'\n- 🏷️ イメージタグ: `'"$IMAGE_TAG"'`\n- 🔨 ビルド: '"$BUILD_URL"'"')
+          
+          echo "Generated body:"
+          echo "$AI_BODY"
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$AI_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Checkout infrastructure repository
         uses: actions/checkout@v4
         with:
@@ -88,23 +151,12 @@ jobs:
           sed -i -e "s|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}|g" $DEPLOYMENT_FILE
           
 
-      - name: Create Pull Request
+      - name: Create Pull Request with AI-generated content
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.PAT_TOKEN }}
           path: infra
           commit-message: Update image to ${{ steps.extract-tag.outputs.IMAGE_TAG }}
           branch: update-image-${{ steps.extract-tag.outputs.IMAGE_TAG }}
-          title: 🚀新イメージのデプロイリクエスト ${{ steps.extract-tag.outputs.IMAGE_TAG }}
-          body: |
-            ### ＼ﾜｧｰｲヽ(♡´∀`)ﾉ♡／ 新しいイメージがきたよ！
-
-            🚀 マージしたら本番環境にデプロイされちゃうからね！
-            ちょっと確認してみてね〜！
-
-            #### 📝 更新内容とか
-            - ${{ steps.last-commit.outputs.message }}
-            - 🏷️ 新しいイメージタグ: `${{ steps.extract-tag.outputs.IMAGE_TAG }}`
-            - 🔨 ビルドの様子: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            問題なさそうだったらマージボタン押しちゃって〜！(๑˃̵ᴗ˂̵)و
+          title: ${{ steps.ai-title.outputs.title }}
+          body: ${{ steps.ai-body.outputs.body }}
