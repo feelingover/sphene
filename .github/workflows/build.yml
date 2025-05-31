@@ -118,18 +118,26 @@ jobs:
           echo "$TITLE_RESPONSE"
           
           # HTTPステータスコードを確認
-          HTTP_CODE=$(echo "$TITLE_RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | tail -1 | cut -d: -f2)
-          RESPONSE_BODY=$(echo "$TITLE_RESPONSE" | sed 's/\nHTTP_CODE:[0-9]*$//')
+          HTTP_CODE=$(echo "$TITLE_RESPONSE" | grep "HTTP_CODE:" | tail -1 | cut -d: -f2)
+          RESPONSE_BODY=$(echo "$TITLE_RESPONSE" | sed '/HTTP_CODE:/d')
           
           echo "DEBUG: HTTP Status: $HTTP_CODE"
-          echo "DEBUG: Response body: $RESPONSE_BODY"
+          echo "DEBUG: Response body length: $(echo "$RESPONSE_BODY" | wc -c)"
           
-          # レスポンスが正常かチェック
-          if [[ "$HTTP_CODE" == "200" ]] && echo "$RESPONSE_BODY" | jq empty 2>/dev/null; then
-            echo "✅ API call successful"
-            AI_TITLE=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content // "🚀新イメージのデプロイリクエスト '"$IMAGE_TAG"'"' | head -1)
+          # レスポンスが正常かチェック（詳細なデバッグ付き）
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ HTTP Status is 200, checking JSON validity..."
+            if echo "$RESPONSE_BODY" | jq empty 2>/dev/null; then
+              echo "✅ JSON is valid, extracting content..."
+              AI_TITLE=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content // "🚀新イメージのデプロイリクエスト '"$IMAGE_TAG"'"' | head -1)
+              echo "✅ API call successful!"
+            else
+              echo "❌ JSON validation failed:"
+              echo "$RESPONSE_BODY" | jq empty 2>&1 || true
+              AI_TITLE="🚀新イメージのデプロイリクエスト $IMAGE_TAG"
+            fi
           else
-            echo "❌ API call failed (Status: $HTTP_CODE) or invalid JSON. Using fallback title."
+            echo "❌ API call failed (Status: $HTTP_CODE). Using fallback title."
             AI_TITLE="🚀新イメージのデプロイリクエスト $IMAGE_TAG"
           fi
           
@@ -146,23 +154,54 @@ jobs:
           IMAGE_TAG="${{ steps.extract-tag.outputs.IMAGE_TAG }}"
           BUILD_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           
+          # 改行・特殊文字をエスケープ
+          ESCAPED_COMMIT_MSG=$(echo "$COMMIT_MSG" | tr -d '\n\r' | sed 's/"/\\"/g' | sed "s/'/\\'/g")
+          
           echo "🤖 AIにPR説明文を考えてもらっています..."
           
-          BODY_RESPONSE=$(curl -s "https://models.github.ai/inference/chat/completions" \
-             -H "Content-Type: application/json" \
-             -H "Authorization: Bearer $GITHUB_TOKEN" \
-             -d '{
+          # JSONペイロードを構築
+          JSON_PAYLOAD=$(jq -n \
+            --arg model "openai/gpt-4o" \
+            --arg content "GitOpsのデプロイPRの説明文をマークダウンで作って。楽しい感じで！\n\nコミット内容: $ESCAPED_COMMIT_MSG\nイメージタグ: $IMAGE_TAG\nビルドURL: $BUILD_URL\n\n以下の情報を含めてね:\n- 🏷️ イメージタグ\n- 📝 変更内容\n- 🔨 ビルドリンク\n- マージボタンを押してもらうお願い\n\n毎回違うテンションで書いて！" \
+            '{
+              "model": $model,
               "messages": [
-                  {
-                     "role": "user",
-                     "content": "GitOpsのデプロイPRの説明文をマークダウンで作って。楽しい感じで！\n\nコミット内容: '"$COMMIT_MSG"'\nイメージタグ: '"$IMAGE_TAG"'\nビルドURL: '"$BUILD_URL"'\n\n以下の情報を含めてね:\n- 🏷️ イメージタグ\n- 📝 変更内容\n- 🔨 ビルドリンク\n- マージボタンを押してもらうお願い\n\n毎回違うテンションで書いて！"
-                  }
-               ],
-               "model": "openai/gpt-4.1"
-            }' || echo '{"choices":[{"message":{"content":"### ＼ﾜｧｰｲヽ(♡´∀`)ﾉ♡／ 新しいイメージがきたよ！\n\n🚀 マージしたら本番環境にデプロイされちゃうからね！\n\n#### 📝 更新内容\n- '"$COMMIT_MSG"'\n- 🏷️ イメージタグ: `'"$IMAGE_TAG"'`\n- 🔨 ビルド: '"$BUILD_URL"'\n\n問題なさそうだったらマージボタン押しちゃって〜！"}}]}')
+                {
+                  "role": "user",
+                  "content": $content
+                }
+              ]
+            }')
 
-          # JSONレスポンスから本文を抽出
-          AI_BODY=$(echo "$BODY_RESPONSE" | jq -r '.choices[0].message.content // "### 新しいイメージがきたよ！\n\n🚀 マージしたら本番環境にデプロイされます！\n\n#### 📝 更新内容\n- '"$COMMIT_MSG"'\n- 🏷️ イメージタグ: `'"$IMAGE_TAG"'`\n- 🔨 ビルド: '"$BUILD_URL"'"')
+          BODY_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" "https://models.github.ai/inference/chat/completions" \
+             -H "Accept: application/vnd.github+json" \
+             -H "Authorization: Bearer $GITHUB_TOKEN" \
+             -H "X-GitHub-Api-Version: 2022-11-28" \
+             -H "Content-Type: application/json" \
+             -d "$JSON_PAYLOAD")
+
+          # HTTPステータスコードを確認
+          HTTP_CODE=$(echo "$BODY_RESPONSE" | grep "HTTP_CODE:" | tail -1 | cut -d: -f2)
+          RESPONSE_BODY=$(echo "$BODY_RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          echo "DEBUG: Body API Status: $HTTP_CODE"
+          
+          # レスポンスが正常かチェック
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Body HTTP Status is 200, checking JSON validity..."
+            if echo "$RESPONSE_BODY" | jq empty 2>/dev/null; then
+              echo "✅ Body JSON is valid, extracting content..."
+              AI_BODY=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content // "### 新しいイメージがきたよ！\n\n🚀 マージしたら本番環境にデプロイされます！\n\n#### 📝 更新内容\n- '"$ESCAPED_COMMIT_MSG"'\n- 🏷️ イメージタグ: `'"$IMAGE_TAG"'`\n- 🔨 ビルド: '"$BUILD_URL"'"')
+              echo "✅ Body API call successful!"
+            else
+              echo "❌ Body JSON validation failed:"
+              echo "$RESPONSE_BODY" | jq empty 2>&1 || true
+              AI_BODY="### 新しいイメージがきたよ！\n\n🚀 マージしたら本番環境にデプロイされます！\n\n#### 📝 更新内容\n- $ESCAPED_COMMIT_MSG\n- 🏷️ イメージタグ: \`$IMAGE_TAG\`\n- 🔨 ビルド: $BUILD_URL\n\n問題なさそうだったらマージボタン押しちゃって〜！"
+            fi
+          else
+            echo "❌ Body API call failed (Status: $HTTP_CODE). Using fallback body."
+            AI_BODY="### 新しいイメージがきたよ！\n\n🚀 マージしたら本番環境にデプロイされます！\n\n#### 📝 更新内容\n- $ESCAPED_COMMIT_MSG\n- 🏷️ イメージタグ: \`$IMAGE_TAG\`\n- 🔨 ビルド: $BUILD_URL\n\n問題なさそうだったらマージボタン押しちゃって〜！"
+          fi
           
           echo "Generated body:"
           echo "$AI_BODY"
