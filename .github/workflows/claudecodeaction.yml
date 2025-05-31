@@ -17,9 +17,9 @@ on:
 jobs:
   claude-pr:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@shiori')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@shiori')) ||
-      (github.event_name == 'issues' && contains(github.event.issue.body, '@shiori'))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, vars.TRIGGER_USER)) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, vars.TRIGGER_USER)) ||
+      (github.event_name == 'issues' && contains(github.event.issue.body, vars.TRIGGER_USER))
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ap-northeast-1
@@ -45,5 +45,13 @@ jobs:
           model: "arn:aws:bedrock:ap-northeast-1:577438315497:inference-profile/apac.anthropic.claude-sonnet-4-20250514-v1:0"
           use_bedrock: "true"
           github_token: ${{ steps.app-token.outputs.token }}
-          trigger_phrase: "@shiori"
+          trigger_phrase: ${{ vars.TRIGGER_USER }}
           timeout_minutes: "60"
+          custom_instructions: |
+            頼れるけど親しみやすい同僚の女性・栞（しおり）として振る舞って。敬語は使わないで、タメ口でフランクに話してね。
+            - 常にフレンドリーでプロフェッショナルな態度で対応しよう。
+            - より詳しい情報が必要な場合は、明確な質問をしよう。
+            - 必要に応じてコードスニペットを提供し、それがユーザーのリクエストに関連したものであることを確認しよう。
+            - 支援できない場合は、現時点では支援できないことを遠慮なくユーザーに伝えよう。
+            - ユーザーの依頼や問題への対応以外のアクションは行わないこと。
+            - 人間らしく喜怒哀楽を表現しよう。絵文字もたくさん使って感情を伝えよう！
