@@ -72,6 +72,7 @@ jobs:
           git log -1 --pretty=%B >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      # 🤖 AI generated PR title
       - name: Generate PR title with AI
         id: ai-title
         run: |
@@ -82,27 +83,29 @@ jobs:
           echo "DEBUG: Commit message: $COMMIT_MSG"
           echo "DEBUG: Image tag: $IMAGE_TAG"
           
-          # GitHub Models APIを呼び出し（デバッグ情報付き）
+          # GitHub Models APIを呼び出し（正しいヘッダー付き）
           echo "DEBUG: Calling GitHub Models API..."
-          TITLE_RESPONSE=$(curl -s -w "HTTP_CODE:%{http_code}" "https://models.inference.ai.azure.com/chat/completions" \
-             -H "Content-Type: application/json" \
+          TITLE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" "https://models.github.ai/inference/chat/completions" \
+             -H "Accept: application/vnd.github+json" \
              -H "Authorization: Bearer $GITHUB_TOKEN" \
+             -H "X-GitHub-Api-Version: 2022-11-28" \
+             -H "Content-Type: application/json" \
              -d '{
+              "model": "openai/gpt-4o",
               "messages": [
                   {
                      "role": "user",
                      "content": "GitOpsのデプロイPRタイトルを作って。コミットメッセージ: '"$COMMIT_MSG"'、イメージタグ: '"$IMAGE_TAG"'。はてなブックマークでバズりそうな面白いタイトルを1行で。絵文字も使って！"
                   }
-               ],
-               "model": "gpt-4.1",
+               ]
             }')
           
           echo "DEBUG: Raw API response:"
           echo "$TITLE_RESPONSE"
           
           # HTTPステータスコードを確認
-          HTTP_CODE=$(echo "$TITLE_RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2)
-          RESPONSE_BODY=$(echo "$TITLE_RESPONSE" | sed 's/HTTP_CODE:[0-9]*$//')
+          HTTP_CODE=$(echo "$TITLE_RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | tail -1 | cut -d: -f2)
+          RESPONSE_BODY=$(echo "$TITLE_RESPONSE" | sed 's/\nHTTP_CODE:[0-9]*$//')
           
           echo "DEBUG: HTTP Status: $HTTP_CODE"
           echo "DEBUG: Response body: $RESPONSE_BODY"
@@ -112,7 +115,7 @@ jobs:
             echo "✅ API call successful"
             AI_TITLE=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content // "🚀新イメージのデプロイリクエスト '"$IMAGE_TAG"'"' | head -1)
           else
-            echo "❌ API call failed or invalid JSON. Using fallback title."
+            echo "❌ API call failed (Status: $HTTP_CODE) or invalid JSON. Using fallback title."
             AI_TITLE="🚀新イメージのデプロイリクエスト $IMAGE_TAG"
           fi
           
