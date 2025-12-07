@@ -84,13 +84,10 @@ jobs:
           ESCAPED_IMAGE_TAG=$(echo "$IMAGE_TAG" | sed 's/"/\\"/g')
           
           echo "🤖 AIにPRタイトルを考えてもらっています..."
-          echo "DEBUG: Original commit message: $COMMIT_MSG"
-          echo "DEBUG: Escaped commit message: $ESCAPED_COMMIT_MSG"
-          echo "DEBUG: Image tag: $IMAGE_TAG"
           
           # JSONペイロードを構築（jqを使って安全にエスケープ）
           JSON_PAYLOAD=$(jq -n \
-            --arg model "openai/gpt-4o" \
+            --arg model "openai/gpt-4.1" \
             --arg content "GitOpsのデプロイPRタイトルを作って。コミットメッセージ: $ESCAPED_COMMIT_MSG、イメージタグ: $ESCAPED_IMAGE_TAG。はてなブックマークでバズりそうな面白いタイトルを1行で。絵文字も使って！" \
             '{
               "model": $model,
@@ -101,9 +98,6 @@ jobs:
                 }
               ]
             }')
-          
-          echo "DEBUG: JSON Payload:"
-          echo "$JSON_PAYLOAD"
           
           # GitHub Models APIを呼び出し
           echo "DEBUG: Calling GitHub Models API..."
@@ -120,9 +114,6 @@ jobs:
           # HTTPステータスコードを確認
           HTTP_CODE=$(echo "$TITLE_RESPONSE" | grep "HTTP_CODE:" | tail -1 | cut -d: -f2)
           RESPONSE_BODY=$(echo "$TITLE_RESPONSE" | sed '/HTTP_CODE:/d')
-          
-          echo "DEBUG: HTTP Status: $HTTP_CODE"
-          echo "DEBUG: Response body length: $(echo "$RESPONSE_BODY" | wc -c)"
           
           # レスポンスが正常かチェック（詳細なデバッグ付き）
           if [[ "$HTTP_CODE" == "200" ]]; then
@@ -161,7 +152,7 @@ jobs:
           
           # JSONペイロードを構築
           JSON_PAYLOAD=$(jq -n \
-            --arg model "openai/gpt-4o" \
+            --arg model "openai/gpt-4.1" \
             --arg content "GitOpsのデプロイPRの説明文をマークダウンで作って。楽しい感じで！\n\nコミット内容: $ESCAPED_COMMIT_MSG\nイメージタグ: $IMAGE_TAG\nビルドURL: $BUILD_URL\n\n以下の情報を含めてね:\n- 🏷️ イメージタグ\n- 📝 変更内容\n- 🔨 ビルドリンク\n- マージボタンを押してもらうお願い\n\n毎回違うテンションで書いて！" \
             '{
               "model": $model,
@@ -183,8 +174,6 @@ jobs:
           # HTTPステータスコードを確認
           HTTP_CODE=$(echo "$BODY_RESPONSE" | grep "HTTP_CODE:" | tail -1 | cut -d: -f2)
           RESPONSE_BODY=$(echo "$BODY_RESPONSE" | sed '/HTTP_CODE:/d')
-          
-          echo "DEBUG: Body API Status: $HTTP_CODE"
           
           # レスポンスが正常かチェック
           if [[ "$HTTP_CODE" == "200" ]]; then
