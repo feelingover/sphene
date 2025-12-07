@@ -354,7 +354,7 @@ def test_load_system_prompt_edge_cases(mock_load_system_prompt: MagicMock) -> No
         # 1. ファイル内容が空の場合
         with patch("pathlib.Path.read_text", return_value=""):
             prompt = load_system_prompt(force_reload=True)
-            assert prompt == ""  # 空の文字列が返されることを確認
+            assert prompt == "あなたは役立つAIアシスタントです。"  # デフォルトプロンプトが返されることを確認
 
         # 2. ファイルの権限エラー
         with patch("pathlib.Path.read_text", side_effect=PermissionError("権限なし")):

@@ -21,26 +21,40 @@ def truncate_text(text: str, max_length: int = PREVIEW_LENGTH) -> str:
     return text[:max_length] + "..." if len(text) > max_length else text
 
 
-async def translate_to_english(text: str) -> str | None:
-    """テキストを英語に翻訳する
+async def translate_text(text: str, target_language: str = "english") -> str | None:
+    """テキストを指定された言語に翻訳する
 
     Args:
         text: 翻訳するテキスト
+        target_language: 翻訳先の言語 ("english" または "japanese")
 
     Returns:
-        str: 翻訳されたテキスト、エラー時はNone
+        str | None: 翻訳されたテキスト、エラー時はNone
     """
-    try:
-        logger.info(f"英語翻訳リクエスト: {truncate_text(text)}")
+    language_configs = {
+        "english": {
+            "system_prompt": "あなたは翻訳者です。与えられたテキストを英語に翻訳してください。",
+            "log_prefix": "英語",
+        },
+        "japanese": {
+            "system_prompt": "あなたは翻訳者です。与えられたテキストを日本語に翻訳してください。",
+            "log_prefix": "日本語",
+        },
+    }
 
-        # OpenAI APIで翻訳実行
+    if target_language not in language_configs:
+        logger.error(f"サポートされていない言語: {target_language}")
+        return None
+
+    config_data = language_configs[target_language]
+
+    try:
+        logger.info(f"{config_data['log_prefix']}翻訳リクエスト: {truncate_text(text)}")
+
         result = aiclient.chat.completions.create(
             model=config.OPENAI_MODEL,
             messages=[
-                {
-                    "role": "system",
-                    "content": "あなたは翻訳者です。与えられたテキストを英語に翻訳してください。",
-                },
+                {"role": "system", "content": config_data["system_prompt"]},
                 {"role": "user", "content": text},
             ],
         )
@@ -55,6 +69,18 @@ async def translate_to_english(text: str) -> str | None:
     except Exception as e:
         logger.error(f"翻訳処理でエラーが発生: {str(e)}", exc_info=True)
         return None
+
+
+async def translate_to_english(text: str) -> str | None:
+    """テキストを英語に翻訳する
+
+    Args:
+        text: 翻訳するテキスト
+
+    Returns:
+        str | None: 翻訳されたテキスト、エラー時はNone
+    """
+    return await translate_text(text, "english")
 
 
 async def translate_to_japanese(text: str) -> str | None:
@@ -64,30 +90,6 @@ async def translate_to_japanese(text: str) -> str | None:
         text: 翻訳するテキスト
 
     Returns:
-        str: 翻訳されたテキスト、エラー時はNone
+        str | None: 翻訳されたテキスト、エラー時はNone
     """
-    try:
-        logger.info(f"日本語翻訳リクエスト: {truncate_text(text)}")
-
-        # OpenAI APIで翻訳実行
-        result = aiclient.chat.completions.create(
-            model=config.OPENAI_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "あなたは翻訳者です。与えられたテキストを日本語に翻訳してください。",
-                },
-                {"role": "user", "content": text},
-            ],
-        )
-
-        translated_text = result.choices[0].message.content
-        if translated_text:
-            logger.info(f"翻訳結果: {truncate_text(translated_text)}")
-            return translated_text
-        else:
-            logger.warning("翻訳APIからの応答が空でした")
-            return None
-    except Exception as e:
-        logger.error(f"翻訳処理でエラーが発生: {str(e)}", exc_info=True)
-        return None
+    return await translate_text(text, "japanese")

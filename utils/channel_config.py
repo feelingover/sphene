@@ -138,7 +138,7 @@ class ChannelConfigManager:
                 return True
             return True  # ファイルが存在しなくても成功とみなす
         except Exception as e:
-            logger.error(f"ギルド設定ファイル削除エラー: {str(e)}")
+            logger.error(f"ギルド設定ファイル削除エラー: {str(e)}", exc_info=True)
             return False
 
     def _delete_s3_file(self, guild_id: str) -> bool:
@@ -166,7 +166,7 @@ class ChannelConfigManager:
             logger.info(f"S3ギルド設定ファイル削除: {file_key}")
             return True
         except Exception as e:
-            logger.error(f"S3ギルド設定ファイル削除エラー: {str(e)}")
+            logger.error(f"S3ギルド設定ファイル削除エラー: {str(e)}", exc_info=True)
             return False
 
 
@@ -287,7 +287,7 @@ class ChannelConfig:
             else:
                 return self._save_to_local()
         except Exception as e:
-            logger.error(f"チャンネル設定の保存に失敗しました: {str(e)}")
+            logger.error(f"チャンネル設定の保存に失敗しました: {str(e)}", exc_info=True)
             return False
 
     def _save_to_local(self) -> bool:
@@ -301,7 +301,7 @@ class ChannelConfig:
                 json.dump(self.config_data, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
-            logger.error(f"ローカルファイルへの保存に失敗: {str(e)}")
+            logger.error(f"ローカルファイルへの保存に失敗: {str(e)}", exc_info=True)
             return False
 
     def _save_to_s3(self) -> bool:
@@ -321,7 +321,7 @@ class ChannelConfig:
             )
             return True
         except Exception as e:
-            logger.error(f"S3への保存に失敗: {str(e)}")
+            logger.error(f"S3への保存に失敗: {str(e)}", exc_info=True)
             return False
 
     def get_behavior(self) -> str:
@@ -377,14 +377,24 @@ class ChannelConfig:
         return False
 
     def can_bot_speak(self, channel_id: int) -> bool:
-        """
-        指定のチャンネルでボットが発言可能かどうかをチェック
+        """指定のチャンネルでボットが発言可能かどうかをチェック
+
+        評価モード（behavior）とチャンネルリストの組み合わせで判定:
+        - 限定モード（allow）: リストに含まれるチャンネルでのみ発言可能
+        - 全体モード（deny）: リストに含まれないチャンネルでのみ発言可能
 
         Args:
-            channel_id: チャンネルID
+            channel_id: チェック対象のチャンネルID
 
         Returns:
-            bool: ボットが発言可能かどうか
+            bool: ボットが発言可能な場合True、それ以外False
+
+        Example:
+            >>> config = ChannelConfig(guild_id="123")
+            >>> config.set_behavior("allow")
+            >>> config.add_channel(456, "general")
+            >>> config.can_bot_speak(456)  # True
+            >>> config.can_bot_speak(789)  # False
         """
         behavior = self.get_behavior()
         in_list = self.is_channel_in_list(channel_id)

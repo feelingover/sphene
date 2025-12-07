@@ -129,7 +129,7 @@ async def process_conversation(
 config_manager = ChannelConfigManager.get_instance()
 
 
-async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
+async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
     """メッセージ受信イベントの処理
 
     Args:
@@ -191,8 +191,8 @@ async def handle_message(bot: commands.Bot, message: discord.Message) -> None:
             await process_conversation(message, question, is_reply, images)
 
     except Exception as e:
-        logger.error(f"エラー発生: {str(e)}", exc_info=True)
-        await message.channel.send(f"ごめん！エラーが発生しちゃった...😢: {str(e)}")
+        logger.error(f"メッセージ処理中にエラー発生: {str(e)}", exc_info=True)
+        await message.channel.send("ごめん！メッセージ処理中にエラーが発生しちゃった...😢")
 
 
 async def _handle_on_ready(
@@ -352,7 +352,7 @@ async def translate_and_reply(
         )
 
 
-async def handle_reaction(
+async def _handle_reaction(
     bot: commands.Bot, reaction: discord.Reaction, user: discord.User
 ) -> None:
     """リアクション追加時の処理
@@ -455,12 +455,12 @@ def setup_events(bot: commands.Bot, command_group: app_commands.Group) -> None:
     @bot.event
     async def on_message(message: discord.Message) -> None:
         """メッセージ受信時に呼ばれるイベント"""
-        await handle_message(bot, message)
+        await _handle_message(bot, message)
 
     @bot.event
     async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> None:
         """リアクション追加時に呼ばれるイベント"""
-        await handle_reaction(bot, reaction, user)
+        await _handle_reaction(bot, reaction, user)
 
     @bot.tree.error
     async def on_app_command_error(

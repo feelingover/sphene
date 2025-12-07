@@ -1,5 +1,6 @@
 import base64
 import logging
+import time
 import traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -122,26 +123,18 @@ def _load_prompt_from_local(
     return prompt_content, errors
 
 
-def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) -> str:
-    """システムプロンプトをファイルから読み込む
-    初回のみストレージからロードし、以降はキャッシュから取得する
+def _load_prompt_with_fallback(fail_on_error: bool) -> str | None:
+    """S3→ローカルのフォールバックでプロンプトを読み込む
 
     Args:
-        force_reload: キャッシュを無視して強制的に再読込する場合はTrue
         fail_on_error: 読み込みに失敗した場合に例外をスローするかどうか
 
     Returns:
-        str: システムプロンプトの内容
+        str | None: プロンプト内容、読み込み失敗時はNone
 
     Raises:
         RuntimeError: fail_on_error=Trueで読み込みに失敗した場合
     """
-    # キャッシュがあり、強制再読込でない場合はキャッシュから返す
-    if SYSTEM_PROMPT_FILENAME in _prompt_cache and not force_reload:
-        logger.info(f"キャッシュからシステムプロンプト利用: {SYSTEM_PROMPT_FILENAME}")
-        return _prompt_cache[SYSTEM_PROMPT_FILENAME]
-
-    # ストレージからプロンプトを読み込む
     prompt_content = None
     errors = []
 
@@ -166,22 +159,49 @@ def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) 
         logger.error(error_msg)
         raise RuntimeError(f"{error_msg}: {'; '.join(errors)}")
 
-    # prompt_contentがNoneの場合はデフォルト値を設定
-    if prompt_content is None:
-        prompt_content = "あなたは役立つAIアシスタントです。"
+    return prompt_content
+
+
+def _get_default_prompt() -> str:
+    """デフォルトプロンプトを取得
+
+    Returns:
+        str: デフォルトプロンプト
+    """
+    return "あなたは役立つAIアシスタントです。"
+
+
+def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) -> str:
+    """システムプロンプトをファイルから読み込む
+    初回のみストレージからロードし、以降はキャッシュから取得する
+
+    Args:
+        force_reload: キャッシュを無視して強制的に再読込する場合はTrue
+        fail_on_error: 読み込みに失敗した場合に例外をスローするかどうか
+
+    Returns:
+        str: システムプロンプトの内容
+
+    Raises:
+        RuntimeError: fail_on_error=Trueで読み込みに失敗した場合
+    """
+    # キャッシュがあり、強制再読込でない場合はキャッシュから返す
+    if SYSTEM_PROMPT_FILENAME in _prompt_cache and not force_reload:
+        logger.info(f"キャッシュからシステムプロンプト利用: {SYSTEM_PROMPT_FILENAME}")
+        return _prompt_cache[SYSTEM_PROMPT_FILENAME]
+
+    # プロンプト読み込み（フォールバック付き）
+    prompt_content = _load_prompt_with_fallback(fail_on_error)
+
+    # デフォルトフォールバック
+    if not prompt_content:
+        prompt_content = _get_default_prompt()
         logger.info("デフォルトプロンプトを使用")
 
-    # この時点でprompt_contentは必ずstr型なので、明示的に型を保証
-    final_prompt: str = (
-        prompt_content
-        if prompt_content is not None
-        else "あなたは役立つAIアシスタントです。"
-    )
-
     # キャッシュに保存
-    _prompt_cache[SYSTEM_PROMPT_FILENAME] = final_prompt
+    _prompt_cache[SYSTEM_PROMPT_FILENAME] = prompt_content
 
-    return final_prompt
+    return prompt_content
 
 
 def reload_system_prompt(fail_on_error: bool = False) -> bool:
@@ -348,21 +368,26 @@ class Sphene:
         )
         return "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
 
-        # ここには到達しないが、型チェックのために追加
-        # mypy向けに未到達コードだが明示的なreturnを追加
-        assert False, "到達しないコード"  # ここには絶対に到達しない
-
     def _call_openai_api(
         self, with_images: bool = False, max_retries: int = 2
     ) -> tuple[bool, str]:
         """OpenAI APIを呼び出し、必要に応じて再試行し、結果またはエラーメッセージを返す
 
+        一時的なエラー（接続エラー、タイムアウト、レート制限）の場合は
+        指数バックオフで自動的に再試行します。
+
         Args:
-            with_images: 画像が含まれているかどうか
-            max_retries: 一時的なエラー時の最大再試行回数
+            with_images: 画像が含まれているかどうか（マルチモーダルリクエスト）
+            max_retries: 一時的なエラー時の最大再試行回数（デフォルト: 2）
 
         Returns:
             tuple[bool, str]: (成功フラグ, 応答内容またはエラーメッセージ)
+                - 成功時: (True, AI応答テキスト)
+                - 失敗時: (False, ユーザー向けエラーメッセージ)
+
+        Note:
+            再試行可能なエラー: APIConnectionError, APITimeoutError, RateLimitError
+            待機時間: 2^試行回数 秒（1回目=2秒、2回目=4秒）
         """
         # 再試行対象のエラータイプ
         retry_error_types = (APIConnectionError, APITimeoutError, RateLimitError)
@@ -422,8 +447,7 @@ class Sphene:
                     "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢",
                 )
 
-        # 万が一forループが終了した場合のデフォルト戻り値
-        # 理論上はここに到達することはないはずだが、型チェックを通すために追加
+        # フォールバック（理論上到達しない）
         logger.error("OpenAI API呼び出しが不完全終了：全試行完了したが結果が不明")
         return False, "ごめん！AIとの通信中に問題が発生しちゃった...😢"
 
@@ -514,11 +538,19 @@ class Sphene:
     def _process_images(self, image_urls: list[str]) -> list[dict[str, Any]]:
         """画像URLを処理してOpenAI API用のフォーマットに変換
 
+        各画像URLに対してHEADリクエストを送信し、アクセス可能かを確認:
+        - アクセス可能（200 OK）: URL方式で送信
+        - アクセス不可: Base64エンコードして送信（フォールバック）
+
         Args:
             image_urls: 画像のURLリスト
 
         Returns:
             list[dict[str, Any]]: OpenAI APIフォーマットの画像リスト
+                各要素: {"type": "image_url", "image_url": {"url": <URLまたはData URI>}}
+
+        Note:
+            失敗した画像はスキップされ、エラーログが記録されます
         """
         processed_images = []
 
