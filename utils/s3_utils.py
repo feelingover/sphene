@@ -63,10 +63,5 @@ class S3Helper:
             return None
 
 
-# S3Client = S3Helper としたいが、mypy向けに以下のように定義
-# TYPE_CHECKINGフラグを使うことで、実行時には評価されないがmypyには認識される
-if TYPE_CHECKING:
-    S3Client = S3Helper
-else:
-    # 実行時に使用される定義
-    S3Client = S3Helper
+# S3Helperの型エイリアス
+S3Client = S3Helper

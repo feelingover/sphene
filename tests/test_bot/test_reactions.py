@@ -12,7 +12,7 @@ import pytest
 
 from bot.events import (
     get_message_type,
-    handle_reaction,
+    _handle_reaction,
     send_translation_response,
     translate_and_reply,
 )
@@ -140,7 +140,7 @@ class TestReactionHandling:
         reaction.message = message
 
         # 関数実行
-        await handle_reaction(bot, reaction, user)
+        await _handle_reaction(bot, reaction, user)
 
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(67890)
@@ -181,7 +181,7 @@ class TestReactionHandling:
         reaction.message = message
 
         # 関数実行
-        await handle_reaction(bot, reaction, user)
+        await _handle_reaction(bot, reaction, user)
 
         # アサーション - translate_and_replyは呼ばれないはず
         mock_config_manager.get_config.assert_called_once_with(67890)
@@ -204,7 +204,7 @@ class TestReactionHandling:
         reaction = MagicMock()
 
         # 関数実行
-        await handle_reaction(bot, reaction, user)
+        await _handle_reaction(bot, reaction, user)
 
         # アサーション - 早期リターンによりconfig_managerは呼ばれないはず
         mock_config_manager.get_config.assert_not_called()
@@ -228,7 +228,7 @@ class TestReactionHandling:
         reaction.message = message
 
         # 関数実行
-        await handle_reaction(bot, reaction, user)
+        await _handle_reaction(bot, reaction, user)
 
         # アサーション - 早期リターンによりconfig_managerは呼ばれないはず
         mock_config_manager.get_config.assert_not_called()
@@ -267,7 +267,7 @@ class TestReactionHandling:
         reaction.message = message
 
         # 関数実行
-        await handle_reaction(bot, reaction, user)
+        await _handle_reaction(bot, reaction, user)
 
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(67890)
@@ -310,7 +310,7 @@ class TestReactionHandling:
         reaction.message = message
 
         # 関数実行
-        await handle_reaction(bot, reaction, user)
+        await _handle_reaction(bot, reaction, user)
 
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(67890)
@@ -356,7 +356,7 @@ class TestReactionHandling:
         reaction.message = message
 
         # 関数実行
-        await handle_reaction(bot, reaction, user)
+        await _handle_reaction(bot, reaction, user)
 
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(67890)

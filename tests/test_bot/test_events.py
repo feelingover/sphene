@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.events import handle_message
+from bot.events import _handle_message
 
 
 class TestEventHandling:
@@ -44,7 +44,7 @@ class TestEventHandling:
         bot.user = MagicMock()
 
         # コマンド実行
-        await handle_message(bot, message)
+        await _handle_message(bot, message)
 
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(54321)
@@ -83,7 +83,7 @@ class TestEventHandling:
         bot.user = MagicMock()
 
         # コマンド実行
-        await handle_message(bot, message)
+        await _handle_message(bot, message)
 
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(54321)
@@ -124,7 +124,7 @@ class TestEventHandling:
         bot.user = MagicMock()
 
         # コマンド実行
-        await handle_message(bot, message)
+        await _handle_message(bot, message)
 
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(54321)
@@ -148,7 +148,7 @@ class TestEventHandling:
         bot.user = MagicMock()
 
         # コマンド実行
-        await handle_message(bot, message)
+        await _handle_message(bot, message)
 
         # config_managerはmockしないで、テストの動作だけ確認
         # ボットのメッセージは早期に無視されるので、モックの検証は不要
@@ -168,7 +168,7 @@ class TestEventHandling:
         bot.user = MagicMock()
 
         # コマンド実行
-        await handle_message(bot, message)
+        await _handle_message(bot, message)
 
         # config_managerはmockしないで、テストの動作だけ確認
         # 空のコンテンツかつ添付ファイルがない場合は早期に無視されるので、モックの検証は不要
@@ -213,7 +213,7 @@ class TestEventHandling:
         bot.user = MagicMock()
 
         # コマンド実行
-        await handle_message(bot, message)
+        await _handle_message(bot, message)
 
         # アサーション
         mock_config_manager.get_config.assert_called_once()
@@ -250,10 +250,11 @@ class TestEventHandling:
         bot.user = MagicMock()
 
         # コマンド実行
-        await handle_message(bot, message)
+        await _handle_message(bot, message)
 
         # アサーション - エラーメッセージが送信されること
         message.channel.send.assert_called_once()
         args, kwargs = message.channel.send.call_args
+        # セキュリティ改善により、エラー詳細は非公開（一般的なメッセージのみ）
         assert "エラー" in args[0]
-        assert "テストエラー" in args[0]
+        assert args[0] == "ごめん！メッセージ処理中にエラーが発生しちゃった...😢"
