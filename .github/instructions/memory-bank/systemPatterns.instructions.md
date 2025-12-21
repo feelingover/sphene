@@ -52,89 +52,21 @@ graph TD
 
 ### 1. Botコア (SpheneBot)
 
-SpheneBot クラスはアプリケーションの中心的な役割を果たし、以下の責務を持ちます:
+**責務**: Discord API接続、コマンド/イベントハンドラ初期化、システムプロンプト読み込み、ライフサイクル管理
 
-- Discord APIとの接続確立
-- コマンドとイベントハンドラの初期化
-- システムプロンプトの読み込み検証
-- ボットのライフサイクル管理
-
-```mermaid
-classDiagram
-    class SpheneBot {
-        +bot: commands.Bot
-        +__init__()
-        -_setup()
-        +run()
-    }
-```
+**主要メソッド**: `__init__()`, `_setup()`, `run()`
 
 ### 2. 会話管理 (Sphene)
 
-Sphene クラスは会話の状態と履歴を管理し、以下の責務を持ちます:
+**責務**: 会話コンテキスト維持、メッセージ処理、タイムアウト管理、OpenAI API対話、エラーハンドリング、画像処理
 
-- 会話コンテキストの維持
-- メッセージの処理
-- タイムアウト管理
-- OpenAI APIとの対話
-- エラーハンドリング
-- 画像処理
-
-```mermaid
-classDiagram
-    class Sphene {
-        +system: ChatCompletionSystemMessageParam
-        +input_list: list[ChatCompletionMessageParam]
-        +logs: list[ChatCompletion]
-        +last_interaction: datetime
-        +__init__(system_setting: str)
-        +is_expired() bool
-        +update_interaction_time()
-        +trim_conversation_history()
-        +input_message(input_text, image_urls) str
-        -_handle_openai_error(error) str
-        -_call_openai_api(with_images) tuple[bool, str]
-        -_process_images(image_urls) list[dict]
-        -_download_and_encode_image(url) str
-    }
-```
+**主要メソッド**: `input_message()`, `is_expired()`, `trim_conversation_history()`, `_call_openai_api()`, `_handle_openai_error()`
 
 ### 3. システムプロンプト管理
 
-システムプロンプトのロード機能は以下のパターンで実装されています:
+**機能**: キャッシュ機構、ローカル/S3読み込み、フォールバック戦略、エラーハンドリング
 
-- キャッシュ機構による効率化
-- ローカルファイルとS3からの読み込み
-- フォールバック戦略
-- エラーハンドリング
-
-```mermaid
-sequenceDiagram
-    participant A as アプリケーション
-    participant C as プロンプトキャッシュ
-    participant L as ローカルストレージ
-    participant S as S3ストレージ
-    
-    A->>C: load_system_prompt()
-    alt キャッシュ有り && 強制再読込でない
-        C-->>A: キャッシュから返す
-    else キャッシュ無し || 強制再読込
-        alt ストレージタイプ == S3
-            A->>S: S3からロード試行
-            alt S3ロード成功
-                S-->>A: プロンプト内容
-            else S3ロード失敗
-                A->>L: ローカルからロード試行
-                L-->>A: プロンプト内容
-            end
-        else ストレージタイプ == ローカル
-            A->>L: ローカルからロード試行
-            L-->>A: プロンプト内容
-        end
-        A->>C: キャッシュに保存
-        C-->>A: プロンプト内容
-    end
-```
+**フロー**: キャッシュ確認 → S3/ローカル読み込み（タイプ別） → フォールバック（S3失敗時）→ キャッシュ保存
 
 ## デザインパターン
 
@@ -186,102 +118,18 @@ _prompt_cache: dict[str, str] = {}
 ## 重要な実装パス
 
 ### 1. メッセージ処理フロー
-
-```mermaid
-sequenceDiagram
-    participant U as ユーザー
-    participant D as Discord
-    participant E as イベントハンドラ
-    participant S as Sphene会話管理
-    participant O as OpenAI API
-    
-    U->>D: メッセージ送信
-    D->>E: on_messageイベント発火
-    E->>E: メッセージ種別判定
-    alt メンション || 名前呼び || リプライ
-        E->>S: input_message()
-        S->>S: 会話期限確認
-        S->>S: ユーザーメッセージ追加
-        alt 画像添付あり
-            S->>S: 画像処理
-        end
-        S->>O: APIリクエスト
-        O-->>S: 応答返却
-        S->>S: 応答を履歴に追加
-        S->>E: 応答返却
-        E->>D: 応答送信
-        D->>U: 応答表示
-    end
-```
+ユーザーメッセージ → Discord → イベントハンドラ（種別判定） → Sphene（期限確認、メッセージ追加、画像処理） → OpenAI API → 応答履歴追加 → Discord → ユーザー
 
 ### 2. コマンド処理フロー
-
-```mermaid
-sequenceDiagram
-    participant U as ユーザー
-    participant D as Discord
-    participant C as コマンドハンドラ
-    participant CH as チャンネル設定管理
-    participant S as Sphene会話管理
-    
-    U->>D: スラッシュコマンド実行
-    D->>C: コマンドイベント発火
-    alt reset
-        C->>S: ユーザー会話リセット
-    else mode
-        C->>CH: 評価モード切替
-    else channels
-        C->>CH: チャンネルリスト表示
-    else addlist/removelist/clearlist
-        C->>CH: チャンネル設定変更
-    else reload_prompt
-        C->>S: システムプロンプト再読込
-    end
-    C->>D: 結果返却
-    D->>U: 結果表示
-```
+スラッシュコマンド → Discord → コマンドハンドラ（reset/mode/channels/addlist/removelist/clearlist/reload_prompt別処理） → 設定管理/会話管理 → 結果返却
 
 ### 3. エラーハンドリングフロー
-
-```mermaid
-sequenceDiagram
-    participant S as Sphene会話管理
-    participant A as OpenAI API
-    participant E as エラーハンドラ
-    participant U as ユーザー
-    
-    S->>A: APIリクエスト
-    alt 成功
-        A-->>S: 正常応答
-    else エラー発生
-        A-->>S: エラー例外
-        S->>E: _handle_openai_error()
-        E->>E: エラー種別特定
-        E->>E: 適切なログ出力
-        E-->>S: ユーザー向けエラーメッセージ
-    end
-    S-->>U: 応答またはエラーメッセージ
-```
+APIリクエスト → エラー発生 → `_handle_openai_error()`（種別特定、ログ出力） → ユーザー向けメッセージ生成 → 応答
 
 ## 拡張性とメンテナンス性
 
-1. **モジュール分割**
-   - 責務ごとに適切に分離されたモジュール構造
-   - 各レイヤー間の明確なインターフェース
-
-2. **設定管理**
-   - 環境変数を使用した外部設定
-   - ストレージオプションの抽象化
-
-3. **エラー処理**
-   - 階層的なエラーハンドリング
-   - ユーザーフレンドリーなエラーメッセージ
-   - 詳細なログ記録
-
-4. **型安全性**
-   - Pythonの型ヒントを活用
-   - 明示的な型キャスト
-
-5. **テスト容易性**
-   - 適切に分離されたコンポーネント
-   - 依存関係の明確な構造
+1. **モジュール分割**: 責務別分離、明確なレイヤー間インターフェース
+2. **設定管理**: 環境変数、ストレージ抽象化
+3. **エラー処理**: 階層的ハンドリング、ユーザーフレンドリーメッセージ、詳細ログ
+4. **型安全性**: 型ヒント、明示的型キャスト
+5. **テスト容易性**: コンポーネント分離、明確な依存関係

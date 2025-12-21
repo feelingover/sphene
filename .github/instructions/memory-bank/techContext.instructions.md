@@ -47,25 +47,7 @@ boto3 (S3使用時)
 
 ### 開発・検証用コマンド
 
-```bash
-# 依存関係のインストール
-pip install -r requirements.txt
-
-# 開発用依存関係のインストール
-pip install -r requirements-dev.txt
-
-# テストの実行
-pytest
-
-# テスト実行スクリプト
-./run_tests.sh
-
-# 静的解析
-mypy .
-
-# コードフォーマット
-black .
-```
+詳細は[CLAUDE.md](../../../CLAUDE.md)の「Commands for Development」参照。
 
 ## 技術的制約
 
@@ -133,60 +115,22 @@ DENIED_CHANNEL_IDS=
 
 ## デプロイメントモデル
 
-### ローカル実行
+**ローカル**: `python app.py`
 
-最もシンプルなデプロイメント方法:
+**Docker**: イメージビルド → コンテナ実行（--env-file使用）
 
-```bash
-python app.py
-```
+**Kubernetes**: Secret作成（環境変数、レジストリ認証）→ デプロイメント適用
 
-### Docker
-
-コンテナ化されたデプロイメント:
-
-```bash
-# イメージのビルド
-docker build -t sphene-discord-bot .
-
-# コンテナの実行
-docker run --env-file .env sphene-discord-bot
-```
-
-### Kubernetes
-
-高可用性デプロイメント:
-
-1. 環境変数をKubernetes Secretとして作成:
-   ```bash
-   kubectl create secret generic sphene-envs --from-env-file ./.env
-   ```
-
-2. GitHub Container Registry認証用Secretの作成:
-   ```bash
-   kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-username=<GitHubユーザー名> --docker-password=<GitHubトークン>
-   ```
-
-3. デプロイメントとサービス定義の適用
+詳細コマンドは[CLAUDE.md](../../../CLAUDE.md)参照。
 
 ## データフロー
 
 ### 設定データフロー
-
-```mermaid
-graph TD
-    A[.env] --> B[config.py]
-    B --> C[アプリケーションコンポーネント]
-    
-    D[system.txt / S3] --> E[load_system_prompt]
-    E --> F[Sphene会話インスタンス]
-    
-    G[channel_config.json / S3] --> H[チャンネル設定管理]
-    H --> I[イベントハンドラ]
-```
+`.env` → `config.py` → アプリケーションコンポーネント
+`system.txt/S3` → `load_system_prompt` → Sphene会話インスタンス
+`channel_config.json/S3` → チャンネル設定管理 → イベントハンドラ
 
 ### 会話データフロー
-
 ```mermaid
 graph TD
     A[Discordメッセージ] --> B[イベントハンドラ]
@@ -196,106 +140,31 @@ graph TD
     E --> F[OpenAI API]
     F --> G[応答処理]
     G --> H[Discord応答]
-    
+
     I[タイムアウト] --> J[会話リセット]
     K[resetコマンド] --> J
 ```
 
 ### エラー処理フロー
-
-```mermaid
-graph TD
-    A[API呼び出し] --> B{エラー発生?}
-    B -->|Yes| C[エラータイプ判定]
-    C --> D[ログ記録]
-    D --> E[ユーザーフレンドリーメッセージ]
-    E --> F[Discord応答]
-    
-    B -->|No| G[正常応答処理]
-    G --> F
-```
+API呼び出し → エラー発生 → エラータイプ判定 → ログ記録 → ユーザーフレンドリーメッセージ → Discord応答
 
 ## テスト戦略
 
-### テスト構造
+**構造**: tests/ (test_ai/, test_bot/, test_utils/)
 
-```
-tests/
-├── __init__.py
-├── conftest.py
-├── test_ai/
-│   ├── __init__.py
-│   ├── test_client.py
-│   └── test_conversation.py
-├── test_bot/
-│   ├── __init__.py
-│   ├── test_channel_commands.py
-│   ├── test_commands.py
-│   ├── test_discord_bot.py
-│   ├── test_events.py
-│   └── test_reactions.py
-└── test_utils/
-    ├── __init__.py
-    ├── test_channel_config.py
-    ├── test_channel_id_handling.py
-    ├── test_channel_speak.py
-    ├── test_logger.py
-    └── test_text_utils.py
-```
+**種別**: ユニットテスト（モック使用）、統合テスト（連携検証）
 
-### テスト種別
-
-1. **ユニットテスト**
-   - 個別コンポーネントの機能検証
-   - モックを使用した外部依存の分離
-
-2. **統合テスト**
-   - コンポーネント間の連携検証
-   - データの受け渡しの正確性
-
-### テスト実行環境
-
-- pytest フレームワーク
-- 実行スクリプト: `run_tests.sh`
-- CI/CD連携（設定に応じて）
+**実行**: pytest、`run_tests.sh`、CI/CD連携
 
 ## パフォーマンス最適化
 
-1. **プロンプトキャッシング**
-   - システムプロンプトのメモリ内キャッシング
+1. プロンプトキャッシング
+2. 会話履歴管理（自動削除、期限切れ）
+3. エラー処理戦略（リトライ、フォールバック）
+4. チャンネル制限（API呼び出し削減）
 
-2. **会話履歴管理**
-   - 一定ターン数以上の古い履歴を自動削除
-   - 会話の期限切れ機構
+## 技術的負債と将来拡張
 
-3. **エラー処理戦略**
-   - 適切なリトライと適切なフォールバック
+**技術的負債**: Dockerfile最適化、K8s構成詳細設計、カバレッジ拡大、認証管理強化
 
-4. **チャンネル制限**
-   - 使用可能チャンネルの制限によるAPI呼び出し削減
-
-## テクニカルデット（技術的負債）
-
-- Dockerfileの最適化余地
-- Kubernetes構成の詳細設計
-- コードカバレッジの拡大
-- 認証情報管理の強化
-- エラーハンドリングのさらなる改善
-
-## 将来的な技術拡張の可能性
-
-1. **マルチモデルサポート**
-   - 複数のAIモデルを状況に応じて使い分け
-
-2. **ウェブインターフェース**
-   - 管理者用のダッシュボード
-
-3. **分析と監視**
-   - 使用統計の収集と可視化
-   - パフォーマンス監視
-
-4. **チャンネル固有のパーソナライズ**
-   - チャンネルごとにカスタムプロンプト
-
-5. **他のコミュニケーションプラットフォームへの拡張**
-   - SlackやTeamsなどへの対応
+**将来拡張**: マルチモデル、Web管理UI、分析/監視、チャンネル固有プロンプト、他プラットフォーム対応
