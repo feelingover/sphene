@@ -51,6 +51,7 @@ DENIED_CHANNEL_IDS=
 プロジェクトルートにある`system.txt.sample`を使用して、ボットのキャラクター設定を行います：
 
 1. ローカルストレージを使用する場合:
+
    ```bash
    # システムプロンプトをローカルストレージにコピー
    cp system.txt.sample storage/system.txt
@@ -58,6 +59,7 @@ DENIED_CHANNEL_IDS=
    ```
 
 2. S3ストレージを使用する場合:
+
    ```bash
    # AWSコマンドラインツールを使用してS3にアップロード
    aws s3 cp system.txt.sample s3://your-bucket-name/[folder-path/]system.txt
@@ -154,13 +156,13 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ├── log_utils/            # ロギング機能
 │   ├── __init__.py
 │   └── logger.py         # ロガー設定
-├── memory-bank/          # プロジェクト知識ベース
-│   ├── activeContext.md  # 現在の作業コンテキスト
-│   ├── productContext.md # 製品コンテキスト
-│   ├── progress.md       # 進捗状況
-│   ├── projectbrief.md   # プロジェクト概要
-│   ├── systemPatterns.md # システム設計パターン
-│   └── techContext.md    # 技術コンテキスト
+├── .github/instructions/memory-bank/  # プロジェクト知識ベース
+│   ├── activeContext.instructions.md  # 現在の作業コンテキスト
+│   ├── productContext.instructions.md # 製品コンテキスト
+│   ├── progress.instructions.md       # 進捗状況
+│   ├── projectbrief.instructions.md   # プロジェクト概要
+│   ├── systemPatterns.instructions.md # システム設計パターン
+│   └── techContext.instructions.md    # 技術コンテキスト
 ├── storage/              # ストレージ関連ファイル
 │   └── system.txt        # システムプロンプト(存在する場合)
 ├── tests/                # テストコード
@@ -191,18 +193,21 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ### 現在実装済みの機能
 
 ✅ **基本インフラ**
+
 - Discord接続と基本的なボット機能
 - OpenAI API連携
 - 環境変数による設定
 - ログ記録システム
 
 ✅ **コアボット機能**
+
 - メンションによる応答
 - 名前呼びによる応答
 - リプライによる応答
 - スラッシュコマンド処理
 
 ✅ **AIチャット機能**
+
 - GPT-4o-miniモデルとの対話
 - マルチモーダル対応（画像処理）
 - 会話履歴の管理
@@ -210,11 +215,13 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - 会話履歴制限（最大10ターン）
 
 ✅ **翻訳機能**
+
 - 国旗リアクションによる翻訳（🇺🇸 英語 / 🇯🇵 日本語）
 - 翻訳機能の有効/無効切り替え
 - スレッド内での翻訳サポート
 
 ✅ **管理機能**
+
 - 会話リセットコマンド
 - チャンネルモード切替（全体/限定）
 - チャンネルリスト表示
@@ -252,17 +259,17 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 ## 📚 メモリーバンク
 
-Spheneプロジェクトでは、`memory-bank/`ディレクトリに重要なプロジェクト情報を整理して保存しています。
+Spheneプロジェクトでは、`.github/instructions/memory-bank/`ディレクトリに重要なプロジェクト情報を整理して保存しています。
 これは開発者間の知識共有や、プロジェクトの継続的な発展をサポートするためのものです。
 
 ### メモリーバンクの構成
 
-- **projectbrief.md** - プロジェクトの基本定義と要件
-- **productContext.md** - 製品の存在理由と解決する問題
-- **systemPatterns.md** - システムアーキテクチャと設計パターン
-- **techContext.md** - 技術スタックと開発環境
-- **activeContext.md** - 現在の作業状況と決定事項
-- **progress.md** - 実装状況と今後の課題
+- **projectbrief.instructions.md** - プロジェクトの基本定義と要件
+- **productContext.instructions.md** - 製品の存在理由と解決する問題
+- **systemPatterns.instructions.md** - システムアーキテクチャと設計パターン
+- **techContext.instructions.md** - 技術スタックと開発環境
+- **activeContext.instructions.md** - 現在の作業状況と決定事項
+- **progress.instructions.md** - 実装状況と今後の課題
 
 開発者向けにこのメモリーバンクを参照することで、プロジェクトの全体像を素早く把握できます。
 
