@@ -20,6 +20,7 @@ The memory bank has been optimized for fast AI agent context loading (**47% size
 ### Memory Bank Workflow
 
 **Before Any Task:**
+
 - Read relevant memory bank files to understand current context
 - Check `activeContext.instructions.md` for recent changes and current focus
 - Review `progress.instructions.md` for status and known issues
@@ -48,11 +49,13 @@ Sphene is a mature Discord bot that uses OpenAI's GPT-4o-mini for conversations.
 ## Commands for Development
 
 ### Running the Bot
+
 ```bash
 python app.py
 ```
 
 ### Testing
+
 ```bash
 # Run all tests with coverage
 python -m pytest
@@ -68,11 +71,13 @@ python -m pytest tests/test_ai/test_client.py
 ```
 
 ### Type Checking
+
 ```bash
 mypy .
 ```
 
 ### Package Installation
+
 ```bash
 # Production dependencies
 pip install -r requirements.txt
@@ -82,6 +87,7 @@ pip install -r requirements-dev.txt
 ```
 
 ### Docker
+
 ```bash
 # Build image
 docker build -t sphene-discord-bot .
@@ -121,6 +127,7 @@ The codebase follows a modular structure with clear separation of concerns:
 ### Configuration System
 
 The bot uses environment variables for all configuration:
+
 - `PROMPT_STORAGE_TYPE`: "local" or "s3" for system prompt storage
 - `CHANNEL_CONFIG_STORAGE_TYPE`: "local" or "s3" for channel settings
 - `BOT_NAME`: Name the bot responds to (default: "アサヒ")
@@ -170,22 +177,26 @@ The `.github/instructions/memory-bank/` directory contains comprehensive project
 A comprehensive code review identified and resolved 10 issues across 3 phases:
 
 ### Phase 1: Critical Bug Fixes
+
 - **[ai/conversation.py](ai/conversation.py:3)**: Added missing `time` module import
 - **[utils/text_utils.py](utils/text_utils.py)**: Consolidated duplicate translation functions (30% code reduction)
 
 ### Phase 2: Quality Improvements
+
 - **[ai/conversation.py](ai/conversation.py)**: Removed unreachable code and simplified comments
 - **[bot/events.py](bot/events.py:194)**: Fixed security vulnerability (removed error details from user messages)
 - **[utils/channel_config.py](utils/channel_config.py)**: Added stack traces to 5 error logs
 - **[bot/events.py](bot/events.py)**: Standardized function naming (`handle_*` → `_handle_*`)
 
 ### Phase 3: Maintainability Enhancements
+
 - **[ai/conversation.py](ai/conversation.py:175-180)**: Removed redundant type checks
 - **[ai/conversation.py](ai/conversation.py:125-184)**: Split 60-line function into 3 smaller functions
 - **Multiple files**: Enhanced docstrings with Google Style format
 - **[utils/s3_utils.py](utils/s3_utils.py:66-72)**: Removed meaningless TYPE_CHECKING block
 
 ### Test Updates
+
 - **[tests/test_bot/test_events.py](tests/test_bot/test_events.py)**: Updated imports and security test expectations
 - **[tests/test_bot/test_reactions.py](tests/test_bot/test_reactions.py)**: Updated function references
 - **[tests/test_ai/test_conversation.py](tests/test_ai/test_conversation.py)**: Updated default prompt expectations
