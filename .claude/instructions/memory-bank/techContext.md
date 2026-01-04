@@ -1,3 +1,10 @@
+---
+applyTo: "**"
+---
+# Important Note
+This file is a part of the Memory Bank. It provides essential context for understanding the project.
+Claude Code should reference this file when working on related tasks, but doesn't need to read it every time due to conversation context continuity.
+
 # 🔧 Sphene Discord Bot 技術コンテキスト
 
 ## 技術スタック
@@ -14,7 +21,7 @@
 
 ### 依存パッケージ
 
-主要な依存パッケージは以下の通りです（詳細は`requirements.txt`参照）:
+主要な依存パッケージは以下の通りです(詳細は`requirements.txt`参照):
 
 ```
 discord.py
@@ -36,7 +43,7 @@ boto3 (S3使用時)
 - Python 3.13以上
 - OpenAI APIキー
 - Discord開発者アカウントとボットトークン
-- （オプション）AWS認証情報（S3使用時）
+- (オプション)AWS認証情報(S3使用時)
 
 ### ローカル開発環境セットアップ
 
@@ -47,7 +54,7 @@ boto3 (S3使用時)
 
 ### 開発・検証用コマンド
 
-詳細は[CLAUDE.md](../../../CLAUDE.md)の「Commands for Development」参照。
+詳細は[CLAUDE.md](../../CLAUDE.md)の「Commands for Development」参照。
 
 ## 技術的制約
 
@@ -55,7 +62,7 @@ boto3 (S3使用時)
 
 - OpenAI APIの応答時間に依存
 - Discordレート制限への考慮が必要
-- 会話履歴は一定の長さに制限（MAX_CONVERSATION_TURNS = 10）
+- 会話履歴は一定の長さに制限(MAX_CONVERSATION_TURNS = 10)
 - 会話履歴は30分のタイムアウトで期限切れ
 
 ### スケーラビリティ
@@ -87,14 +94,14 @@ OPENAI_MODEL=gpt-4o-mini  # 使用するOpenAIのモデル
 SYSTEM_PROMPT_FILENAME=system.txt
 # プロンプトのストレージタイプ: local または s3
 PROMPT_STORAGE_TYPE=local
-# S3バケット名（PROMPT_STORAGE_TYPE=s3 の場合）
+# S3バケット名(PROMPT_STORAGE_TYPE=s3 の場合)
 S3_BUCKET_NAME=your-bucket-name
-# S3フォルダパス（オプション）
+# S3フォルダパス(オプション)
 S3_FOLDER_PATH=prompts
 
 # チャンネル設定の保存先: local または s3
 CHANNEL_CONFIG_STORAGE_TYPE=local
-# チャンネル設定ファイルのパス（ローカルの場合）
+# チャンネル設定ファイルのパス(ローカルの場合)
 CHANNEL_CONFIG_PATH=channel_config.json
 
 # 使用を禁止するチャンネルIDをカンマ区切りで指定
@@ -117,11 +124,11 @@ DENIED_CHANNEL_IDS=
 
 **ローカル**: `python app.py`
 
-**Docker**: イメージビルド → コンテナ実行（--env-file使用）
+**Docker**: イメージビルド → コンテナ実行(--env-file使用)
 
-**Kubernetes**: Secret作成（環境変数、レジストリ認証）→ デプロイメント適用
+**Kubernetes**: Secret作成(環境変数、レジストリ認証)→ デプロイメント適用
 
-詳細コマンドは[CLAUDE.md](../../../CLAUDE.md)参照。
+詳細コマンドは[CLAUDE.md](../../CLAUDE.md)参照。
 
 ## データフロー
 
@@ -131,19 +138,11 @@ DENIED_CHANNEL_IDS=
 `channel_config.json/S3` → チャンネル設定管理 → イベントハンドラ
 
 ### 会話データフロー
-```mermaid
-graph TD
-    A[Discordメッセージ] --> B[イベントハンドラ]
-    B --> C{トリガー判定}
-    C -->|該当| D[user_conversations]
-    D --> E[Sphene.input_message]
-    E --> F[OpenAI API]
-    F --> G[応答処理]
-    G --> H[Discord応答]
+Discordメッセージ → イベントハンドラ → トリガー判定 → user_conversations → Sphene.input_message → OpenAI API → 応答処理 → Discord応答
 
-    I[タイムアウト] --> J[会話リセット]
-    K[resetコマンド] --> J
-```
+**タイムアウトとリセット:**
+- タイムアウト → 会話リセット
+- resetコマンド → 会話リセット
 
 ### エラー処理フロー
 API呼び出し → エラー発生 → エラータイプ判定 → ログ記録 → ユーザーフレンドリーメッセージ → Discord応答
@@ -152,16 +151,16 @@ API呼び出し → エラー発生 → エラータイプ判定 → ログ記�
 
 **構造**: tests/ (test_ai/, test_bot/, test_utils/)
 
-**種別**: ユニットテスト（モック使用）、統合テスト（連携検証）
+**種別**: ユニットテスト(モック使用)、統合テスト(連携検証)
 
 **実行**: pytest、`run_tests.sh`、CI/CD連携
 
 ## パフォーマンス最適化
 
 1. プロンプトキャッシング
-2. 会話履歴管理（自動削除、期限切れ）
-3. エラー処理戦略（リトライ、フォールバック）
-4. チャンネル制限（API呼び出し削減）
+2. 会話履歴管理(自動削除、期限切れ)
+3. エラー処理戦略(リトライ、フォールバック)
+4. チャンネル制限(API呼び出し削減)
 
 ## 技術的負債と将来拡張
 

@@ -1,3 +1,10 @@
+---
+applyTo: "**"
+---
+# Important Note
+This file is a part of the Memory Bank. It provides essential context for understanding the project.
+Claude Code should reference this file when working on related tasks, but doesn't need to read it every time due to conversation context continuity.
+
 # 🌟 Sphene Discord Bot 製品コンテキスト
 
 ## 存在理由

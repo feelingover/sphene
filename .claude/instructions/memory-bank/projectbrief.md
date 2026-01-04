@@ -1,3 +1,10 @@
+---
+applyTo: "**"
+---
+# Important Note
+This file is a part of the Memory Bank. It provides essential context for understanding the project.
+Claude Code should reference this file when working on related tasks, but doesn't need to read it every time due to conversation context continuity.
+
 # 🔮 Sphene Discord Bot プロジェクト概要
 
 ## プロジェクト定義
@@ -20,10 +27,10 @@ Spheneは、OpenAI GPT-4o-miniを活用した会話機能を持つDiscord botで
 
 ## プロジェクト要件
 
-**機能要件：** 自然な会話応答、コマンド管理、チャンネル制限、コンテキスト管理
+**機能要件:** 自然な会話応答、コマンド管理、チャンネル制限、コンテキスト管理
 
-**非機能要件：** Docker/K8s対応、ローカル/S3ストレージ選択、環境変数設定、エラー処理、保守性
+**非機能要件:** Docker/K8s対応、ローカル/S3ストレージ選択、環境変数設定、エラー処理、保守性
 
-**必要API：** OpenAI API（GPT-4o-mini）、Discord API
+**必要API:** OpenAI API(GPT-4o-mini)、Discord API
 
-**デプロイ形態：** ローカル/Docker/Kubernetes
+**デプロイ形態:** ローカル/Docker/Kubernetes
