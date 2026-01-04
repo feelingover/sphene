@@ -1,3 +1,10 @@
+---
+applyTo: "**"
+---
+# Important Note
+This file is a part of the Memory Bank. It provides essential context for understanding the project.
+Claude Code should reference this file when working on related tasks, but doesn't need to read it every time due to conversation context continuity.
+
 # 🚀 Sphene Discord Bot アクティブコンテキスト
 
 ## 現在の焦点
@@ -7,7 +14,7 @@ Sphene Discord Botは2025年12月7日に大規模なコードリファクタリ�
 ## 最近の変更
 
 ### 2025/12/7: 大規模リファクタリング完了
-セキュリティ修正（エラーメッセージ情報漏洩対策）、コード重複30%削減（翻訳関数統合）、関数分割（60行→3関数）、命名規約統一（private関数に`_`）、エラーログ詳細化（`exc_info=True`追加）を実施。全103テスト通過、カバレッジ86%維持。詳細は[CLAUDE.md](../../../CLAUDE.md)の「Recent Refactoring」参照。
+セキュリティ修正(エラーメッセージ情報漏洩対策)、コード重複30%削減(翻訳関数統合)、関数分割(60行→3関数)、命名規約統一(private関数に`_`)、エラーログ詳細化(`exc_info=True`追加)を実施。全103テスト通過、カバレッジ86%維持。詳細は[CLAUDE.md](../../CLAUDE.md)の「Recent Refactoring」参照。
 
 ## 進行中のタスク
 
@@ -56,7 +63,7 @@ Sphene Discord Botは2025年12月7日に大規模なコードリファクタリ�
    - **実践**: `load_system_prompt()`を3つの関数に分割
 
 4. **命名規約の厳格化**
-   - **決定**: 内部専用関数には必ずアンダースコアプレフィックス（`_`）を付ける
+   - **決定**: 内部専用関数には必ずアンダースコアプレフィックス(`_`)を付ける
    - **理由**: public/privateの区別を明確化、APIの意図を明示
    - **影響範囲**: テストコードも同時に更新
 
@@ -69,7 +76,7 @@ Sphene Discord Botは2025年12月7日に大規模なコードリファクタリ�
 
 1. **ストレージ戦略**: ローカル/S3選択、環境変数切り替え
 2. **エラー処理**: 階層的ハンドリング、ユーザーフレンドリーメッセージ、詳細ログ
-3. **設計パターン**: 詳細は[systemPatterns.instructions.md](systemPatterns.instructions.md)参照
+3. **設計パターン**: 詳細は[systemPatterns.md](systemPatterns.md)参照
 
 ## 技術的課題と解決方法
 
@@ -96,6 +103,39 @@ Sphene Discord Botは2025年12月7日に大規模なコードリファクタリ�
 3. **テスト戦略**: ユニットテスト、モック使用
 4. **エラー処理**: タイプ別マッピング、メッセージ/ログ分離
 5. **設定柔軟性**: 環境変数、ストレージ抽象化
+
+## Claude Code活用ガイドライン
+
+### 複雑なタスクの場合
+
+1. **TodoWriteツールを活用**
+   - 複数ステップのタスクを可視化
+   - 進捗をユーザーに明示
+   - タスクの漏れを防止
+
+2. **Plan Modeで設計を先に完了**
+   - Exploreエージェントでコードベース理解
+   - 詳細な実装プランを作成
+   - ユーザー承認後に実装開始
+
+3. **段階的に実装を進める**
+   - 一度に大量の変更を避ける
+   - テストを実行しながら進める
+   - エラーが出たらすぐに対処
+
+### 最新情報が必要な場合
+
+- **WebSearch**を活用して公式ドキュメントを確認
+- 依存パッケージのバージョン情報を取得
+- 新しいベストプラクティスを調査
+
+### 大規模リファクタリングの場合
+
+1. Plan Modeで影響範囲を分析
+2. TodoWriteでタスクを分割
+3. 段階的にレビューしながら進める
+4. 各ステップでテストを実行
+5. Memory Bankを更新(決定事項、パターン)
 
 ## 学びと洞察
 

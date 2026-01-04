@@ -1,30 +1,27 @@
+---
+applyTo: "**"
+---
+# Important Note
+This file is a part of the Memory Bank. It provides essential context for understanding the project.
+Claude Code should reference this file when working on related tasks, but doesn't need to read it every time due to conversation context continuity.
+
 # 🧩 Sphene Discord Bot システムパターン
 
 ## システムアーキテクチャ
 
-Sphene Discord Botは、モジュール性と拡張性を重視した構造になっています。主要コンポーネントは次のように分かれています：
+Sphene Discord Botは、モジュール性と拡張性を重視した構造になっています。主要コンポーネントの依存関係:
 
-```mermaid
-graph TD
-    A[app.py] --> B[bot/discord_bot.py]
-    B --> C[bot/commands.py]
-    B --> D[bot/events.py]
-    D --> E[ai/conversation.py]
-    E --> F[ai/client.py]
-    E --> G[utils/s3_utils.py]
-    E --> H[utils/text_utils.py]
-    B --> I[utils/channel_config.py]
-    
-    style A fill:#f9f,stroke:#333,stroke-width:2px
-    style B fill:#bbf,stroke:#333,stroke-width:2px
-    style C fill:#ddf,stroke:#333,stroke-width:2px
-    style D fill:#ddf,stroke:#333,stroke-width:2px
-    style E fill:#fdd,stroke:#333,stroke-width:2px
-    style F fill:#fdd,stroke:#333,stroke-width:2px
-    style G fill:#dfd,stroke:#333,stroke-width:2px
-    style H fill:#dfd,stroke:#333,stroke-width:2px
-    style I fill:#dfd,stroke:#333,stroke-width:2px
-```
+**エントリーポイント層:**
+- `app.py` → `bot/discord_bot.py`
+
+**ボットコア層:**
+- `bot/discord_bot.py` → `bot/commands.py`, `bot/events.py`, `utils/channel_config.py`
+
+**イベント処理層:**
+- `bot/events.py` → `ai/conversation.py`
+
+**AI処理層:**
+- `ai/conversation.py` → `ai/client.py`, `utils/s3_utils.py`, `utils/text_utils.py`
 
 ### レイヤー構成
 
@@ -66,7 +63,7 @@ graph TD
 
 **機能**: キャッシュ機構、ローカル/S3読み込み、フォールバック戦略、エラーハンドリング
 
-**フロー**: キャッシュ確認 → S3/ローカル読み込み（タイプ別） → フォールバック（S3失敗時）→ キャッシュ保存
+**フロー**: キャッシュ確認 → S3/ローカル読み込み(タイプ別) → フォールバック(S3失敗時)→ キャッシュ保存
 
 ## デザインパターン
 
@@ -84,7 +81,7 @@ user_conversations: defaultdict[str, Sphene] = defaultdict(
 
 ### 2. ファクトリーパターン
 
-`load_system_prompt` 関数は、ストレージタイプ（ローカルまたはS3）に基づいて適切なプロンプト読み込み処理を選択し、
+`load_system_prompt` 関数は、ストレージタイプ(ローカルまたはS3)に基づいて適切なプロンプト読み込み処理を選択し、
 プロンプトオブジェクトを生成するファクトリーとして機能します。
 
 ### 3. ストラテジーパターン
@@ -118,13 +115,13 @@ _prompt_cache: dict[str, str] = {}
 ## 重要な実装パス
 
 ### 1. メッセージ処理フロー
-ユーザーメッセージ → Discord → イベントハンドラ（種別判定） → Sphene（期限確認、メッセージ追加、画像処理） → OpenAI API → 応答履歴追加 → Discord → ユーザー
+ユーザーメッセージ → Discord → イベントハンドラ(種別判定) → Sphene(期限確認、メッセージ追加、画像処理) → OpenAI API → 応答履歴追加 → Discord → ユーザー
 
 ### 2. コマンド処理フロー
-スラッシュコマンド → Discord → コマンドハンドラ（reset/mode/channels/addlist/removelist/clearlist/reload_prompt別処理） → 設定管理/会話管理 → 結果返却
+スラッシュコマンド → Discord → コマンドハンドラ(reset/mode/channels/addlist/removelist/clearlist/reload_prompt別処理) → 設定管理/会話管理 → 結果返却
 
 ### 3. エラーハンドリングフロー
-APIリクエスト → エラー発生 → `_handle_openai_error()`（種別特定、ログ出力） → ユーザー向けメッセージ生成 → 応答
+APIリクエスト → エラー発生 → `_handle_openai_error()`(種別特定、ログ出力) → ユーザー向けメッセージ生成 → 応答
 
 ## 拡張性とメンテナンス性
 

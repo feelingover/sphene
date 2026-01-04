@@ -4,31 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Memory Bank Integration
 
-**IMPORTANT: Always read the memory bank first before starting any task.** The `.github/instructions/memory-bank/` directory contains comprehensive, optimized project documentation providing essential context for development.
+**IMPORTANT: Always read the memory bank first before starting any task.** The `.claude/instructions/memory-bank/` directory contains comprehensive, optimized project documentation providing essential context for development.
 
 ### Core Memory Bank Files (Read Before Starting Tasks)
 
 The memory bank has been optimized for fast AI agent context loading (**47% size reduction**, **40-50% faster loading**):
 
-1. **`projectbrief.instructions.md`** - Foundation: core requirements and goals
-2. **`productContext.instructions.md`** - Why this exists and how it works
-3. **`activeContext.instructions.md`** - Current focus, recent changes, next steps
-4. **`systemPatterns.instructions.md`** - Architecture and key technical decisions
-5. **`techContext.instructions.md`** - Technologies and development setup
-6. **`progress.instructions.md`** - Current status and remaining work
+1. **`projectbrief.md`** - Foundation: core requirements and goals
+2. **`productContext.md`** - Why this exists and how it works
+3. **`activeContext.md`** - Current focus, recent changes, next steps
+4. **`systemPatterns.md`** - Architecture and key technical decisions
+5. **`techContext.md`** - Technologies and development setup
+6. **`progress.md`** - Current status and remaining work
 
 ### Memory Bank Workflow
 
 **Before Any Task:**
 
 - Read relevant memory bank files to understand current context
-- Check `activeContext.instructions.md` for recent changes and current focus
-- Review `progress.instructions.md` for status and known issues
+- Check `activeContext.md` for recent changes and current focus
+- Review `progress.md` for status and known issues
 
 **After Significant Changes:**
 
-- Update `activeContext.instructions.md` with new patterns or decisions
-- Update `progress.instructions.md` with completed work and status changes
+- Update `activeContext.md` with new patterns or decisions
+- Update `progress.md` with completed work and status changes
 - Document new technical insights in appropriate files
 
 ### Memory Bank Optimization (2025/12/21)
@@ -41,6 +41,43 @@ The memory bank has been comprehensively optimized for AI agent productivity:
 - **Command Deduplication**: Removed duplicate commands, cross-referenced to CLAUDE.md
 - **Historical Compression**: Detailed histories compressed to concise summaries
 - **Result**: Faster context loading, maintained all critical information, improved AI comprehension
+
+## Claude Code Usage
+
+### Working with Memory Bank
+
+Claude Code reads the `.claude/instructions/memory-bank/` directory automatically. The memory bank provides:
+
+- **Context Loading**: Automatic context about project goals, architecture, and current status
+- **Decision History**: Track of important technical decisions and their rationale
+- **Pattern Library**: Established coding patterns and best practices for this project
+
+### Task Planning and Execution
+
+When working on tasks:
+
+1. **Use Plan Mode** for complex changes:
+   - Launches Explore agents to understand the codebase
+   - Creates detailed implementation plans
+   - Gets user approval before execution
+
+2. **Update Memory Bank** after significant changes:
+   - Update `activeContext.md` with new patterns or decisions
+   - Update `progress.md` with completed work
+   - Document technical insights in appropriate files
+
+3. **Leverage Agents**:
+   - **Explore**: Find files, understand architecture, discover patterns
+   - **Plan**: Design implementation approaches
+   - **Bug Hunter**: Create comprehensive test cases
+   - **Code Security Reviewer**: Security and performance review
+
+### Best Practices
+
+- Always read relevant memory bank files before starting tasks
+- Keep `activeContext.md` and `progress.md` up-to-date
+- Document new architectural patterns in `systemPatterns.md`
+- Use memory bank for context continuity across sessions
 
 ## Project Overview
 
@@ -159,18 +196,18 @@ The project follows established patterns documented in the memory bank:
 - **Conversation State Management**: Channel-specific context with automatic timeouts
 - **Configuration Pattern**: Dictionary-based configuration (e.g., `translate_text()` language configs)
 
-Before implementing new features, review `.github/instructions/memory-bank/systemPatterns.instructions.md` and `.github/instructions/memory-bank/activeContext.instructions.md` for established patterns and current technical decisions.
+Before implementing new features, review `.claude/instructions/memory-bank/systemPatterns.md` and `.claude/instructions/memory-bank/activeContext.md` for established patterns and current technical decisions.
 
 ### Knowledge Management
 
-- **Document Patterns**: Record new architectural patterns in `.github/instructions/memory-bank/systemPatterns.instructions.md`
-- **Track Decisions**: Log important technical decisions in `.github/instructions/memory-bank/activeContext.instructions.md`
-- **Update Progress**: Maintain current status in `.github/instructions/memory-bank/progress.instructions.md`
+- **Document Patterns**: Record new architectural patterns in `.claude/instructions/memory-bank/systemPatterns.md`
+- **Track Decisions**: Log important technical decisions in `.claude/instructions/memory-bank/activeContext.md`
+- **Update Progress**: Maintain current status in `.claude/instructions/memory-bank/progress.md`
 - **Context Continuity**: Use memory bank to maintain development context across sessions
 
 ### Memory Bank Integration
 
-The `.github/instructions/memory-bank/` directory contains comprehensive project documentation used by development tools. These files provide critical context about project goals, architecture decisions, current status, and established practices. Always reference these files when making significant changes to understand the project's intent, constraints, and evolution.
+The `.claude/instructions/memory-bank/` directory contains comprehensive project documentation used by development tools. These files provide critical context about project goals, architecture decisions, current status, and established practices. Always reference these files when making significant changes to understand the project's intent, constraints, and evolution.
 
 ## Recent Refactoring (2025/12/7)
 
