@@ -52,6 +52,7 @@ def mock_openai_response() -> MagicMock:
     mock_response = MagicMock()
     mock_choice = MagicMock()
     mock_choice.message.content = "これはテスト応答です。"
+    mock_choice.message.tool_calls = None
     mock_response.choices = [mock_choice]
     return mock_response
 

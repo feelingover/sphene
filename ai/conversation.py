@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import time
 import traceback
@@ -28,6 +29,7 @@ from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
+    ChatCompletionToolMessageParam,
 )
 
 from ai.client import client as aiclient
@@ -39,6 +41,7 @@ from config import (
     SYSTEM_PROMPT_FILENAME,
     SYSTEM_PROMPT_PATH,
 )
+from ai.tools import TOOL_DEFINITIONS, TOOL_FUNCTIONS
 from log_utils.logger import logger
 from utils.s3_utils import S3Helper
 from utils.text_utils import truncate_text
@@ -46,6 +49,7 @@ from utils.text_utils import truncate_text
 # 定数の定義
 MAX_CONVERSATION_AGE_MINUTES = 30
 MAX_CONVERSATION_TURNS = 10  # 往復数の上限
+MAX_TOOL_CALL_ROUNDS = 3  # ツール呼び出しの最大ラウンド数（無限ループ防止）
 
 # プロンプトのキャッシュ
 _prompt_cache: dict[str, str] = {}
@@ -264,18 +268,38 @@ class Sphene:
         self.last_interaction = datetime.now()
 
     def trim_conversation_history(self) -> None:
-        """長くなった会話履歴を整理する"""
+        """長くなった会話履歴を整理する
+
+        ツール呼び出しメッセージのシーケンスが壊れないよう、
+        安全な切断ポイントを見つけてトリミングする。
+        """
         # システムメッセージ + 往復N回分だけ保持
         max_messages = 1 + (MAX_CONVERSATION_TURNS * 2)
 
-        if len(self.input_list) > max_messages:
-            # システムメッセージを保持
-            system_message = self.input_list[0]
-            # 直近のメッセージだけを残す
-            self.input_list = [system_message] + self.input_list[-(max_messages - 1) :]
-            logger.info(
-                f"会話履歴を整理しました（残りメッセージ数: {len(self.input_list)}）"
-            )
+        if len(self.input_list) <= max_messages:
+            return
+
+        # システムメッセージを保持
+        system_message = self.input_list[0]
+        # 直近のメッセージだけを残す
+        recent_messages = self.input_list[-(max_messages - 1) :]
+
+        # 先頭がtoolメッセージやtool_calls付きassistantの場合、
+        # 安全な開始位置（userメッセージ）まで進める
+        start_idx = 0
+        for i, msg in enumerate(recent_messages):
+            role = msg.get("role", "")
+            if role == "user":
+                start_idx = i
+                break
+            if role == "assistant" and "tool_calls" not in msg:
+                start_idx = i
+                break
+
+        self.input_list = [system_message] + recent_messages[start_idx:]
+        logger.info(
+            f"会話履歴を整理しました（残りメッセージ数: {len(self.input_list)}）"
+        )
 
     # エラータイプと対応するメッセージ、ログレベルをマッピング
     _OPENAI_ERROR_HANDLERS: dict[Type[APIError], tuple[int, str, str]] = {
@@ -368,11 +392,139 @@ class Sphene:
         )
         return "ごめん！AIとの通信中に予期せぬエラーが発生しちゃった...😢"
 
+    def _execute_tool_calls(
+        self, tool_calls: list,
+    ) -> list[ChatCompletionToolMessageParam]:
+        """ツール呼び出しを実行し、結果メッセージを返す
+
+        Args:
+            tool_calls: OpenAI APIから返されたtool_callsリスト
+
+        Returns:
+            ツール結果メッセージのリスト
+        """
+        tool_messages: list[ChatCompletionToolMessageParam] = []
+
+        for tool_call in tool_calls:
+            function_name = tool_call.function.name
+            tool_call_id = tool_call.id
+
+            logger.info(f"ツール呼び出し: {function_name}, ID: {tool_call_id}")
+
+            func = TOOL_FUNCTIONS.get(function_name)
+            if func is None:
+                logger.warning(f"未知のツール関数: {function_name}")
+                result_content = json.dumps(
+                    {"error": f"未知の関数: {function_name}"},
+                    ensure_ascii=False,
+                )
+            else:
+                try:
+                    arguments = json.loads(tool_call.function.arguments)
+                    logger.debug(f"ツール引数: {function_name}({arguments})")
+                    result_content = func(**arguments)
+                except json.JSONDecodeError as e:
+                    logger.error(
+                        f"ツール引数のJSONパースエラー: {function_name}: {str(e)}",
+                        exc_info=True,
+                    )
+                    result_content = json.dumps(
+                        {"error": "引数のパースに失敗しました"},
+                        ensure_ascii=False,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"ツール実行エラー: {function_name}: {str(e)}",
+                        exc_info=True,
+                    )
+                    result_content = json.dumps(
+                        {"error": "ツールの実行中にエラーが発生しました"},
+                        ensure_ascii=False,
+                    )
+
+            tool_message: ChatCompletionToolMessageParam = {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": result_content,
+            }
+            tool_messages.append(tool_message)
+
+        return tool_messages
+
+    def _call_with_tool_loop(self) -> tuple[bool, str]:
+        """OpenAI APIを呼び出し、ツール呼び出しがあればループ処理する
+
+        Returns:
+            tuple[bool, str]: (成功フラグ, 応答内容またはエラーメッセージ)
+
+        Raises:
+            OpenAI API関連の例外は呼び出し元に伝播する
+        """
+        for round_num in range(MAX_TOOL_CALL_ROUNDS + 1):
+            result = aiclient.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=self.input_list,
+                tools=TOOL_DEFINITIONS,
+            )
+            self.logs.append(result)
+
+            message = result.choices[0].message
+
+            # ツール呼び出しがある場合
+            if message.tool_calls:
+                logger.info(
+                    f"ツール呼び出し検出（ラウンド {round_num + 1}）: "
+                    f"{len(message.tool_calls)}件"
+                )
+
+                # アシスタントメッセージ（tool_calls付き）を履歴に追加
+                assistant_tool_message: ChatCompletionAssistantMessageParam = {
+                    "role": "assistant",
+                    "content": message.content,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,  # type: ignore[union-attr]
+                                "arguments": tc.function.arguments,  # type: ignore[union-attr]
+                            },
+                        }
+                        for tc in message.tool_calls
+                    ],
+                }
+                self.input_list.append(assistant_tool_message)
+
+                # ツールを実行して結果を追加
+                tool_messages = self._execute_tool_calls(message.tool_calls)
+                for tool_msg in tool_messages:
+                    self.input_list.append(tool_msg)
+
+                continue
+
+            # ツール呼び出しなし → 最終応答
+            response_content = message.content
+            if response_content:
+                logger.debug(
+                    f"OpenAI APIレスポンス受信: {truncate_text(response_content)}"
+                )
+                return True, response_content
+            else:
+                logger.warning("OpenAI APIからの応答が空です")
+                return False, "ごめんね、AIからの応答が空だったみたい…🤔"
+
+        # MAX_TOOL_CALL_ROUNDSを超えた場合
+        logger.warning(
+            f"ツール呼び出しが最大ラウンド数({MAX_TOOL_CALL_ROUNDS})を超過"
+        )
+        return False, "ごめんね、処理が複雑すぎてうまくいかなかったみたい…😢"
+
     def _call_openai_api(
         self, with_images: bool = False, max_retries: int = 2
     ) -> tuple[bool, str]:
-        """OpenAI APIを呼び出し、必要に応じて再試行し、結果またはエラーメッセージを返す
+        """OpenAI APIを呼び出し、ツール呼び出しを処理し、結果を返す
 
+        ツール呼び出しが含まれる場合は自動的に実行し、結果を添えて再度APIを呼ぶ。
         一時的なエラー（接続エラー、タイムアウト、レート制限）の場合は
         指数バックオフで自動的に再試行します。
 
@@ -387,14 +539,14 @@ class Sphene:
 
         Note:
             再試行可能なエラー: APIConnectionError, APITimeoutError, RateLimitError
-            待機時間: 2^試行回数 秒（1回目=2秒、2回目=4秒）
+            待機時間: 2^試行回数 秒（1回目=0.5秒、2回目=1秒、3回目=2秒）
         """
         # 再試行対象のエラータイプ
         retry_error_types = (APIConnectionError, APITimeoutError, RateLimitError)
 
         for attempt in range(max_retries + 1):  # 初回 + 最大再試行回数
             try:
-                # OpenAI APIにリクエストを送信
+                # ログメッセージ構築
                 if with_images:
                     log_msg = f"OpenAI APIリクエスト送信（モデル: {OPENAI_MODEL}, マルチモーダル）"
                 else:
@@ -405,21 +557,8 @@ class Sphene:
                 else:
                     logger.info(log_msg)
 
-                result = aiclient.chat.completions.create(
-                    model=OPENAI_MODEL, messages=self.input_list
-                )
-                self.logs.append(result)
-
-                # 応答を処理
-                response_content = result.choices[0].message.content
-                if response_content:
-                    logger.debug(
-                        f"OpenAI APIレスポンス受信: {truncate_text(response_content)}"
-                    )
-                    return True, response_content
-                else:
-                    logger.warning("OpenAI APIからの応答が空です")
-                    return False, "ごめんね、AIからの応答が空だったみたい…🤔"
+                # ツール呼び出しループ（内部でAPI呼び出し・ツール実行を処理）
+                return self._call_with_tool_loop()
 
             except retry_error_types as e:  # 再試行可能なエラー
                 if attempt < max_retries:

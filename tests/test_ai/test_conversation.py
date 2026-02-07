@@ -398,6 +398,7 @@ def test_input_message_with_mixed_images() -> None:
     mock_response = MagicMock()
     mock_response.choices = [MagicMock()]
     mock_response.choices[0].message.content = "テスト応答"
+    mock_response.choices[0].message.tool_calls = None
 
     with patch(
         "ai.conversation.aiclient.chat.completions.create", return_value=mock_response
