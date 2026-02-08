@@ -1,3 +1,5 @@
+import asyncio
+
 import discord
 from discord import app_commands
 from discord.ext import commands  # commands をインポート
@@ -98,9 +100,9 @@ async def process_conversation(
         logger.info(
             f"画像付きメッセージを処理: ユーザーID {user_id}, 画像数 {len(images)}"
         )
-        answer = api.input_message(question, images)
+        answer = await asyncio.to_thread(api.input_message, question, images)
     else:
-        answer = api.input_message(question)
+        answer = await asyncio.to_thread(api.input_message, question)
 
     if answer:
         if is_reply:

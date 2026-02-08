@@ -9,9 +9,13 @@ Claude Code should reference this file when working on related tasks, but doesn'
 
 ## 現在の焦点
 
-Sphene Discord BotはXIVAPI v2 Function Callingによるアイテム検索機能の拡張を進めています。ジョブ・アイテムレベル指定の検索条件が追加され、「竜騎士のIL500から550の装備」のような複合条件検索が可能になりました。全137テストが通過し、テストカバレッジは86%を維持しています。
+Sphene Discord Botは本番環境で発生していたDiscord heartbeat blockingの修正を完了しました。同期的なOpenAI API呼び出しがasyncioイベントループをブロックし、WebSocket切断を引き起こしていた問題を`asyncio.to_thread()`で解消。全137テストが通過し、テストカバレッジは86%を維持しています。
 
 ## 最近の変更
+
+### 2026/2: Discord Heartbeat Blocking修正
+
+同期OpenAI API呼び出しがasyncioイベントループをブロックし、10-20秒以上heartbeatが送信できずWebSocket切断が発生していた問題を修正。`bot/events.py`の`process_conversation()`と`utils/text_utils.py`の`translate_text()`で`asyncio.to_thread()`を使い、同期ブロッキング呼び出しをスレッドプールに退避。2ファイル・約10行の最小限の変更で、OpenAI API・XIVAPI・requests・time.sleepの全ブロッキングポイントをカバー。
 
 ### 2026/2: XIVAPI Function Calling 検索条件拡張
 既存の`search_item`ツールにジョブ名(`class_job`)・アイテムレベル範囲(`ilvl_min`/`ilvl_max`)パラメータを追加。日本語ジョブ名/英語略称の両方に対応。フィルタ検索時はlimit=20、名前のみ検索時はlimit=5の動的制御を実装。34件の新規テストを追加。
@@ -47,6 +51,17 @@ Sphene Discord BotはXIVAPI v2 Function Callingによるアイテム検索機能
    - スケーリング戦略の最適化
 
 ## 重要な決定事項
+
+### 2026/2: Discord Heartbeat Blocking修正関連決定
+
+1. **`asyncio.to_thread()`による最小限修正を選択**
+   - **決定**: フルasync化（AsyncOpenAI移行）ではなく、`asyncio.to_thread()`ラッパーで対応
+   - **理由**: 2ファイル・約10行の変更で全ブロッキングポイントをカバーでき、テスト変更不要。本番障害の迅速な解消を優先
+   - **将来**: フルasync化は中期的な改善候補として残す
+
+2. **スレッド安全性の確認**
+   - **決定**: ユーザーごとの独立Spheneインスタンスにより、スレッドプール実行でも安全
+   - **理由**: `user_conversations`のdefaultdictで各ユーザーが独自インスタンスを持ち、OpenAIクライアントはスレッドセーフ
 
 ### 2026/2: XIVAPI検索条件拡張関連決定
 

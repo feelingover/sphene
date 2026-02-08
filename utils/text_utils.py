@@ -1,3 +1,5 @@
+import asyncio
+
 import config
 from ai.client import client as aiclient
 from log_utils.logger import logger
@@ -51,13 +53,16 @@ async def translate_text(text: str, target_language: str = "english") -> str | N
     try:
         logger.info(f"{config_data['log_prefix']}翻訳リクエスト: {truncate_text(text)}")
 
-        result = aiclient.chat.completions.create(
-            model=config.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": config_data["system_prompt"]},
-                {"role": "user", "content": text},
-            ],
-        )
+        def _sync_translate():
+            return aiclient.chat.completions.create(
+                model=config.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": config_data["system_prompt"]},
+                    {"role": "user", "content": text},
+                ],
+            )
+
+        result = await asyncio.to_thread(_sync_translate)
 
         translated_text = result.choices[0].message.content
         if translated_text:
