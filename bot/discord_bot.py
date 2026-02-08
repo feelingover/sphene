@@ -1,10 +1,10 @@
 import sys
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 import config
-from ai.conversation import load_system_prompt
+from ai.conversation import cleanup_expired_conversations, load_system_prompt
 from bot.commands import setup_commands
 from bot.events import setup_events
 from log_utils.logger import logger
@@ -45,6 +45,23 @@ class SpheneBot:
 
         # イベントのセットアップ
         setup_events(self.bot, command_group)
+
+        # クリーンアップタスクの開始を準備
+        @self.bot.listen("on_ready")
+        async def start_cleanup_task() -> None:
+            if not self._cleanup_task.is_running():
+                self._cleanup_task.start()
+                logger.info("クリーンアップタスクを開始しました")
+
+    @tasks.loop(minutes=15)
+    async def _cleanup_task(self) -> None:
+        """期限切れの会話を定期的にクリーンアップする"""
+        try:
+            count = cleanup_expired_conversations()
+            if count > 0:
+                logger.info(f"バックグラウンドクリーンアップ完了: {count}件の会話を削除しました")
+        except Exception as e:
+            logger.error(f"クリーンアップタスクでエラーが発生しました: {str(e)}", exc_info=True)
 
     def run(self) -> None:
         """ボットを起動する"""

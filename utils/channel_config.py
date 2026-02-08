@@ -5,6 +5,8 @@
 
 import json
 import os
+import re
+import tempfile
 from datetime import datetime
 from typing import Any, Optional
 
@@ -191,6 +193,13 @@ class ChannelConfig:
             debug_mode: テスト時などにTrue、実際のファイル/S3操作をスキップ
         """
         self.guild_id = str(guild_id)  # 文字列に変換して保存
+
+        # ギルドIDのバリデーション（英数字、アンダースコア、ハイフンを許可）
+        # パストラバーサル対策として、安全な文字のみに制限
+        if not re.match(r"^[a-zA-Z0-9_\-]+$", self.guild_id):
+            logger.error(f"無効なギルドID形式です: {self.guild_id}")
+            raise ValueError(f"Invalid guild_id format: {self.guild_id}")
+
         self.debug_mode = debug_mode
         self.storage_type = storage_type or config.CHANNEL_CONFIG_STORAGE_TYPE
         self.config_data: dict[str, Any] = {
@@ -291,17 +300,29 @@ class ChannelConfig:
             return False
 
     def _save_to_local(self) -> bool:
-        """ローカルファイルに設定を保存"""
+        """ローカルファイルに設定を保存 (アトミック保存)"""
         file_path = self._get_config_file_path()
         try:
             # ディレクトリが存在しない場合は作成
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(self.config_data, f, ensure_ascii=False, indent=2)
-            return True
+            # アトミックに保存するために一時ファイルを使用
+            temp_dir = os.path.dirname(file_path)
+            with tempfile.NamedTemporaryFile(
+                "w", dir=temp_dir, delete=False, encoding="utf-8", suffix=".tmp"
+            ) as tf:
+                json.dump(self.config_data, tf, ensure_ascii=False, indent=2)
+                temp_name = tf.name
+
+            try:
+                os.replace(temp_name, file_path)
+                return True
+            except Exception:
+                if os.path.exists(temp_name):
+                    os.remove(temp_name)
+                raise
         except Exception as e:
-            logger.error(f"ローカルファイルへの保存に失敗: {str(e)}", exc_info=True)
+            logger.error(f"ローカルファイルへのアトミック保存に失敗: {str(e)}", exc_info=True)
             return False
 
     def _save_to_s3(self) -> bool:

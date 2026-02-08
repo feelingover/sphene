@@ -219,14 +219,16 @@ class TestChannelConfig:
             assert kwargs["Key"] == f"sphene/channel_list.{conf.guild_id}.json"
 
     @patch("os.makedirs")
-    @patch("builtins.open")
-    def test_save_to_local(self, mock_open, mock_makedirs):
+    @patch("os.replace")
+    @patch("utils.channel_config.tempfile.NamedTemporaryFile")
+    def test_save_to_local(self, mock_tempfile, mock_replace, mock_makedirs):
         """ローカルへの保存テスト"""
         mock_file = MagicMock()
-        mock_open.return_value.__enter__.return_value = mock_file
+        mock_tempfile.return_value.__enter__.return_value = mock_file
+        mock_file.name = "temp_file_path"
 
         # テスト用のインスタンス作成
-        conf = ChannelConfig(guild_id="test_guild", debug_mode=True)
+        conf = ChannelConfig(guild_id="12345", debug_mode=True)
 
         # 保存テスト用にデータを設定
         conf.config_data = {
@@ -248,13 +250,12 @@ class TestChannelConfig:
 
         assert result is True
         assert mock_makedirs.called
-        mock_open.assert_called_once()
-        # json.dumpは内部的に複数回writeを呼び出すので、一度だけではなく複数回呼び出されていることを確認
-        assert mock_file.write.called
+        assert mock_tempfile.called
+        assert mock_replace.called
 
         # ファイルパスが正しく生成されているか確認
-        mock_open.assert_called_with(
-            f"storage/channel_list.{conf.guild_id}.json", "w", encoding="utf-8"
+        mock_replace.assert_called_with(
+            "temp_file_path", f"storage/channel_list.{conf.guild_id}.json"
         )
 
     @patch("utils.channel_config.get_s3_client")  # クラス内のインポート位置でパッチ
