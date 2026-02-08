@@ -763,3 +763,20 @@ class Sphene:
 user_conversations: defaultdict[str, Sphene] = defaultdict(
     lambda: Sphene(system_setting=load_system_prompt())
 )
+
+
+def cleanup_expired_conversations() -> int:
+    """期限切れの会話をメモリから削除する
+
+    Returns:
+        int: 削除されたエントリ数
+    """
+    expired_ids = [
+        user_id for user_id, api in user_conversations.items() if api.is_expired()
+    ]
+    for user_id in expired_ids:
+        del user_conversations[user_id]
+
+    if expired_ids:
+        logger.info(f"期限切れの会話をクリーンアップしました: {len(expired_ids)}件")
+    return len(expired_ids)
