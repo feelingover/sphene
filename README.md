@@ -68,8 +68,17 @@ DENIED_CHANNEL_IDS=
 
 ### 必要なパッケージのインストール
 
+[uv](https://docs.astral.sh/uv/)を使用して依存関係を管理しています：
+
 ```bash
-pip install -r requirements.txt
+# uvのインストール（未インストールの場合）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 依存パッケージのインストール
+uv sync
+
+# 開発用パッケージも含める場合
+uv sync --group dev
 ```
 
 ### ローカルでの実行方法
@@ -140,8 +149,9 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ├── app.py                # メインアプリケーション
 ├── config.py             # 設定ファイル
 ├── Dockerfile            # Dockerビルド設定
-├── requirements.txt      # 依存パッケージリスト
-├── requirements-dev.txt  # 開発用依存パッケージ
+├── pyproject.toml        # プロジェクト設定・依存定義
+├── uv.lock               # 依存パッケージのロックファイル
+├── .python-version       # Pythonバージョン指定
 ├── run_tests.sh          # テスト実行スクリプト
 ├── .env.sample           # 環境変数サンプル
 ├── README.md             # このファイル
@@ -188,6 +198,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ## 📊 技術仕様
 
 - Python 3.13+
+- uv - パッケージ管理・仮想環境管理
 - discord.py - Discordボットフレームワーク
 - OpenAI API - GPT-4o-mini会話モデル（マルチモーダル対応）
 - Docker - コンテナ化

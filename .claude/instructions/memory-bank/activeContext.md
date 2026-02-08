@@ -10,6 +10,9 @@ applyTo: "**"
 
 ## Recent Changes
 
+### 2026/2: uv移行
+requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini → pyproject.toml統合。Dockerfile・CI・run_tests.shをuv対応に更新。
+
 ### 2026/2: Discord Heartbeat Blocking修正
 `bot/events.py`の`process_conversation()`と`utils/text_utils.py`の`translate_text()`で`asyncio.to_thread()`を使用し、同期ブロッキング呼び出しをスレッドプールに退避。フルasync化（AsyncOpenAI移行）は中期改善候補。
 

@@ -12,25 +12,23 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-          
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
       - name: Run tests
         run: |
           chmod +x ./run_tests.sh
           ./run_tests.sh
-          
+
       - name: Upload test coverage
         uses: actions/upload-artifact@v4
         with:

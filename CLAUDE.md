@@ -8,11 +8,11 @@
 
 ```bash
 python app.py                              # Run bot
-python -m pytest                           # Test (全件)
-LOG_LEVEL=DEBUG python -m pytest           # Test (デバッグ)
+uv run python -m pytest                    # Test (全件)
+LOG_LEVEL=DEBUG uv run python -m pytest    # Test (デバッグ)
 ./run_tests.sh                             # Test + coverage report
-mypy .                                     # Type check
-pip install -r requirements-dev.txt        # Dev dependencies
+uv run mypy .                              # Type check
+uv sync --group dev                        # Dev dependencies
 docker build -t sphene-discord-bot .       # Docker build
 ```
 
