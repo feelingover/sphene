@@ -21,7 +21,10 @@ Sphene Discord Botは、モジュール性と拡張性を重視した構造に�
 - `bot/events.py` → `ai/conversation.py`
 
 **AI処理層:**
-- `ai/conversation.py` → `ai/client.py`, `utils/s3_utils.py`, `utils/text_utils.py`
+- `ai/conversation.py` → `ai/client.py`, `ai/tools.py`, `utils/s3_utils.py`, `utils/text_utils.py`
+
+**外部API連携層:**
+- `ai/tools.py` → `xivapi/client.py`
 
 ### レイヤー構成
 
@@ -37,12 +40,16 @@ Sphene Discord Botは、モジュール性と拡張性を重視した構造に�
    - `ai/conversation.py` - 会話管理ロジック
    - `ai/client.py` - OpenAI APIクライアント
 
-4. **ユーティリティ層**
+4. **外部API連携層**
+   - `ai/tools.py` - Function Callingツール定義と関数マッピング
+   - `xivapi/client.py` - XIVAPI v2アイテム検索クライアント
+
+5. **ユーティリティ層**
    - `utils/channel_config.py` - チャンネル設定管理
    - `utils/s3_utils.py` - S3関連ユーティリティ
    - `utils/text_utils.py` - テキスト処理ユーティリティ
 
-5. **ロギング層**
+6. **ロギング層**
    - `log_utils/logger.py` - ロギング設定
 
 ## 主要コンポーネントと関係
@@ -102,7 +109,12 @@ _OPENAI_ERROR_HANDLERS: dict[Type[APIError], tuple[int, str, str]] = {
 discord.pyの機能を活用したイベントハンドリングやコマンド処理では、
 Pythonのデコレータパターンを使用して宣言的にハンドラを定義しています。
 
-### 5. キャッシュパターン
+### 5. Function Callingパターン
+
+`ai/tools.py`でツール定義(`TOOL_DEFINITIONS`)と実行関数マッピング(`TOOL_FUNCTIONS`)を集約管理。
+`ai/conversation.py`が`func(**arguments)`で動的にキーワード引数を渡すため、ツール関数のパラメータ追加時はデフォルト値を設定すれば後方互換を維持できる。
+
+### 6. キャッシュパターン
 
 システムプロンプトのロードでは、キャッシュパターンを使用して
 頻繁なファイルIO操作を回避し、パフォーマンスを向上させています。
