@@ -23,6 +23,43 @@ def truncate_text(text: str, max_length: int = PREVIEW_LENGTH) -> str:
     return text[:max_length] + "..." if len(text) > max_length else text
 
 
+def split_message(text: str, max_length: int = 1900) -> list[str]:
+    """テキストをDiscordのメッセージ制限に合わせて分割する
+
+    Args:
+        text: 分割するテキスト
+        max_length: 1メッセージの最大文字数（デフォルトは安全マージンを取って1900）
+
+    Returns:
+        list[str]: 分割されたテキストのリスト
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    chunks = []
+    while text:
+        if len(text) <= max_length:
+            chunks.append(text)
+            break
+
+        # 制限内で最後の改行を探す
+        split_index = text.rfind("\n", 0, max_length)
+
+        if split_index == -1:
+            # 改行が見つからない場合は強制的に分割
+            split_index = max_length
+
+        chunks.append(text[:split_index])
+        # 次のチャンクは改行の次から開始（ただし先頭の空白は削除しない方がコードブロック等で安全かも）
+        # ただし、split_indexが改行の場合、その改行は含めないようにする
+        if text[split_index] == "\n":
+             text = text[split_index + 1:]
+        else:
+             text = text[split_index:]
+    
+    return chunks
+
+
 async def translate_text(text: str, target_language: str = "english") -> str | None:
     """テキストを指定された言語に翻訳する
 

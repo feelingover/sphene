@@ -120,3 +120,50 @@ async def test_translate_to_japanese_error(mock_aiclient: MagicMock) -> None:
 
     # アサーション
     assert result is None
+
+def test_split_message_short() -> None:
+    """短いメッセージは分割されないこと"""
+    from utils.text_utils import split_message
+    text = "Short message"
+    chunks = split_message(text)
+    assert len(chunks) == 1
+    assert chunks[0] == text
+
+
+def test_split_message_long() -> None:
+    """長いメッセージは指定長で分割されること"""
+    from utils.text_utils import split_message
+    # max_length=10 for easy testing
+    text = "123456789012345"
+    chunks = split_message(text, max_length=10)
+    assert len(chunks) == 2
+    assert chunks[0] == "1234567890"
+    assert chunks[1] == "12345"
+
+
+def test_split_message_with_newlines() -> None:
+    """改行がある場合は改行で分割されること"""
+    from utils.text_utils import split_message
+    text = "Line 1\nLine 2\nLine 3"
+    # "Line 1" is 6 chars. + newline = 7.
+    # max_length=10. It should include "Line 1".
+    chunks = split_message(text, max_length=10)
+    # Expected behavior:
+    # 1. "Line 1" (len 6) found \n at 6.
+    # 2. "Line 2" (len 6) found \n at 6.
+    # 3. "Line 3"
+    assert len(chunks) == 3
+    assert chunks[0] == "Line 1"
+    assert chunks[1] == "Line 2"
+    assert chunks[2] == "Line 3"
+
+
+def test_split_message_long_no_newlines() -> None:
+    """改行がない長いメッセージは強制分割されること"""
+    from utils.text_utils import split_message
+    text = "a" * 25
+    chunks = split_message(text, max_length=10)
+    assert len(chunks) == 3
+    assert chunks[0] == "a" * 10
+    assert chunks[1] == "a" * 10
+    assert chunks[2] == "a" * 5

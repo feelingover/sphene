@@ -10,7 +10,7 @@ import config
 from ai.conversation import Sphene, load_system_prompt, user_conversations
 from log_utils.logger import logger
 from utils.channel_config import ChannelConfigManager
-from utils.text_utils import truncate_text
+from utils.text_utils import split_message, truncate_text
 
 
 # bot の型ヒントを commands.Bot に変更
@@ -105,16 +105,21 @@ async def process_conversation(
         answer = await asyncio.to_thread(api.input_message, question)
 
     if answer:
-        if is_reply:
-            logger.info(
-                f"リプライとして応答送信: ユーザーID {user_id}, 応答: {truncate_text(answer)}"
-            )
-            await message.channel.send(answer, reference=message)
-        else:
-            logger.info(
-                f"通常応答送信: ユーザーID {user_id}, 応答: {truncate_text(answer)}"
-            )
-            await message.channel.send(answer)
+        chunks = split_message(answer)
+        for i, chunk in enumerate(chunks):
+            if is_reply:
+                if i == 0:
+                    logger.info(
+                        f"リプライとして応答送信(chunk {i+1}/{len(chunks)}): ユーザーID {user_id}, 応答: {truncate_text(chunk)}"
+                    )
+                    await message.channel.send(chunk, reference=message)
+                else:
+                    await message.channel.send(chunk)
+            else:
+                logger.info(
+                    f"通常応答送信(chunk {i+1}/{len(chunks)}): ユーザーID {user_id}, 応答: {truncate_text(chunk)}"
+                )
+                await message.channel.send(chunk)
     else:
         if is_reply:
             await message.channel.send(
@@ -285,17 +290,24 @@ async def send_translation_response(
         language_flag: 言語を示す絵文字 (🇺🇸 または 🇯🇵)
     """
     message_type = get_message_type(message)
+    
+    # フラグを含めた全体を作成してから分割
+    full_text = f"{language_flag} {translated_text}"
+    chunks = split_message(full_text)
 
-    if message_type == "thread" and message.thread:
-        # スレッド内のメッセージの場合は、そのスレッド内に返信
-        await message.thread.send(
-            f"{language_flag} {translated_text}", reference=message
-        )
-    else:
-        # 通常メッセージやリプライの場合は今までどおり
-        await message.channel.send(
-            f"{language_flag} {translated_text}", reference=message
-        )
+    for i, chunk in enumerate(chunks):
+        if message_type == "thread" and message.thread:
+            # スレッド内のメッセージの場合は、そのスレッド内に返信
+            if i == 0:
+                await message.thread.send(chunk, reference=message)
+            else:
+                await message.thread.send(chunk)
+        else:
+            # 通常メッセージやリプライの場合は今までどおり
+            if i == 0:
+                await message.channel.send(chunk, reference=message)
+            else:
+                await message.channel.send(chunk)
 
 
 async def translate_and_reply(
