@@ -5,6 +5,7 @@ applyTo: "**"
 
 ## Completed Features
 
+- uv移行: pyproject.toml + uv.lock による依存管理、CI/Dockerfileのuv対応
 - Discord応答（メンション、名前呼び、リプライ）、スラッシュコマンド
 - GPT-4o-mini対話、会話履歴管理、マルチモーダル（画像）
 - Function Calling → XIVAPI v2検索（ジョブ・IL範囲フィルタ対応）
