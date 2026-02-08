@@ -9,7 +9,7 @@ Claude Code should reference this file when working on related tasks, but doesn'
 
 ## 現在の状態
 
-Sphene Discord BotはXIVAPI v2 Function Callingの検索条件拡張を完了し、ジョブ名・アイテムレベル指定の複合条件検索が可能になりました。全137テストが通過し、テストカバレッジは86%を維持しています。
+Sphene Discord Botは本番環境で発生していたDiscord heartbeat blocking問題を修正しました。`asyncio.to_thread()`により同期ブロッキング呼び出しをイベントループから解放。全137テストが通過し、テストカバレッジは86%を維持しています。
 
 ### 動作している機能
 
@@ -131,6 +131,12 @@ Sphene Discord BotはXIVAPI v2 Function Callingの検索条件拡張を完了し
    - **状態**: 完全に解決
    - **対応**: `import time`を追加、API再試行ロジックが正常動作
 
+### 🟢 解決済み(2026/2)
+
+1. ✅ **Discord Heartbeat Blocking** - 同期OpenAI API呼び出しによるイベントループブロック
+   - **状態**: 完全に解決
+   - **対応**: `asyncio.to_thread()`で`process_conversation()`と`translate_text()`のブロッキング呼び出しをスレッドプールに退避
+
 ### 🟡 継続中の課題
 
 1. **API制限対応**
@@ -154,6 +160,7 @@ Sphene Discord BotはXIVAPI v2 Function Callingの検索条件拡張を完了し
 
 | 日付 | 決定事項 | 理由 |
 |------|----------|------|
+| 2026/2 | Discord heartbeat blocking修正(asyncio.to_thread) | 本番WebSocket切断の解消 |
 | 2026/2 | XIVAPI検索条件拡張(ジョブ・IL対応) | 複合条件検索の実現 |
 | 2025/12/7 | 包括的コードリファクタリング | 保守性・セキュリティ・品質改善 |
 | 2025/12/7 | エラーメッセージ情報漏洩対策 | セキュリティリスク低減 |
