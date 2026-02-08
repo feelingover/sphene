@@ -1,241 +1,57 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Memory Bank
 
-## Memory Bank Integration
+`.claude/instructions/memory-bank/` に開発コンテキストを保持。大きな変更後は `activeContext.md` と `progress.md` を更新すること。
 
-**IMPORTANT: Always read the memory bank first before starting any task.** The `.claude/instructions/memory-bank/` directory contains comprehensive, optimized project documentation providing essential context for development.
-
-### Core Memory Bank Files (Read Before Starting Tasks)
-
-The memory bank has been optimized for fast AI agent context loading (**47% size reduction**, **40-50% faster loading**):
-
-1. **`projectbrief.md`** - Foundation: core requirements and goals
-2. **`productContext.md`** - Why this exists and how it works
-3. **`activeContext.md`** - Current focus, recent changes, next steps
-4. **`systemPatterns.md`** - Architecture and key technical decisions
-5. **`techContext.md`** - Technologies and development setup
-6. **`progress.md`** - Current status and remaining work
-
-### Memory Bank Workflow
-
-**Before Any Task:**
-
-- Read relevant memory bank files to understand current context
-- Check `activeContext.md` for recent changes and current focus
-- Review `progress.md` for status and known issues
-
-**After Significant Changes:**
-
-- Update `activeContext.md` with new patterns or decisions
-- Update `progress.md` with completed work and status changes
-- Document new technical insights in appropriate files
-
-### Memory Bank Optimization (2025/12/21)
-
-The memory bank has been comprehensively optimized for AI agent productivity:
-
-- **Size Reduction**: 1,353 lines → 650 lines (52% reduction)
-- **Information Density**: Removed redundancies across files, consolidated overlapping content
-- **Diagram Simplification**: 7 Mermaid diagrams → 1 (86% reduction), others converted to text
-- **Command Deduplication**: Removed duplicate commands, cross-referenced to CLAUDE.md
-- **Historical Compression**: Detailed histories compressed to concise summaries
-- **Result**: Faster context loading, maintained all critical information, improved AI comprehension
-
-## Claude Code Usage
-
-### Working with Memory Bank
-
-Claude Code reads the `.claude/instructions/memory-bank/` directory automatically. The memory bank provides:
-
-- **Context Loading**: Automatic context about project goals, architecture, and current status
-- **Decision History**: Track of important technical decisions and their rationale
-- **Pattern Library**: Established coding patterns and best practices for this project
-
-### Task Planning and Execution
-
-When working on tasks:
-
-1. **Use Plan Mode** for complex changes:
-   - Launches Explore agents to understand the codebase
-   - Creates detailed implementation plans
-   - Gets user approval before execution
-
-2. **Update Memory Bank** after significant changes:
-   - Update `activeContext.md` with new patterns or decisions
-   - Update `progress.md` with completed work
-   - Document technical insights in appropriate files
-
-3. **Leverage Agents**:
-   - **Explore**: Find files, understand architecture, discover patterns
-   - **Plan**: Design implementation approaches
-   - **Bug Hunter**: Create comprehensive test cases
-   - **Code Security Reviewer**: Security and performance review
-
-### Best Practices
-
-- Always read relevant memory bank files before starting tasks
-- Keep `activeContext.md` and `progress.md` up-to-date
-- Document new architectural patterns in `systemPatterns.md`
-- Use memory bank for context continuity across sessions
-
-## Project Overview
-
-Sphene is a mature Discord bot that uses OpenAI's GPT-4o-mini for conversations. It responds to mentions, name calls, and replies with sophisticated conversation management. The bot features modular architecture, flexible storage options (local/S3), comprehensive error handling, and Docker/Kubernetes deployment support.
-
-## Commands for Development
-
-### Running the Bot
+## Commands
 
 ```bash
-python app.py
-```
-
-### Testing
-
-```bash
-# Run all tests with coverage
-python -m pytest
-
-# Run tests with custom log level
-LOG_LEVEL=DEBUG python -m pytest
-
-# Run specific test file
-python -m pytest tests/test_ai/test_client.py
-
-# Use the shell script (includes coverage report)
-./run_tests.sh
-```
-
-### Type Checking
-
-```bash
-mypy .
-```
-
-### Package Installation
-
-```bash
-# Production dependencies
-pip install -r requirements.txt
-
-# Development dependencies (includes pytest, mypy, etc.)
-pip install -r requirements-dev.txt
-```
-
-### Docker
-
-```bash
-# Build image
-docker build -t sphene-discord-bot .
-
-# Run container
-docker run --env-file .env sphene-discord-bot
+python app.py                              # Run bot
+python -m pytest                           # Test (全件)
+LOG_LEVEL=DEBUG python -m pytest           # Test (デバッグ)
+./run_tests.sh                             # Test + coverage report
+mypy .                                     # Type check
+pip install -r requirements-dev.txt        # Dev dependencies
+docker build -t sphene-discord-bot .       # Docker build
 ```
 
 ## Architecture
 
-The codebase follows a modular structure with clear separation of concerns:
+```
+app.py                    # Entry point
+config.py                 # Environment-based config
+ai/
+  client.py               # OpenAI client
+  conversation.py         # Conversation state, prompt, OpenAI API calls
+  tools.py                # Function Calling definitions & dispatch
+bot/
+  discord_bot.py          # Bot core, setup
+  commands.py             # Slash commands
+  events.py               # Message/reaction event handlers
+xivapi/
+  client.py               # XIVAPI v2 item search
+utils/
+  channel_config.py       # Channel permissions (local/S3)
+  s3_utils.py             # S3 operations
+  text_utils.py           # Text processing, translation
+  aws_clients.py          # AWS service clients
+log_utils/logger.py       # Logging config
+storage/                  # Local file storage (prompts, configs)
+```
 
-- **`app.py`**: Main entry point that initializes and runs the SpheneBot
-- **`config.py`**: Centralized configuration using environment variables
-- **`ai/`**: OpenAI integration and conversation management
-  - `client.py`: OpenAI client initialization
-  - `conversation.py`: Conversation state and prompt management
-- **`bot/`**: Discord bot implementation
-  - `discord_bot.py`: Main bot class with setup and initialization
-  - `commands.py`: Slash command definitions
-  - `events.py`: Event handlers for messages and reactions
-- **`utils/`**: Shared utilities
-  - `channel_config.py`: Channel permission management
-  - `s3_utils.py`: S3 storage operations
-  - `text_utils.py`: Text processing utilities
-  - `aws_clients.py`: AWS service clients
-- **`log_utils/`**: Centralized logging setup
-- **`storage/`**: Local file storage for prompts and configurations
+### Key Config Env Vars
 
-### Key Design Patterns
-
-1. **Storage Abstraction**: Both system prompts and channel configurations support local/S3 storage via environment variables
-2. **Event-Driven Architecture**: Bot functionality is organized around Discord events (messages, reactions, commands)
-3. **Conversation State Management**: Each channel maintains its own conversation history with automatic timeout and limits
-4. **Modular Command System**: Slash commands are grouped and can be easily extended
-
-### Configuration System
-
-The bot uses environment variables for all configuration:
-
-- `PROMPT_STORAGE_TYPE`: "local" or "s3" for system prompt storage
-- `CHANNEL_CONFIG_STORAGE_TYPE`: "local" or "s3" for channel settings
-- `BOT_NAME`: Name the bot responds to (default: "アサヒ")
+- `PROMPT_STORAGE_TYPE`: "local" | "s3"
+- `CHANNEL_CONFIG_STORAGE_TYPE`: "local" | "s3"
+- `BOT_NAME`: Bot trigger name (default: "アサヒ")
 - `COMMAND_GROUP_NAME`: Slash command group prefix
 
-## Development Guidelines
+## Code Standards
 
-### Code Quality Standards (Updated 2025/12/7)
-
-This project maintains high code quality standards established through comprehensive refactoring:
-
-1. **Function Length**: Keep functions under 20-30 lines; split functions exceeding 60 lines
-2. **Naming Conventions**: Use underscore prefix (`_`) for all private/internal functions
-3. **Error Handling**:
-   - Always include `exc_info=True` in error logs for stack traces
-   - Never expose internal error details to users (security risk)
-   - Provide generic, user-friendly error messages
-4. **Code Duplication**: Extract common logic into shared functions (see `translate_text()` pattern)
-5. **Documentation**: Use Google Style docstrings with parameter descriptions, return values, and examples
-6. **Testing**: Maintain 86%+ test coverage; update tests when refactoring internal APIs
-
-### Code Patterns and Decision Making
-
-The project follows established patterns documented in the memory bank:
-
-- **Storage Abstraction Pattern**: Both system prompts and channel configurations support local/S3 storage
-- **Event-Driven Architecture**: Bot functionality organized around Discord events
-- **Hierarchical Error Handling**: Different error types with specific recovery strategies
-- **Conversation State Management**: Channel-specific context with automatic timeouts
-- **Configuration Pattern**: Dictionary-based configuration (e.g., `translate_text()` language configs)
-
-Before implementing new features, review `.claude/instructions/memory-bank/systemPatterns.md` and `.claude/instructions/memory-bank/activeContext.md` for established patterns and current technical decisions.
-
-### Knowledge Management
-
-- **Document Patterns**: Record new architectural patterns in `.claude/instructions/memory-bank/systemPatterns.md`
-- **Track Decisions**: Log important technical decisions in `.claude/instructions/memory-bank/activeContext.md`
-- **Update Progress**: Maintain current status in `.claude/instructions/memory-bank/progress.md`
-- **Context Continuity**: Use memory bank to maintain development context across sessions
-
-### Memory Bank Integration
-
-The `.claude/instructions/memory-bank/` directory contains comprehensive project documentation used by development tools. These files provide critical context about project goals, architecture decisions, current status, and established practices. Always reference these files when making significant changes to understand the project's intent, constraints, and evolution.
-
-## Recent Refactoring (2025/12/7)
-
-A comprehensive code review identified and resolved 10 issues across 3 phases:
-
-### Phase 1: Critical Bug Fixes
-
-- **[ai/conversation.py](ai/conversation.py:3)**: Added missing `time` module import
-- **[utils/text_utils.py](utils/text_utils.py)**: Consolidated duplicate translation functions (30% code reduction)
-
-### Phase 2: Quality Improvements
-
-- **[ai/conversation.py](ai/conversation.py)**: Removed unreachable code and simplified comments
-- **[bot/events.py](bot/events.py:194)**: Fixed security vulnerability (removed error details from user messages)
-- **[utils/channel_config.py](utils/channel_config.py)**: Added stack traces to 5 error logs
-- **[bot/events.py](bot/events.py)**: Standardized function naming (`handle_*` → `_handle_*`)
-
-### Phase 3: Maintainability Enhancements
-
-- **[ai/conversation.py](ai/conversation.py:175-180)**: Removed redundant type checks
-- **[ai/conversation.py](ai/conversation.py:125-184)**: Split 60-line function into 3 smaller functions
-- **Multiple files**: Enhanced docstrings with Google Style format
-- **[utils/s3_utils.py](utils/s3_utils.py:66-72)**: Removed meaningless TYPE_CHECKING block
-
-### Test Updates
-
-- **[tests/test_bot/test_events.py](tests/test_bot/test_events.py)**: Updated imports and security test expectations
-- **[tests/test_bot/test_reactions.py](tests/test_bot/test_reactions.py)**: Updated function references
-- **[tests/test_ai/test_conversation.py](tests/test_ai/test_conversation.py)**: Updated default prompt expectations
-
-**Result**: All 103 tests passing, 86% coverage maintained, significant improvements in security, maintainability, and code quality.
+- 関数長: 20-30行目安、60行超で分割
+- Private関数: `_` プレフィックス必須
+- エラーログ: `exc_info=True` 必須
+- ユーザー向けエラー: 内部詳細を含めない
+- Docstring: Google Style
+- テストカバレッジ: 86%以上を維持
