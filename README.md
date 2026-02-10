@@ -197,7 +197,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 ## 📊 技術仕様
 
-- Python 3.13+
+- Python 3.14+
 - uv - パッケージ管理・仮想環境管理
 - discord.py - Discordボットフレームワーク
 - OpenAI API - GPT-4o-mini会話モデル（マルチモーダル対応）
