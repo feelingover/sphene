@@ -1,4 +1,4 @@
-FROM python:3.13-alpine AS builder
+FROM python:3.14-alpine AS builder
 
 WORKDIR /app/
 
@@ -9,7 +9,7 @@ COPY --link pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project --no-group dev
 
 # --- ランナー用ステージ ---
-FROM python:3.13-alpine AS runner
+FROM python:3.14-alpine AS runner
 
 ARG USER_NAME=sphene
 ARG USER_ID=1000
