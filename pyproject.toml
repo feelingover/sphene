@@ -8,7 +8,7 @@ dependencies = [
     "openai",
     "discord.py>=2.0.0",
     "python-dotenv",
-    "boto3",
+    "google-cloud-firestore",
     "requests",
     "httpx",
 ]
@@ -34,5 +34,13 @@ log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(linen
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 addopts = "--verbose --cov=. --cov-report=term --cov-report=html --no-cov-on-fail"
 
+[tool.mypy]
+exclude = ["scripts/"]
+
+[[tool.mypy.overrides]]
+module = ["google.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
+
 [tool.coverage.run]
-omit = ["tests/*", "setup.py"]
+omit = ["tests/*", "setup.py", "scripts/*"]

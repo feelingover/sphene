@@ -483,7 +483,6 @@ async def cmd_reload_prompt(interaction: discord.Interaction) -> None:
         )
         await interaction.followup.send(
             "✅ システムプロンプトを再読み込みしました！\n"
-            f"ストレージタイプ: **{config.PROMPT_STORAGE_TYPE}**\n"
             f"プロンプトファイル: **{config.SYSTEM_PROMPT_FILENAME}**"
         )
     else:

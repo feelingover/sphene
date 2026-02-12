@@ -32,18 +32,19 @@ bot/
 xivapi/
   client.py               # XIVAPI v2 item search
 utils/
-  channel_config.py       # Channel permissions (local/S3)
-  s3_utils.py             # S3 operations
+  channel_config.py       # Channel permissions (local/Firestore)
+  firestore_client.py     # Firestore client (singleton)
   text_utils.py           # Text processing, translation
-  aws_clients.py          # AWS service clients
 log_utils/logger.py       # Logging config
 storage/                  # Local file storage (prompts, configs)
+scripts/
+  migrate_s3_to_firestore.py  # S3→Firestore migration tool
 ```
 
 ### Key Config Env Vars
 
-- `PROMPT_STORAGE_TYPE`: "local" | "s3"
-- `CHANNEL_CONFIG_STORAGE_TYPE`: "local" | "s3"
+- `CHANNEL_CONFIG_STORAGE_TYPE`: "local" | "firestore"
+- `FIRESTORE_COLLECTION_NAME`: Firestore collection name (default: "channel_configs")
 - `BOT_NAME`: Bot trigger name (default: "アサヒ")
 - `COMMAND_GROUP_NAME`: Slash command group prefix
 

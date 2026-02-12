@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 import config
 from log_utils.logger import logger
-from utils.aws_clients import get_s3_client
+from utils.firestore_client import get_firestore_client
 
 # シングルトンインスタンスを格納する変数
 _channel_config_manager_instance = None
@@ -30,7 +30,7 @@ class ChannelConfigManager:
         シングルトンインスタンスを取得する
 
         Args:
-            debug_mode: テスト時などにTrue、実際のファイル/S3操作をスキップ
+            debug_mode: テスト時などにTrue、実際のファイル/Firestore操作をスキップ
 
         Returns:
             ChannelConfigManager: シングルトンインスタンス
@@ -85,11 +85,11 @@ class ChannelConfigManager:
             ChannelConfig: 作成した設定インスタンス
         """
         guild_id = str(guild_id)
-        config = ChannelConfig(guild_id=guild_id, debug_mode=self.debug_mode)
-        config.save_config()
-        self.guild_configs[guild_id] = config
+        config_obj = ChannelConfig(guild_id=guild_id, debug_mode=self.debug_mode)
+        config_obj.save_config()
+        self.guild_configs[guild_id] = config_obj
         logger.info(f"ギルドID {guild_id} の設定ファイルを作成")
-        return config
+        return config_obj
 
     def delete_guild_config(self, guild_id: Any) -> bool:
         """
@@ -109,11 +109,11 @@ class ChannelConfigManager:
             logger.info(f"ギルドID {guild_id} の設定をメモリから削除")
             del self.guild_configs[guild_id]
 
-        # ファイルから削除
+        # ストレージから削除
         if not self.debug_mode:
             storage_type = config.CHANNEL_CONFIG_STORAGE_TYPE
-            if storage_type == "s3":
-                success = self._delete_s3_file(guild_id)
+            if storage_type == "firestore":
+                success = self._delete_firestore_document(guild_id)
             else:
                 success = self._delete_local_file(guild_id)
 
@@ -143,9 +143,9 @@ class ChannelConfigManager:
             logger.error(f"ギルド設定ファイル削除エラー: {str(e)}", exc_info=True)
             return False
 
-    def _delete_s3_file(self, guild_id: str) -> bool:
+    def _delete_firestore_document(self, guild_id: str) -> bool:
         """
-        S3の設定ファイルを削除
+        Firestoreのドキュメントを削除
 
         Args:
             guild_id: ギルドID
@@ -154,28 +154,24 @@ class ChannelConfigManager:
             bool: 削除が成功したかどうか
         """
         try:
-            from config import S3_BUCKET_NAME
-
-            # S3クライアント
-            s3_client = get_s3_client()
-
-            # ファイルキー
-            base_path = config.S3_FOLDER_PATH + "/" if config.S3_FOLDER_PATH else ""
-            file_key = f"{base_path}channel_list.{guild_id}.json"
-
-            # ファイル削除
-            s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=file_key)
-            logger.info(f"S3ギルド設定ファイル削除: {file_key}")
+            db = get_firestore_client()
+            collection_name = config.FIRESTORE_COLLECTION_NAME
+            db.collection(collection_name).document(guild_id).delete()
+            logger.info(
+                f"Firestoreドキュメント削除: {collection_name}/{guild_id}"
+            )
             return True
         except Exception as e:
-            logger.error(f"S3ギルド設定ファイル削除エラー: {str(e)}", exc_info=True)
+            logger.error(
+                f"Firestoreドキュメント削除エラー: {str(e)}", exc_info=True
+            )
             return False
 
 
 class ChannelConfig:
     """
     特定ギルドのチャンネルリストと評価モードの設定を管理するクラス
-    設定をJSONファイルとして保存・読み込みできる
+    設定をJSONファイルまたはFirestoreとして保存・読み込みできる
     """
 
     def __init__(
@@ -189,8 +185,8 @@ class ChannelConfig:
 
         Args:
             guild_id: ギルドID
-            storage_type: 'local' or 's3' or None (Noneの場合はconfig設定を使用)
-            debug_mode: テスト時などにTrue、実際のファイル/S3操作をスキップ
+            storage_type: 'local' or 'firestore' or None (Noneの場合はconfig設定を使用)
+            debug_mode: テスト時などにTrue、実際のファイル/Firestore操作をスキップ
         """
         self.guild_id = str(guild_id)  # 文字列に変換して保存
 
@@ -235,8 +231,8 @@ class ChannelConfig:
         if self.debug_mode:
             return
 
-        if self.storage_type == "s3":
-            self._load_from_s3()
+        if self.storage_type == "firestore":
+            self._load_from_firestore()
         else:
             self._load_from_local()
 
@@ -251,31 +247,29 @@ class ChannelConfig:
                 f"チャンネル設定ファイルが見つかりません: {file_path}"
             )
 
-    def _load_from_s3(self) -> None:
-        """S3から設定ファイルを読み込む"""
-        file_key = self._get_s3_file_key()
-
+    def _load_from_firestore(self) -> None:
+        """Firestoreから設定を読み込む"""
         try:
-            from config import S3_BUCKET_NAME
-
-            # S3クライアント
-            s3_client = get_s3_client()
-            response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=file_key)
-            content = response["Body"].read().decode("utf-8")
-            if content is None:
-                raise Exception("S3からファイル内容を取得できませんでした")
-            self.config_data = json.loads(content)
+            db = get_firestore_client()
+            collection_name = config.FIRESTORE_COLLECTION_NAME
+            doc = db.collection(collection_name).document(self.guild_id).get()
+            if doc.exists:  # type: ignore[union-attr]
+                self.config_data = doc.to_dict()  # type: ignore[union-attr,assignment]
+            else:
+                raise FileNotFoundError(
+                    f"Firestoreにドキュメントが見つかりません: "
+                    f"{collection_name}/{self.guild_id}"
+                )
+        except FileNotFoundError:
+            raise
         except Exception as e:
-            raise Exception(f"S3からの設定ファイル読み込みに失敗: {str(e)}")
+            raise Exception(
+                f"Firestoreからの設定読み込みに失敗: {str(e)}"
+            ) from e
 
     def _get_config_file_path(self) -> str:
         """設定ファイルのパスを取得"""
         return f"storage/channel_list.{self.guild_id}.json"
-
-    def _get_s3_file_key(self) -> str:
-        """S3のファイルキーを取得"""
-        base_path = config.S3_FOLDER_PATH + "/" if config.S3_FOLDER_PATH else ""
-        return f"{base_path}channel_list.{self.guild_id}.json"
 
     def save_config(self) -> bool:
         """
@@ -291,8 +285,8 @@ class ChannelConfig:
         self.config_data["updated_at"] = datetime.now().isoformat()
 
         try:
-            if self.storage_type == "s3":
-                return self._save_to_s3()
+            if self.storage_type == "firestore":
+                return self._save_to_firestore()
             else:
                 return self._save_to_local()
         except Exception as e:
@@ -325,24 +319,20 @@ class ChannelConfig:
             logger.error(f"ローカルファイルへのアトミック保存に失敗: {str(e)}", exc_info=True)
             return False
 
-    def _save_to_s3(self) -> bool:
-        """S3に設定を保存"""
+    def _save_to_firestore(self) -> bool:
+        """Firestoreに設定を保存"""
         try:
-            from config import S3_BUCKET_NAME
-
-            s3_client = get_s3_client()
-            file_key = self._get_s3_file_key()
-            content = json.dumps(self.config_data, ensure_ascii=False, indent=2).encode(
-                "utf-8"
+            db = get_firestore_client()
+            collection_name = config.FIRESTORE_COLLECTION_NAME
+            db.collection(collection_name).document(self.guild_id).set(
+                self.config_data
             )
-
-            s3_client.put_object(Body=content, Bucket=S3_BUCKET_NAME, Key=file_key)
             logger.info(
-                f"S3へのファイル保存成功: バケット={S3_BUCKET_NAME}, キー={file_key}"
+                f"Firestoreへの保存成功: {collection_name}/{self.guild_id}"
             )
             return True
         except Exception as e:
-            logger.error(f"S3への保存に失敗: {str(e)}", exc_info=True)
+            logger.error(f"Firestoreへの保存に失敗: {str(e)}", exc_info=True)
             return False
 
     def get_behavior(self) -> str:

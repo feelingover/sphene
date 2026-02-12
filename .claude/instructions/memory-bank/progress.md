@@ -5,13 +5,14 @@ applyTo: "**"
 
 ## Completed Features
 
+- S3廃止 + Firestore移行: AWS依存完全削除、チャンネル設定をFirestoreに移行
 - uv移行: pyproject.toml + uv.lock による依存管理、CI/Dockerfileのuv対応
 - Discord応答（メンション、名前呼び、リプライ）、スラッシュコマンド
 - GPT-4o-mini対話、会話履歴管理、マルチモーダル（画像）
 - Function Calling → XIVAPI v2検索（ジョブ・IL範囲フィルタ対応）
-- 翻訳（国旗リアクション: 🇺🇸/🇯🇵）
+- 翻訳（国旗リアクション: US/JP）
 - チャンネル管理（全体/限定モード、追加/削除）
-- ストレージ: ローカル/S3選択
+- ストレージ: ローカル/Firestore選択（システムプロンプトはローカルのみ）
 - デプロイ: ローカル/Docker/Kubernetes
 
 ## TODO
