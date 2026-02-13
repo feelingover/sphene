@@ -30,41 +30,30 @@ OPENAI_MODEL=gpt-4o-mini  # 使用するOpenAIのモデル
 
 # システムプロンプトの設定
 SYSTEM_PROMPT_FILENAME=system.txt
-# プロンプトのストレージタイプ: local または s3
-PROMPT_STORAGE_TYPE=local
-# S3バケット名（PROMPT_STORAGE_TYPE=s3 の場合に使用）
-S3_BUCKET_NAME=your-bucket-name
-# S3フォルダパス（オプション、指定しない場合はバケットのルートに配置）
-S3_FOLDER_PATH=prompts
 
-# チャンネル設定の保存先: local または s3
+# チャンネル設定のストレージタイプ: local または firestore
 CHANNEL_CONFIG_STORAGE_TYPE=local
-# チャンネル設定ファイルのパス（ローカルの場合）
+# ローカル使用時のチャンネル設定ファイルパス
 CHANNEL_CONFIG_PATH=channel_config.json
 
-# 使用を禁止するチャンネルIDをカンマ区切りで指定（例: 123456789012345678,876543210987654321）
-# 注: 後方互換性のために残っていますが、新システムではファイルベースの設定に移行しています
-DENIED_CHANNEL_IDS=
+# Firestoreコレクション名（CHANNEL_CONFIG_STORAGE_TYPE=firestore の場合に使用）
+FIRESTORE_COLLECTION_NAME=channel_configs
+# GCPサービスアカウントキーのパス（Workload Identity使用時は不要）
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+
+# ログレベル設定: DEBUG, INFO, WARNING, ERROR, CRITICAL のいずれか
+LOG_LEVEL=INFO
 ```
 
 ### システムプロンプトの用意
 
 プロジェクトルートにある`system.txt.sample`を使用して、ボットのキャラクター設定を行います：
 
-1. ローカルストレージを使用する場合:
-
-   ```bash
-   # システムプロンプトをローカルストレージにコピー
-   cp system.txt.sample storage/system.txt
-   # 必要に応じてsystem.txtを編集してキャラクター設定をカスタマイズ
-   ```
-
-2. S3ストレージを使用する場合:
-
-   ```bash
-   # AWSコマンドラインツールを使用してS3にアップロード
-   aws s3 cp system.txt.sample s3://your-bucket-name/[folder-path/]system.txt
-   ```
+```bash
+# システムプロンプトをローカルストレージにコピー
+cp system.txt.sample storage/system.txt
+# 必要に応じてsystem.txtを編集してキャラクター設定をカスタマイズ
+```
 
 ### 必要なパッケージのインストール
 
@@ -203,7 +192,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - OpenAI API - GPT-4o-mini会話モデル（マルチモーダル対応）
 - Docker - コンテナ化
 - Kubernetes - オプショナルデプロイ環境
-- AWS S3 (オプション) - システムプロンプトのリモートストレージ
+- Cloud Firestore (オプション) - チャンネル設定のリモートストレージ
 - XIVAPI v2 - FF14アイテム情報検索API
 - httpx - HTTPクライアント（XIVAPI通信用）
 
@@ -266,16 +255,12 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ## 📝 システムプロンプトのカスタマイズ
 
 ボットのキャラクター設定やふるまいは、システムプロンプトをカスタマイズすることで自由に変更できます。
-プロンプトは`storage/system.txt`（ローカルストレージの場合）または指定したS3バケット内（S3ストレージの場合）に配置します。
+プロンプトファイルは`storage/system.txt`ディレクトリに配置します。
 
-### プロンプトストレージオプション
-
-- **ローカルストレージ（デフォルト）**: `.env`で`PROMPT_STORAGE_TYPE=local`を設定
-  - プロンプトファイルは`storage/`ディレクトリに配置
-
-- **S3ストレージ**: `.env`で`PROMPT_STORAGE_TYPE=s3`を設定
-  - S3バケット名とオプションのフォルダパスを指定
-  - プロンプトファイルはS3バケットの指定されたパスに配置
+```bash
+# システムプロンプトのカスタマイズ
+vi storage/system.txt  # ボットのキャラクター設定を編集
+```
 
 ## 📚 メモリーバンク
 
