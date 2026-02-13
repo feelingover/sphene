@@ -165,58 +165,72 @@ class TestChannelConfig:
             f"storage/channel_list.{conf.guild_id}.json", "r", encoding="utf-8"
         )
 
-    @patch("utils.channel_config.get_s3_client")  # クラス内のインポート位置でパッチ
-    def test_load_from_s3(self, mock_get_s3_client):
-        """S3からの読み込みテスト"""
-        # S3クライアントをモック
-        mock_s3_client = MagicMock()
-        mock_get_s3_client.return_value = mock_s3_client
+    @patch("utils.channel_config.get_firestore_client")
+    def test_load_from_firestore(self, mock_get_firestore_client):
+        """Firestoreからの読み込みテスト"""
+        mock_db = MagicMock()
+        mock_get_firestore_client.return_value = mock_db
 
-        # S3からの応答をモック
-        mock_body = MagicMock()
-        mock_body.read.return_value = json.dumps(
-            {
-                "behavior": "allow",
-                "channels": [{"id": 456, "name": "S3テスト"}],
-                "updated_at": "2025-04-19T10:00:00",
-            }
-        ).encode("utf-8")
+        # Firestoreドキュメントのモック
+        mock_doc = MagicMock()
+        mock_doc.exists = True
+        mock_doc.to_dict.return_value = {
+            "behavior": "allow",
+            "channels": [{"id": 456, "name": "Firestoreテスト"}],
+            "updated_at": "2025-04-19T10:00:00",
+        }
+        mock_db.collection.return_value.document.return_value.get.return_value = (
+            mock_doc
+        )
 
-        mock_s3_client.get_object.return_value = {"Body": mock_body}
+        with patch.object(config, "FIRESTORE_COLLECTION_NAME", "test_collection"):
+            conf = ChannelConfig(
+                guild_id="test_guild", storage_type="firestore", debug_mode=True
+            )
 
-        # テスト時に呼び出しをデバッグモードで行う
-        with patch.object(config, "S3_BUCKET_NAME", "test-bucket"):
-            # 一時的にS3_FOLDER_PATHをモックして、実際のS3キーパスをテスト
-            with patch.object(config, "S3_FOLDER_PATH", "sphene"):
-                # 重要: debug_mode=Trueに変更して初期化時のファイルI/Oを避ける
-                # 今回はload_configが呼ばれないように完全にデバッグモードで実行
-                conf = ChannelConfig(
-                    guild_id="test_guild", storage_type="s3", debug_mode=True
-                )
+            # モックをリセット
+            mock_db.reset_mock()
+            mock_get_firestore_client.reset_mock()
 
-                # モックをリセットして確実に追跡
-                mock_s3_client.reset_mock()
-                mock_get_s3_client.reset_mock()
+            # テスト対象のメソッドを実行
+            conf.debug_mode = False
+            conf._load_from_firestore()
+            conf.debug_mode = True
 
-                # テスト対象のメソッドを実行
-                # debug_modeを一時的に無効化して実際のファイル操作を有効に
-                conf.debug_mode = False
-                conf._load_from_s3()
-                conf.debug_mode = True
+        assert conf.get_behavior() == "allow"
+        assert len(conf.get_channels()) == 1
+        assert conf.get_channels()[0]["id"] == 456
+        assert conf.get_channels()[0]["name"] == "Firestoreテスト"
 
-                # テスト後に元に戻す
-                conf.debug_mode = True
+        # 正しいコレクション・ドキュメントで呼び出されたか確認
+        mock_db.collection.assert_called_once_with("test_collection")
+        mock_db.collection.return_value.document.assert_called_once_with("test_guild")
 
-            assert conf.get_behavior() == "allow"
-            assert len(conf.get_channels()) == 1
-            assert conf.get_channels()[0]["id"] == 456
-            assert conf.get_channels()[0]["name"] == "S3テスト"
+    @patch("utils.channel_config.get_firestore_client")
+    def test_load_from_firestore_not_found(self, mock_get_firestore_client):
+        """Firestoreにドキュメントがない場合の読み込みテスト"""
+        mock_db = MagicMock()
+        mock_get_firestore_client.return_value = mock_db
 
-            # 適切なキーで呼び出されたか確認
-            mock_s3_client.get_object.assert_called_once()
-            # S3のキーが正しいか確認 - 実際のパスを期待する
-            args, kwargs = mock_s3_client.get_object.call_args
-            assert kwargs["Key"] == f"sphene/channel_list.{conf.guild_id}.json"
+        # ドキュメントが存在しないケース
+        mock_doc = MagicMock()
+        mock_doc.exists = False
+        mock_db.collection.return_value.document.return_value.get.return_value = (
+            mock_doc
+        )
+
+        with patch.object(config, "FIRESTORE_COLLECTION_NAME", "test_collection"):
+            conf = ChannelConfig(
+                guild_id="test_guild", storage_type="firestore", debug_mode=True
+            )
+
+            conf.debug_mode = False
+            try:
+                conf._load_from_firestore()
+                assert False, "FileNotFoundError should have been raised"
+            except FileNotFoundError:
+                pass  # 期待通りの例外
+            conf.debug_mode = True
 
     @patch("os.makedirs")
     @patch("os.replace")
@@ -258,53 +272,64 @@ class TestChannelConfig:
             "temp_file_path", f"storage/channel_list.{conf.guild_id}.json"
         )
 
-    @patch("utils.channel_config.get_s3_client")  # クラス内のインポート位置でパッチ
-    def test_save_to_s3(self, mock_get_s3_client):
-        """S3への保存テスト"""
-        # S3クライアントをモック
-        mock_s3_client = MagicMock()
-        mock_get_s3_client.return_value = mock_s3_client
+    @patch("utils.channel_config.get_firestore_client")
+    def test_save_to_firestore(self, mock_get_firestore_client):
+        """Firestoreへの保存テスト"""
+        mock_db = MagicMock()
+        mock_get_firestore_client.return_value = mock_db
 
-        # バケット名をモック
-        with patch.object(config, "S3_BUCKET_NAME", "test-bucket"):
-            # 一時的にS3_FOLDER_PATHをモックして、実際のS3キーパスをテスト
-            with patch.object(config, "S3_FOLDER_PATH", "sphene"):
-                # debugモードでインスタンス化して初期のS3アクセスを避ける
-                conf = ChannelConfig(
-                    guild_id="test_guild", storage_type="s3", debug_mode=True
-                )
+        with patch.object(config, "FIRESTORE_COLLECTION_NAME", "test_collection"):
+            conf = ChannelConfig(
+                guild_id="test_guild", storage_type="firestore", debug_mode=True
+            )
 
-                # モックをリセットして確実に追跡
-                mock_s3_client.reset_mock()
-                mock_get_s3_client.reset_mock()
+            # モックをリセット
+            mock_db.reset_mock()
+            mock_get_firestore_client.reset_mock()
 
-                # テスト用のデータを設定
-                conf.config_data = {
-                    "behavior": "allow",
-                    "channels": [{"id": 789, "name": "S3保存テスト"}],
-                    "updated_at": "2025-04-19T10:00:00",  # テスト用に固定
-                }
+            # テスト用のデータを設定
+            conf.config_data = {
+                "behavior": "allow",
+                "channels": [{"id": 789, "name": "Firestore保存テスト"}],
+                "updated_at": "2025-04-19T10:00:00",
+            }
 
-                # debug_modeを一時的に無効化して実際のS3処理を有効に
-                conf.debug_mode = False
-                result = conf._save_to_s3()
-                # テスト後に元に戻す
-                conf.debug_mode = True
+            conf.debug_mode = False
+            result = conf._save_to_firestore()
+            conf.debug_mode = True
 
-                assert result is True
-                mock_s3_client.put_object.assert_called_once()
+            assert result is True
+            mock_db.collection.assert_called_once_with("test_collection")
+            mock_db.collection.return_value.document.assert_called_once_with(
+                "test_guild"
+            )
+            mock_db.collection.return_value.document.return_value.set.assert_called_once_with(
+                conf.config_data
+            )
 
-                # 呼び出し引数の確認
-                args, kwargs = mock_s3_client.put_object.call_args
-                assert isinstance(
-                    kwargs["Body"], bytes
-                )  # コンテンツがバイト列になっている
-                body_content = kwargs["Body"].decode("utf-8")
-                assert "S3保存テスト" in body_content  # 日本語の文字列がJSONに含まれる
-                assert kwargs["Bucket"] == "test-bucket"  # バケット名を確認
+    @patch("utils.channel_config.get_firestore_client")
+    def test_delete_firestore_document(self, mock_get_firestore_client):
+        """Firestoreドキュメント削除テスト"""
+        mock_db = MagicMock()
+        mock_get_firestore_client.return_value = mock_db
 
-                # S3のキーが正しいか確認 - 実際のパスを期待する
-                assert kwargs["Key"] == f"sphene/channel_list.{conf.guild_id}.json"
+        manager = ChannelConfigManager(debug_mode=False)
+
+        with patch.object(
+            config, "CHANNEL_CONFIG_STORAGE_TYPE", "firestore"
+        ), patch.object(config, "FIRESTORE_COLLECTION_NAME", "test_collection"):
+            # ChannelConfigの初期化時にFirestoreにアクセスしないようdebug_modeで作成
+            mock_config = ChannelConfig(
+                guild_id="test_guild", debug_mode=True
+            )
+            manager.guild_configs["test_guild"] = mock_config
+
+            result = manager._delete_firestore_document("test_guild")
+
+        assert result is True
+        mock_db.collection.assert_called_once_with("test_collection")
+        mock_db.collection.return_value.document.assert_called_once_with("test_guild")
+        mock_db.collection.return_value.document.return_value.delete.assert_called_once()
 
     def test_file_paths(self):
         """ファイルパス生成のテスト"""
@@ -313,11 +338,3 @@ class TestChannelConfig:
 
         # ローカルファイルパス
         assert conf._get_config_file_path() == f"storage/channel_list.{guild_id}.json"
-
-        # S3ファイルキー (フォルダパスなし)
-        with patch.object(config, "S3_FOLDER_PATH", None):
-            assert conf._get_s3_file_key() == f"channel_list.{guild_id}.json"
-
-        # S3ファイルキー (フォルダパスあり)
-        with patch.object(config, "S3_FOLDER_PATH", "configs"):
-            assert conf._get_s3_file_key() == f"configs/channel_list.{guild_id}.json"

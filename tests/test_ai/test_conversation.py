@@ -358,24 +358,17 @@ def test_load_system_prompt_edge_cases(mock_load_system_prompt: MagicMock) -> No
 
         # 2. ファイルの権限エラー
         with patch("pathlib.Path.read_text", side_effect=PermissionError("権限なし")):
-            # S3にもフォールバックできないと想定
-            with patch(
-                "ai.conversation._load_prompt_from_s3", return_value=(None, ["エラー"])
-            ):
-                prompt = load_system_prompt(force_reload=True)
-                # デフォルトプロンプトが使われることを確認
-                assert prompt == "あなたは役立つAIアシスタントです。"
+            prompt = load_system_prompt(force_reload=True)
+            # デフォルトプロンプトが使われることを確認
+            assert prompt == "あなたは役立つAIアシスタントです。"
 
-        # 3. S3からの読み込みが失敗し、ローカルにフォールバックする場合
+        # 3. ローカルから正常に読み込める場合
         with patch(
-            "ai.conversation._load_prompt_from_s3", return_value=(None, ["S3エラー"])
+            "ai.conversation._load_prompt_from_local",
+            return_value="ローカルプロンプト",
         ):
-            with patch(
-                "ai.conversation._load_prompt_from_local",
-                return_value=("ローカルプロンプト", []),
-            ):
-                prompt = load_system_prompt(force_reload=True)
-                assert prompt == "ローカルプロンプト"
+            prompt = load_system_prompt(force_reload=True)
+            assert prompt == "ローカルプロンプト"
 
 
 def test_process_images_with_invalid_url() -> None:

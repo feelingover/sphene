@@ -35,15 +35,11 @@ from openai.types.chat import (
 from ai.client import client as aiclient
 from config import (
     OPENAI_MODEL,
-    PROMPT_STORAGE_TYPE,
-    S3_BUCKET_NAME,
-    S3_FOLDER_PATH,
     SYSTEM_PROMPT_FILENAME,
     SYSTEM_PROMPT_PATH,
 )
 from ai.tools import TOOL_DEFINITIONS, TOOL_FUNCTIONS
 from log_utils.logger import logger
-from utils.s3_utils import S3Helper
 from utils.text_utils import truncate_text
 
 # 定数の定義
@@ -55,115 +51,37 @@ MAX_TOOL_CALL_ROUNDS = 3  # ツール呼び出しの最大ラウンド数（無�
 _prompt_cache: dict[str, str] = {}
 
 
-def _load_prompt_from_s3() -> tuple[str | None, list[str]]:
-    """S3からシステムプロンプトを読み込む
-
-    Returns:
-        tuple: (プロンプトの内容, エラーメッセージのリスト)
-    """
-    errors = []
-    prompt_content = None
-
-    if not S3_BUCKET_NAME:
-        error_msg = "S3バケット名が設定されていません。ローカルファイルを使用します。"
-        logger.warning(error_msg)
-        errors.append(error_msg)
-        return None, errors
-
-    logger.info(f"S3からシステムプロンプトを読み込み: {SYSTEM_PROMPT_FILENAME}")
-    prompt_content = S3Helper.read_file_from_s3(
-        S3_BUCKET_NAME, SYSTEM_PROMPT_FILENAME, S3_FOLDER_PATH
-    )
-    if prompt_content:
-        logger.info("S3からプロンプトを読み込みました")
-    else:
-        error_msg = "S3からプロンプトの読み込みに失敗。ローカルにフォールバック"
-        logger.warning(error_msg)
-        errors.append(error_msg)
-
-    return prompt_content, errors
-
-
 def _load_prompt_from_local(
     fail_on_error: bool = False,
-) -> tuple[str | None, list[str]]:
+) -> str | None:
     """ローカルファイルからシステムプロンプトを読み込む
 
     Args:
         fail_on_error: 読み込みに失敗した場合に例外をスローするかどうか
 
     Returns:
-        tuple: (プロンプトの内容, エラーメッセージのリスト)
+        str | None: プロンプトの内容
 
     Raises:
         RuntimeError: fail_on_error=Trueで読み込みに失敗した場合
     """
-    errors = []
-    prompt_content = None
-
-    if PROMPT_STORAGE_TYPE.lower() == "local":
-        prompt_path = Path(SYSTEM_PROMPT_PATH)
-    else:
-        prompt_path = Path(__file__).parent.parent / "prompts" / SYSTEM_PROMPT_FILENAME
+    prompt_path = Path(SYSTEM_PROMPT_PATH)
 
     logger.info(f"ローカルからシステムプロンプトを読み込み: {prompt_path}")
     try:
         prompt_content = prompt_path.read_text(encoding="utf-8").strip()
         logger.info("ローカルからプロンプトを読み込みました")
+        return prompt_content if prompt_content else None
     except Exception as e:
         error_msg = f"プロンプト読み込みエラー: {str(e)}"
         logger.error(error_msg, exc_info=True)
-        errors.append(error_msg)
 
         if fail_on_error:
             raise RuntimeError(
                 f"システムプロンプトの読み込みに失敗しました: {error_msg}"
-            )
+            ) from e
 
-        # デフォルトの最小限のプロンプト
-        prompt_content = "あなたは役立つAIアシスタントです。"
-        logger.info("デフォルトプロンプトを使用")
-
-    return prompt_content, errors
-
-
-def _load_prompt_with_fallback(fail_on_error: bool) -> str | None:
-    """S3→ローカルのフォールバックでプロンプトを読み込む
-
-    Args:
-        fail_on_error: 読み込みに失敗した場合に例外をスローするかどうか
-
-    Returns:
-        str | None: プロンプト内容、読み込み失敗時はNone
-
-    Raises:
-        RuntimeError: fail_on_error=Trueで読み込みに失敗した場合
-    """
-    prompt_content = None
-    errors = []
-
-    # S3から読み込む場合
-    if PROMPT_STORAGE_TYPE.lower() == "s3":
-        prompt_content, s3_errors = _load_prompt_from_s3()
-        errors.extend(s3_errors)
-
-    # ローカルから読み込む場合（S3読み込み失敗時を含む）
-    if not prompt_content:
-        try:
-            prompt_content, local_errors = _load_prompt_from_local(fail_on_error=False)
-            errors.extend(local_errors)
-        except RuntimeError as e:
-            if fail_on_error:
-                raise
-            logger.error(f"ローカルからの読み込みエラー: {str(e)}", exc_info=True)
-
-    # 両方失敗し、fail_on_errorがTrueの場合は例外をスロー
-    if not prompt_content and fail_on_error:
-        error_msg = "S3とローカルの両方からプロンプトの読み込みに失敗しました"
-        logger.error(error_msg)
-        raise RuntimeError(f"{error_msg}: {'; '.join(errors)}")
-
-    return prompt_content
+        return None
 
 
 def _get_default_prompt() -> str:
@@ -194,8 +112,8 @@ def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) 
         logger.info(f"キャッシュからシステムプロンプト利用: {SYSTEM_PROMPT_FILENAME}")
         return _prompt_cache[SYSTEM_PROMPT_FILENAME]
 
-    # プロンプト読み込み（フォールバック付き）
-    prompt_content = _load_prompt_with_fallback(fail_on_error)
+    # プロンプト読み込み
+    prompt_content = _load_prompt_from_local(fail_on_error)
 
     # デフォルトフォールバック
     if not prompt_content:
