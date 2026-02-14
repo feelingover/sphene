@@ -32,7 +32,7 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam,
 )
 
-from ai.client import client as aiclient
+from ai.client import get_client
 from config import (
     OPENAI_MODEL,
     SYSTEM_PROMPT_FILENAME,
@@ -379,7 +379,7 @@ class Sphene:
             OpenAI API関連の例外は呼び出し元に伝播する
         """
         for round_num in range(MAX_TOOL_CALL_ROUNDS + 1):
-            result = aiclient.chat.completions.create(
+            result = get_client().chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=self.input_list,
                 tools=TOOL_DEFINITIONS,
