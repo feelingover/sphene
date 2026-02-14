@@ -1,7 +1,7 @@
 import asyncio
 
 import config
-from ai.client import client as aiclient
+from ai.client import get_client
 from log_utils.logger import logger
 
 # 定数の定義
@@ -91,7 +91,7 @@ async def translate_text(text: str, target_language: str = "english") -> str | N
         logger.info(f"{config_data['log_prefix']}翻訳リクエスト: {truncate_text(text)}")
 
         def _sync_translate():
-            return aiclient.chat.completions.create(
+            return get_client().chat.completions.create(
                 model=config.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": config_data["system_prompt"]},

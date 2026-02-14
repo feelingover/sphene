@@ -14,6 +14,7 @@ applyTo: "**"
 - チャンネル管理（全体/限定モード、追加/削除）
 - ストレージ: ローカル/Firestore選択（システムプロンプトはローカルのみ）
 - デプロイ: ローカル/Docker/Kubernetes
+- Vertex AI OpenAI互換API対応: `AI_PROVIDER`環境変数でOpenAI/Vertex AI切替、Workload Identity自動認証
 
 ## TODO
 

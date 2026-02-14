@@ -30,6 +30,13 @@ from ai.conversation import (
 # 個別のテストは不要（またはモックの上書きテストが必要な場合のみ実装）
 
 
+def _mock_get_client(mock_create: MagicMock) -> MagicMock:
+    """get_client()をモックしてchat.completions.createを差し替えるヘルパー"""
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = mock_create
+    return mock_client
+
+
 def test_sphene_initialization() -> None:
     """Spheneクラスの初期化をテスト"""
     # conftestのautouse fixtureによりload_system_promptはモックされている
@@ -123,10 +130,10 @@ def test_input_message(mock_openai_response: MagicMock) -> None:
     """ユーザーメッセージの処理と応答をテスト"""
     sphene = Sphene(system_setting="テスト")
 
-    # OpenAI APIのモック
-    with patch("ai.conversation.aiclient.chat.completions.create") as mock_create:
-        mock_create.return_value = mock_openai_response
+    mock_create = MagicMock(return_value=mock_openai_response)
+    mock_client = _mock_get_client(mock_create)
 
+    with patch("ai.conversation.get_client", return_value=mock_client):
         # メッセージ処理
         response = sphene.input_message("こんにちは")
 
@@ -206,9 +213,10 @@ def test_input_message_api_errors(
     """各種APIエラー発生時の応答メッセージをテスト"""
     sphene = Sphene(system_setting="テスト")
 
-    with patch("ai.conversation.aiclient.chat.completions.create") as mock_create:
-        mock_create.side_effect = error_to_raise
+    mock_create = MagicMock(side_effect=error_to_raise)
+    mock_client = _mock_get_client(mock_create)
 
+    with patch("ai.conversation.get_client", return_value=mock_client):
         response = sphene.input_message("APIエラーテスト")
 
         assert response is not None
@@ -223,8 +231,10 @@ def test_input_message_api_connection_error() -> None:
     error_to_raise = APIConnectionError(request=MagicMock())
     expected_message_part = "接続で問題"
 
-    with patch("ai.conversation.aiclient.chat.completions.create") as mock_create:
-        mock_create.side_effect = error_to_raise
+    mock_create = MagicMock(side_effect=error_to_raise)
+    mock_client = _mock_get_client(mock_create)
+
+    with patch("ai.conversation.get_client", return_value=mock_client):
         response = sphene.input_message("API接続エラーテスト")
         assert response is not None
         assert expected_message_part in response
@@ -237,8 +247,10 @@ def test_input_message_api_timeout_error() -> None:
     error_to_raise = APITimeoutError(MagicMock())  # Pass request as positional arg
     expected_message_part = "AIとの接続で問題"
 
-    with patch("ai.conversation.aiclient.chat.completions.create") as mock_create:
-        mock_create.side_effect = error_to_raise
+    mock_create = MagicMock(side_effect=error_to_raise)
+    mock_client = _mock_get_client(mock_create)
+
+    with patch("ai.conversation.get_client", return_value=mock_client):
         response = sphene.input_message("APIタイムアウトテスト")
         assert response is not None
         assert expected_message_part in response
@@ -297,16 +309,17 @@ def test_input_message_with_images(
     """画像付きメッセージの処理をテスト"""
     sphene = Sphene(system_setting="テスト")
 
+    mock_create = MagicMock(return_value=mock_openai_response)
+    mock_client = _mock_get_client(mock_create)
+
     with patch(
-        "ai.conversation.aiclient.chat.completions.create"
-    ) as mock_create, patch.object(sphene, "_process_images") as mock_process:
+        "ai.conversation.get_client", return_value=mock_client
+    ), patch.object(sphene, "_process_images") as mock_process:
 
         # 画像処理の結果をモック
         mock_process.return_value = [
             {"type": "image_url", "image_url": {"url": "https://test.com/image.jpg"}}
         ]
-
-        mock_create.return_value = mock_openai_response
 
         # 画像付きメッセージの処理
         response = sphene.input_message(
@@ -393,9 +406,10 @@ def test_input_message_with_mixed_images() -> None:
     mock_response.choices[0].message.content = "テスト応答"
     mock_response.choices[0].message.tool_calls = None
 
-    with patch(
-        "ai.conversation.aiclient.chat.completions.create", return_value=mock_response
-    ):
+    mock_create = MagicMock(return_value=mock_response)
+    mock_client = _mock_get_client(mock_create)
+
+    with patch("ai.conversation.get_client", return_value=mock_client):
         # _process_imagesのモックを作成
         with patch.object(sphene, "_process_images") as mock_process:
             # 2つのうち1つだけ成功するケース
@@ -435,15 +449,17 @@ def test_api_retry_logic(mock_openai_response: MagicMock) -> None:
     """一時的なAPIエラーに対するリトライロジックのテスト"""
     sphene = Sphene(system_setting="テスト")
 
-    with patch(
-        "ai.conversation.aiclient.chat.completions.create"
-    ) as mock_create, patch("time.sleep") as mock_sleep:
-        # 初回は接続エラー、2回目は成功するシナリオ
-        mock_create.side_effect = [
+    mock_create = MagicMock(
+        side_effect=[
             APIConnectionError(request=MagicMock()),  # 初回は接続エラー
             mock_openai_response,  # 2回目は成功
         ]
+    )
+    mock_client = _mock_get_client(mock_create)
 
+    with patch("ai.conversation.get_client", return_value=mock_client), patch(
+        "time.sleep"
+    ) as mock_sleep:
         # リトライロジックのテスト実行
         response = sphene.input_message("リトライテスト")
 
@@ -466,17 +482,19 @@ def test_api_retry_max_exceeded(mock_openai_response: MagicMock) -> None:
     """リトライ回数上限を超えた場合のテスト"""
     sphene = Sphene(system_setting="テスト")
 
-    with patch(
-        "ai.conversation.aiclient.chat.completions.create"
-    ) as mock_create, patch("time.sleep") as mock_sleep:
-        # すべての呼び出しで一時的なエラーが発生するシナリオ
-        error_to_raise = APIConnectionError(request=MagicMock())
-        mock_create.side_effect = [
+    error_to_raise = APIConnectionError(request=MagicMock())
+    mock_create = MagicMock(
+        side_effect=[
             error_to_raise,
             error_to_raise,
             error_to_raise,
         ]  # 初回+再試行2回すべてエラー
+    )
+    mock_client = _mock_get_client(mock_create)
 
+    with patch("ai.conversation.get_client", return_value=mock_client), patch(
+        "time.sleep"
+    ) as mock_sleep:
         # リトライロジックのテスト実行
         response = sphene.input_message("リトライ上限テスト")
 

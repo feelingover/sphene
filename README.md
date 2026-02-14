@@ -4,7 +4,7 @@ Spheneは、OpenAI APIを活用した会話機能を持つ、シンプルでパ�
 
 ## ✨ 主な機能
 
-- 💬 OpenAIのGPT-4o-miniを使用した高度な会話機能
+- 💬 OpenAI / Vertex AI（Gemini）対応のマルチプロバイダー会話機能
 - 📸 画像処理対応のマルチモーダル会話
 - 👋 メンション、名前呼び、リプライによる柔軟な反応
 - 🌐 国旗リアクションによる自動翻訳機能（🇺🇸 英語 / 🇯🇵 日本語）
@@ -26,7 +26,15 @@ OPENAI_API_KEY=your_openai_api_key
 DISCORD_TOKEN=your_discord_bot_token
 BOT_NAME=スフェーン  # ボットの呼び名（デフォルト: スフェーン）
 COMMAND_GROUP_NAME=sphene  # コマンドグループ名（デフォルト: sphene）
-OPENAI_MODEL=gpt-4o-mini  # 使用するOpenAIのモデル
+OPENAI_MODEL=gpt-4o-mini  # 使用するモデル
+
+# AIプロバイダー設定: openai または vertex_ai
+AI_PROVIDER=openai
+
+# Vertex AI設定（AI_PROVIDER=vertex_ai の場合に使用）
+# VERTEX_AI_PROJECT_ID=your-gcp-project-id  # 未設定の場合はGCEメタデータから自動取得
+# VERTEX_AI_LOCATION=asia-northeast1
+# OPENAI_MODEL=google/gemini-2.5-flash
 
 # システムプロンプトの設定
 SYSTEM_PROMPT_FILENAME=system.txt
@@ -146,7 +154,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ├── README.md             # このファイル
 ├── ai/                   # AI関連機能
 │   ├── __init__.py
-│   ├── client.py         # OpenAI API クライアント
+│   ├── client.py         # AIクライアント（OpenAI / Vertex AI）
 │   ├── conversation.py   # 会話管理ロジック
 │   └── tools.py          # Function Callingツール定義
 ├── bot/                  # Discordボット機能
@@ -187,6 +195,8 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - uv - パッケージ管理・仮想環境管理
 - discord.py - Discordボットフレームワーク
 - OpenAI API - GPT-4o-mini会話モデル（マルチモーダル対応）
+- Google Vertex AI - Gemini等のモデルにOpenAI互換APIで接続（GCE Workload Identity対応）
+- google-auth - GCP認証（Vertex AI利用時）
 - Docker - コンテナ化
 - Kubernetes - オプショナルデプロイ環境
 - Cloud Firestore (オプション) - チャンネル設定のリモートストレージ
@@ -213,7 +223,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 ✅ **AIチャット機能**
 
-- GPT-4o-miniモデルとの対話
+- マルチプロバイダー対応（OpenAI / Vertex AI）
 - マルチモーダル対応（画像処理）
 - 会話履歴の管理
 - 会話タイムアウト（30分）
@@ -240,7 +250,6 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - 使用統計の収集と分析
 - パフォーマンス最適化
 - モニタリングとアラート機能
-- 複数のAIモデル選択オプション
 
 ## 🔒 セキュリティ情報
 

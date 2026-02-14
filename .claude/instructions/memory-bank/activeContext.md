@@ -5,10 +5,21 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
-- 全テスト通過、カバレッジ86%
+- 全テスト通過（242件）
 - Discord heartbeat blocking修正済み（`asyncio.to_thread()`）
+- Vertex AI OpenAI互換API対応済み（`AI_PROVIDER`環境変数で切替可能）
 
 ## Recent Changes
+
+### 2026/2: Vertex AI OpenAI互換API対応
+
+`AI_PROVIDER`環境変数（`openai`/`vertex_ai`）でプロバイダーを切り替え可能にした。
+
+- `ai/client.py`: シングルトン`client`を廃止、`get_client()`関数に統一。Vertex AI選択時はGCEのWorkload Identity認証（`google.auth.default()`）でトークンを自動取得・リフレッシュ。
+- `config.py`: `AI_PROVIDER`, `VERTEX_AI_PROJECT_ID`, `VERTEX_AI_LOCATION`環境変数を追加。
+- `ai/conversation.py`, `utils/text_utils.py`: クライアント参照を`get_client()`に変更。
+- `pyproject.toml`: `google-auth`を明示的依存に追加。
+- OpenAI互換APIのため、`tools.py`のツール定義やAPIコールパラメータは変更不要。
 
 ### 2026/2: S3廃止 + Firestore移行
 AWS依存（boto3）を完全削除し、GCPベース（google-cloud-firestore）に一本化。
@@ -40,6 +51,7 @@ requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini 
 | 2026/2 | システムプロンプトはローカルのみ | k8s configmapマウントで十分 |
 | 2026/2 | `asyncio.to_thread()`で最小修正 | 2ファイル10行で全ブロッキングポイントをカバー。フルasync化は中期候補 |
 | 2026/2 | XIVAPI全パラメータにデフォルト値 | `func(**arguments)`動的呼び出しとの後方互換性維持 |
+| 2026/2 | Vertex AI OpenAI互換API対応 | GCP一本化方針。Workload Identity認証でAPIキー管理不要。`AI_PROVIDER`で切替可能 |
 
 ## Open Issues
 
