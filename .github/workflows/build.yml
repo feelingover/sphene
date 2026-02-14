@@ -209,7 +209,7 @@ jobs:
         run: |
           cd infra
           IMAGE_TAG=${{ steps.extract-tag.outputs.IMAGE_TAG }}
-          DEPLOYMENT_FILE="environments/prod/sphene.yaml"
+          DEPLOYMENT_FILE="discord-bot/sphene/app.yaml"
 
           # Replace the image tag in sphene.yaml
           sed -i -e "s|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}|g" $DEPLOYMENT_FILE
