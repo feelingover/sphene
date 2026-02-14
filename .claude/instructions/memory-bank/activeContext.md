@@ -24,8 +24,13 @@ requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini 
 ### 2026/2: Discord Heartbeat Blocking修正
 `bot/events.py`の`process_conversation()`と`utils/text_utils.py`の`translate_text()`で`asyncio.to_thread()`を使用し、同期ブロッキング呼び出しをスレッドプールに退避。フルasync化（AsyncOpenAI移行）は中期改善候補。
 
-### 2026/2: XIVAPI検索条件拡張
-`search_item`にジョブ名（`class_job`）・IL範囲（`ilvl_min`/`ilvl_max`）を追加。日本語ジョブ名/英語略称の両対応。フィルタ時limit=20、名前のみ時limit=5の動的制御。
+### 2026/2: XIVAPI v2連携の大幅拡張
+`search_item`に加えて、以下の検索機能を追加。
+- `search_action`: アクション（スキル）検索。説明文取得のために2段階リクエスト（search → sheet/Action/{id}）を実装。
+- `search_recipe`: 製作レシピ検索。クラフタージョブ絞り込み、必要素材一覧の取得に対応。
+- `search_game_content`: クエスト、アチーブメント、FATE、マウント、ミニオン、ステータスの汎用検索。
+- DQL（Data Query Language）の最適化: 日本語検索時に `Name@ja~"query"` を使用するように改善。
+- 共通ヘルパーの抽出: クエリ構築、API実行、エラーレスポンス作成の共通化。
 
 ## Key Decisions
 
