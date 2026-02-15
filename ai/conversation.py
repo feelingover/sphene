@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import traceback
+import urllib.parse
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,6 +27,9 @@ from log_utils.logger import logger
 MAX_CONVERSATION_AGE_MINUTES = 30
 MAX_CONVERSATION_TURNS = 10
 MAX_TOOL_CALL_ROUNDS = 3
+MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5MB
+IMAGE_REQUEST_TIMEOUT = (3, 5)  # (connect, read)
+ALLOWED_IMAGE_DOMAINS = {"cdn.discordapp.com", "media.discordapp.net"}
 
 def truncate_text(text: str, max_length: int = 30) -> str:
     """テキストを切り詰める"""
@@ -197,9 +201,46 @@ class Sphene:
             if image_urls:
                 for url in image_urls:
                     try:
-                        resp = requests.get(url, timeout=5)
-                        resp.raise_for_status()
-                        parts.append(types.Part.from_bytes(data=resp.content, mime_type=resp.headers.get("Content-Type", "image/jpeg")))
+                        parsed = urllib.parse.urlparse(url)
+                        if parsed.hostname not in ALLOWED_IMAGE_DOMAINS:
+                            logger.warning(f"許可されていないドメインの画像をスキップ: {url}")
+                            continue
+
+                        with requests.get(url, timeout=IMAGE_REQUEST_TIMEOUT, stream=True) as resp:
+                            resp.raise_for_status()
+
+                            content_type = resp.headers.get("Content-Type", "")
+                            if not content_type.startswith("image/"):
+                                logger.warning(f"画像以外のContent-Typeを検出: {url} ({content_type})")
+                                continue
+
+                            content_length = resp.headers.get("Content-Length")
+                            try:
+                                if content_length and int(content_length) > MAX_IMAGE_BYTES:
+                                    logger.warning(f"画像サイズ超過でスキップ: {url} ({content_length} bytes)")
+                                    continue
+                            except (ValueError, TypeError):
+                                logger.warning(f"不正なContent-Length: {url} ({content_length})")
+
+                            data = bytearray()
+                            for chunk in resp.iter_content(chunk_size=64 * 1024):
+                                if not chunk:
+                                    continue
+                                data.extend(chunk)
+                                if len(data) > MAX_IMAGE_BYTES:
+                                    logger.warning(f"画像サイズ上限超過で中断: {url} ({len(data)} bytes)")
+                                    data = bytearray()
+                                    break
+
+                            if not data:
+                                continue
+
+                            parts.append(
+                                types.Part.from_bytes(
+                                    data=bytes(data),
+                                    mime_type=content_type,
+                                )
+                            )
                     except Exception as e:
                         logger.error(f"画像読み込み失敗: {url} - {e}")
 
