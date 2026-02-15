@@ -6,12 +6,24 @@ applyTo: "**"
 ## Current State (2026/2)
 
 - 全テスト通過（277件）
-- Discord heartbeat blocking修正済み（`asyncio.to_thread()`）
-- Vertex AI OpenAI互換API対応済み（`AI_PROVIDER`環境変数で切替可能）、PR #48 マージ済み
-- PRテンプレート（`.github/pull_request_template.md`）整備済み
-- 記憶機能（Phase 1 + Phase 2）実装済み
+- Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
+- 環境変数を `GEMINI_MODEL` 形式に統一、`OPENAI_API_KEY` を完全削除。
+- Google検索Grounding機能のサポート開始（`ENABLE_GOOGLE_SEARCH_GROUNDING`）。
+- Discord heartbeat blocking修正済み（`asyncio.to_thread()`）。
+- 記憶機能（Phase 1 + Phase 2）実装済み。
 
 ## Recent Changes
+
+### 2026/2: Vertex AI Native SDK (`google-genai`) 完全移行
+
+OpenAI互換エンドポイントの制限（最新モデルの404エラー等）を回避し、Geminiの能力をフル活用するため、最新のGoogle Gen AI SDKへ移行。
+
+- **SDK刷新**: `openai`ライブラリへの依存を排除（内部ロジック）。`google-genai` SDKを採用し、2026年6月の旧SDK削除予定に対応。
+- **モデル指定**: `OPENAI_MODEL` → `GEMINI_MODEL` へ環境変数をリネーム。デフォルトを `google/gemini-2.5-flash` に設定。
+- **Grounding**: Google検索連携（Grounding）をサポート。設定でON/OFF可能に。
+- **マルチモーダル**: SDKネイティブな画像処理（`Part.from_bytes`）へ移行。
+- **エラーハンドリング**: `google.api_core.exceptions` ベースの堅牢なエラー処理へ更新。
+- **プロンプト**: `system_instruction` をネイティブに使用するように修正し、AIの性格維持能力を向上。
 
 ### 2026/2: 記憶機能（短期記憶 + 自律応答）
 

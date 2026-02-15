@@ -7,15 +7,18 @@ load_dotenv()
 # ログレベル設定（デフォルトはINFO）
 LOG_LEVEL: str = str(os.getenv("LOG_LEVEL", "INFO"))
 
-# AIプロバイダー設定（"openai" または "vertex_ai"）
-AI_PROVIDER: str = os.getenv("AI_PROVIDER", "openai")
+# AIプロバイダー設定（現在は Vertex AI 固定）
+AI_PROVIDER: str = os.getenv("AI_PROVIDER", "vertex_ai")
 
-OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "google/gemini-2.5-flash")
 
-# Vertex AI設定（AI_PROVIDER=vertex_ai の場合に使用）
+# Vertex AI設定
 VERTEX_AI_PROJECT_ID: str = os.getenv("VERTEX_AI_PROJECT_ID", "")
 VERTEX_AI_LOCATION: str = os.getenv("VERTEX_AI_LOCATION", "asia-northeast1")
+# Google検索によるGroundingを有効にするか
+ENABLE_GOOGLE_SEARCH_GROUNDING: bool = (
+    os.getenv("ENABLE_GOOGLE_SEARCH_GROUNDING", "false").lower() == "true"
+)
 
 DISCORD_TOKEN: str = str(os.getenv("DISCORD_TOKEN"))
 BOT_NAME: str = str(os.getenv("BOT_NAME", "アサヒ"))

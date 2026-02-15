@@ -22,11 +22,10 @@ Spheneは、OpenAI APIを活用した会話機能を持つ、シンプルでパ�
 `.env`ファイルを`.env.sample`をもとに作成し、必要な情報を入力します：
 
 ```
-OPENAI_API_KEY=your_openai_api_key
 DISCORD_TOKEN=your_discord_bot_token
 BOT_NAME=スフェーン  # ボットの呼び名（デフォルト: スフェーン）
 COMMAND_GROUP_NAME=sphene  # コマンドグループ名（デフォルト: sphene）
-OPENAI_MODEL=gpt-4o-mini  # 使用するモデル
+GEMINI_MODEL=google/gemini-2.5-flash  # 使用するモデル
 
 # AIプロバイダー設定: openai または vertex_ai
 AI_PROVIDER=openai
@@ -34,7 +33,7 @@ AI_PROVIDER=openai
 # Vertex AI設定（AI_PROVIDER=vertex_ai の場合に使用）
 # VERTEX_AI_PROJECT_ID=your-gcp-project-id  # 未設定の場合はGCEメタデータから自動取得
 # VERTEX_AI_LOCATION=asia-northeast1
-# OPENAI_MODEL=google/gemini-2.5-flash
+# GEMINI_MODEL=google/gemini-2.5-flash
 
 # システムプロンプトの設定
 SYSTEM_PROMPT_FILENAME=system.txt

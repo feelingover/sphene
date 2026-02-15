@@ -22,9 +22,9 @@ docker build -t sphene-discord-bot .       # Docker build
 app.py                    # Entry point
 config.py                 # Environment-based config
 ai/
-  client.py               # OpenAI client
-  conversation.py         # Conversation state, prompt, OpenAI API calls
-  tools.py                # Function Calling definitions & dispatch
+  client.py               # Google Gen AI SDK client
+  conversation.py         # Conversation state, prompt, Gen AI API calls
+  tools.py                # Function Calling definitions & conversion
 bot/
   discord_bot.py          # Bot core, setup
   commands.py             # Slash commands

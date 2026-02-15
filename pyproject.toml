@@ -12,6 +12,7 @@ dependencies = [
     "google-cloud-firestore",
     "requests",
     "httpx",
+    "google-cloud-aiplatform>=1.137.0",
 ]
 
 [dependency-groups]
