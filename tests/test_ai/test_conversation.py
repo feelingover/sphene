@@ -245,7 +245,7 @@ def test_input_message_api_timeout_error() -> None:
     sphene = Sphene(system_setting="テスト")
     # APITimeoutError requires 'request' positional argument
     error_to_raise = APITimeoutError(MagicMock())  # Pass request as positional arg
-    expected_message_part = "AIとの接続で問題"
+    expected_message_part = "時間内"
 
     mock_create = MagicMock(side_effect=error_to_raise)
     mock_client = _mock_get_client(mock_create)
