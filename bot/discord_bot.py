@@ -63,6 +63,22 @@ class SpheneBot:
         except Exception as e:
             logger.error(f"クリーンアップタスクでエラーが発生しました: {str(e)}", exc_info=True)
 
+        # チャンネルバッファのクリーンアップ
+        if config.MEMORY_ENABLED:
+            try:
+                from memory.short_term import get_channel_buffer
+
+                expired = get_channel_buffer().cleanup_expired()
+                if expired > 0:
+                    logger.info(
+                        f"チャンネルバッファクリーンアップ: {expired}件削除"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"チャンネルバッファクリーンアップでエラー: {str(e)}",
+                    exc_info=True,
+                )
+
     def run(self) -> None:
         """ボットを起動する"""
         logger.info("Discordボットの起動を開始")

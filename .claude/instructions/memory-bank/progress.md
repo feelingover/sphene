@@ -5,6 +5,7 @@ applyTo: "**"
 
 ## Completed Features
 
+- 記憶機能（Phase 1+2）: 短期記憶バッファ + 自律応答（ハイブリッドJudge）
 - S3廃止 + Firestore移行: AWS依存完全削除、チャンネル設定をFirestoreに移行
 - uv移行: pyproject.toml + uv.lock による依存管理、CI/Dockerfileのuv対応
 - Discord応答（メンション、名前呼び、リプライ）、スラッシュコマンド
@@ -15,6 +16,7 @@ applyTo: "**"
 - ストレージ: ローカル/Firestore選択（システムプロンプトはローカルのみ）
 - デプロイ: ローカル/Docker/Kubernetes
 - Vertex AI OpenAI互換API対応: `AI_PROVIDER`環境変数でOpenAI/Vertex AI切替、Workload Identity自動認証
+- PRテンプレート整備: 概要・変更内容・影響範囲・テストチェックリスト付き
 
 ## TODO
 
@@ -23,6 +25,8 @@ applyTo: "**"
 - 統合テスト充実
 
 ### Mid-term
+- 記憶機能 Phase 3: 中期記憶（Firestore保存 - チャンネルコンテキスト要約）
+- 記憶機能 Phase 4: 長期記憶（ベクトル検索 - エピソード記憶）
 - チャンネル固有プロンプト
 - 使用統計・モニタリング
 - CI/CD強化

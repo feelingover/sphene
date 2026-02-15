@@ -34,3 +34,28 @@ SYSTEM_PROMPT_PATH: str = str(os.getenv("SYSTEM_PROMPT_PATH", "storage/system.tx
 FIRESTORE_COLLECTION_NAME: str = str(
     os.getenv("FIRESTORE_COLLECTION_NAME", "channel_configs")
 )
+
+# === 記憶機能設定 ===
+
+# 短期記憶（チャンネルメッセージバッファ）
+MEMORY_ENABLED: bool = os.getenv("MEMORY_ENABLED", "false").lower() == "true"
+CHANNEL_BUFFER_SIZE: int = int(os.getenv("CHANNEL_BUFFER_SIZE", "50"))
+CHANNEL_BUFFER_TTL_MINUTES: int = int(os.getenv("CHANNEL_BUFFER_TTL_MINUTES", "30"))
+
+# 自律応答
+AUTONOMOUS_RESPONSE_ENABLED: bool = (
+    os.getenv("AUTONOMOUS_RESPONSE_ENABLED", "false").lower() == "true"
+)
+JUDGE_SCORE_THRESHOLD: int = int(os.getenv("JUDGE_SCORE_THRESHOLD", "60"))
+COOLDOWN_SECONDS: int = int(os.getenv("COOLDOWN_SECONDS", "120"))
+ENGAGEMENT_DURATION_SECONDS: int = int(os.getenv("ENGAGEMENT_DURATION_SECONDS", "300"))
+ENGAGEMENT_BOOST: int = int(os.getenv("ENGAGEMENT_BOOST", "40"))
+JUDGE_KEYWORDS: str = os.getenv("JUDGE_KEYWORDS", "")
+
+# LLM Judge（二次判定）
+LLM_JUDGE_ENABLED: bool = (
+    os.getenv("LLM_JUDGE_ENABLED", "false").lower() == "true"
+)
+JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "")
+JUDGE_LLM_THRESHOLD_LOW: int = int(os.getenv("JUDGE_LLM_THRESHOLD_LOW", "20"))
+JUDGE_LLM_THRESHOLD_HIGH: int = int(os.getenv("JUDGE_LLM_THRESHOLD_HIGH", "80"))

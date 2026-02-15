@@ -5,11 +5,37 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
-- 全テスト通過（242件）
+- 全テスト通過（277件）
 - Discord heartbeat blocking修正済み（`asyncio.to_thread()`）
-- Vertex AI OpenAI互換API対応済み（`AI_PROVIDER`環境変数で切替可能）
+- Vertex AI OpenAI互換API対応済み（`AI_PROVIDER`環境変数で切替可能）、PR #48 マージ済み
+- PRテンプレート（`.github/pull_request_template.md`）整備済み
+- 記憶機能（Phase 1 + Phase 2）実装済み
 
 ## Recent Changes
+
+### 2026/2: 記憶機能（短期記憶 + 自律応答）
+
+チャンネルの「参加者の一人」として自律的に会話に割り込める基盤を構築。
+
+#### Phase 1: 短期記憶バッファ
+- `memory/short_term.py`: `ChannelMessage` dataclass + `ChannelMessageBuffer`（dequeベースのリングバッファ）
+- チャンネルごとにインメモリで直近メッセージを保持（`CHANNEL_BUFFER_SIZE`件、`CHANNEL_BUFFER_TTL_MINUTES`分TTL）
+- `bot/events.py`: 全メッセージをバッファに追加（`MEMORY_ENABLED`フラグで制御）
+- `bot/discord_bot.py`: 15分ごとのクリーンアップタスクにバッファ清掃を追加
+
+#### Phase 2: 自律応答（ハイブリッドJudge）
+- `memory/judge.py`: `RuleBasedJudge`によるスコアリング（メンション100, リプライ100, 名前呼び80, 疑問符+20, キーワード+15, クールダウン-50）
+- `memory/llm_judge.py`: `LLMJudge`で曖昧ケース（`JUDGE_LLM_THRESHOLD_LOW`〜`HIGH`）のみLLM二次判定
+- `ai/conversation.py`: `generate_contextual_response()` - チャンネルコンテキスト付き1-shot応答（既存Spheneクラスとは独立）
+- `bot/events.py`: `_try_autonomous_response()` + `_process_autonomous_response()` - Judgeフロー実装
+
+#### 新規環境変数（10個）
+- `MEMORY_ENABLED`, `CHANNEL_BUFFER_SIZE`, `CHANNEL_BUFFER_TTL_MINUTES`
+- `AUTONOMOUS_RESPONSE_ENABLED`, `JUDGE_SCORE_THRESHOLD`, `COOLDOWN_SECONDS`, `JUDGE_KEYWORDS`
+- `LLM_JUDGE_ENABLED`, `JUDGE_MODEL`, `JUDGE_LLM_THRESHOLD_LOW`, `JUDGE_LLM_THRESHOLD_HIGH`
+
+#### 後方互換性
+全フラグのデフォルトは`false`/無効。既存のメンション/リプライ/名前呼びパスは一切変更なし。
 
 ### 2026/2: Vertex AI OpenAI互換API対応
 
@@ -47,6 +73,8 @@ requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini 
 
 | 日付 | 決定 | 理由 |
 |------|------|------|
+| 2026/2 | 記憶機能: ハイブリッドJudge方式 | ルールベースでLLMコールを最小化しつつ、曖昧ケースはLLMで精度向上 |
+| 2026/2 | 記憶機能: 既存Spheneクラスとは独立した1-shot応答 | 既存の会話管理を壊さない。自律応答は会話履歴不要 |
 | 2026/2 | S3廃止→Firestore移行 | k8sデプロイ方針変更に伴いGCPに一本化 |
 | 2026/2 | システムプロンプトはローカルのみ | k8s configmapマウントで十分 |
 | 2026/2 | `asyncio.to_thread()`で最小修正 | 2ファイル10行で全ブロッキングポイントをカバー。フルasync化は中期候補 |
@@ -58,3 +86,4 @@ requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini 
 1. **API制限**: 高負荷時のレート制限対応（基本リトライは実装済み）
 2. **コスト最適化**: モデル選択、プロンプト最適化、キャッシング
 3. **AsyncOpenAI移行**: フルasync化（中期候補）
+4. **記憶機能 Phase 3+**: 中期記憶（Firestore保存）・長期記憶（ベクトル検索）は将来Phase
