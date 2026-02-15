@@ -64,6 +64,20 @@ class TestEventsExtensive:
         assert is_reply is True
 
     @pytest.mark.asyncio
+    async def test_is_bot_mentioned_no_content(self):
+        """message.contentがNoneでも例外なく3要素を返すことを確認"""
+        bot = MagicMock()
+        msg = MagicMock()
+        msg.content = None
+        msg.mentions = []
+        msg.reference = None
+
+        mentioned, q, is_reply = await is_bot_mentioned(bot, msg)
+        assert mentioned is False
+        assert q == ""
+        assert is_reply is False
+
+    @pytest.mark.asyncio
     @patch("bot.events.user_conversations")
     @patch("bot.events.split_message")
     async def test_process_conversation_chunking(self, mock_split, mock_conversations):

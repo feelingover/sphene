@@ -412,7 +412,7 @@ class ChannelConfig:
         result = False
 
         # 詳細なログ記録
-        logger.info(
+        logger.debug(
             f"can_bot_speak: ギルドID={self.guild_id}, チャンネルID={channel_id}, "
             f"behavior={behavior}, in_list={in_list}, "
             f"チャンネル数={len(self.get_channels())}"
@@ -425,18 +425,18 @@ class ChannelConfig:
                 for c in self.get_channels()
             ]
         )
-        logger.info(f"チャンネルリスト内のID: [{channels_str}]")
+        logger.debug(f"チャンネルリスト内のID: [{channels_str}]")
 
         # 限定モード: リストにあるチャンネルのみ許可
         if behavior == "allow":
             result = in_list
-            logger.info(
+            logger.debug(
                 f"限定モード判定: {result} (リストに{'' if in_list else '不'}一致)"
             )
         # 全体モード: リストにないチャンネルのみ許可
         else:
             result = not in_list
-            logger.info(
+            logger.debug(
                 f"全体モード判定: {result} (リストに{'' if in_list else '不'}一致)"
             )
 

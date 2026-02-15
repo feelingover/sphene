@@ -23,18 +23,20 @@ def _get_genai_client() -> genai.Client:
     
     # 認証情報を取得
     credentials, project = google.auth.default()
-    if not config.VERTEX_AI_PROJECT_ID:
-        config.VERTEX_AI_PROJECT_ID = project or ""
+    project_id = config.VERTEX_AI_PROJECT_ID or (project or "")
 
     # 新しいSDKのクライアント作成
     # vertexai=True を指定することで Vertex AI エンドポイントを使用する
     _client = genai.Client(
         vertexai=True,
-        project=config.VERTEX_AI_PROJECT_ID,
+        project=project_id,
         location=config.VERTEX_AI_LOCATION,
     )
     
-    logger.info(f"Google Gen AIクライアントを初期化しました（プロジェクト: {config.VERTEX_AI_PROJECT_ID}, リージョン: {config.VERTEX_AI_LOCATION}）")
+    logger.info(
+        "Google Gen AIクライアントを初期化しました（プロジェクト: "
+        f"{project_id}, リージョン: {config.VERTEX_AI_LOCATION}）"
+    )
     return _client
 
 

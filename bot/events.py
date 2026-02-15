@@ -32,7 +32,7 @@ async def is_bot_mentioned(
         Tuple[bool, str, bool]: (ボットに対するメッセージかどうか, 質問内容, リプライかどうか)
     """
     if message.content is None:
-        return False, ""
+        return False, "", False
 
     content: str = message.content
     user_id = str(message.author.id)
@@ -609,7 +609,7 @@ async def _handle_reaction(
         # エラーが発生した場合、可能であればチャンネルにメッセージを送信
         try:
             await reaction.message.channel.send(
-                f"リアクション処理中にエラーが発生しました 😢: {str(e)}"
+                "リアクション処理中にエラーが発生しました 😢"
             )
         except Exception:
             pass
