@@ -47,13 +47,19 @@ def mock_discord_interaction() -> MagicMock:
 
 
 @pytest.fixture()
-def mock_openai_response() -> MagicMock:
-    """OpenAI APIレスポンスのモック"""
+def mock_genai_response() -> MagicMock:
+    """Google Gen AI APIレスポンスのモック"""
+    mock_part = MagicMock()
+    mock_part.text = "これはテスト応答です。"
+    mock_part.function_call = None
+
+    mock_content = MagicMock()
+    mock_content.parts = [mock_part]
+    mock_content.role = "model"
+
     mock_response = MagicMock()
-    mock_choice = MagicMock()
-    mock_choice.message.content = "これはテスト応答です。"
-    mock_choice.message.tool_calls = None
-    mock_response.choices = [mock_choice]
+    mock_response.candidates = [MagicMock(content=mock_content)]
+    mock_response.text = "これはテスト応答です。"
     return mock_response
 
 

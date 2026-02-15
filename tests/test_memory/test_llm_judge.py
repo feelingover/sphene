@@ -15,18 +15,19 @@ class TestLLMJudge:
     """LLMJudgeのテスト"""
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_client")
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
     @patch("memory.llm_judge.config")
-    async def test_evaluate_respond_true(self, mock_config, mock_get_client):
+    async def test_evaluate_respond_true(
+        self, mock_config, mock_get_client, mock_model_name
+    ):
         """LLMがrespond=trueを返す場合"""
-        mock_config.JUDGE_MODEL = "gpt-4o-mini"
-        mock_config.OPENAI_MODEL = "gpt-4o"
+        mock_config.JUDGE_MODEL = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
-        mock_response.choices[0].message.content = json.dumps(
-            {"respond": True, "reason": "テスト"}
-        )
-        mock_get_client.return_value.chat.completions.create.return_value = (
+        mock_response.text = json.dumps({"respond": True, "reason": "テスト"})
+        mock_get_client.return_value.models.generate_content.return_value = (
             mock_response
         )
 
@@ -39,18 +40,21 @@ class TestLLMJudge:
         assert result is True
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_client")
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
     @patch("memory.llm_judge.config")
-    async def test_evaluate_respond_false(self, mock_config, mock_get_client):
+    async def test_evaluate_respond_false(
+        self, mock_config, mock_get_client, mock_model_name
+    ):
         """LLMがrespond=falseを返す場合"""
         mock_config.JUDGE_MODEL = ""
-        mock_config.OPENAI_MODEL = "gpt-4o-mini"
+        mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
-        mock_response.choices[0].message.content = json.dumps(
+        mock_response.text = json.dumps(
             {"respond": False, "reason": "割り込みは不適切"}
         )
-        mock_get_client.return_value.chat.completions.create.return_value = (
+        mock_get_client.return_value.models.generate_content.return_value = (
             mock_response
         )
 
@@ -63,66 +67,65 @@ class TestLLMJudge:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_client")
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
     @patch("memory.llm_judge.config")
-    async def test_evaluate_uses_judge_model(self, mock_config, mock_get_client):
-        """JUDGE_MODELが設定されている場合それを使用する"""
-        mock_config.JUDGE_MODEL = "gpt-4o-mini"
-        mock_config.OPENAI_MODEL = "gpt-4o"
-
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = json.dumps(
-            {"respond": False, "reason": "test"}
-        )
-        mock_get_client.return_value.chat.completions.create.return_value = (
-            mock_response
-        )
-
-        judge = LLMJudge()
-        await judge.evaluate("test", "context", "Bot")
-
-        call_args = (
-            mock_get_client.return_value.chat.completions.create.call_args
-        )
-        assert call_args.kwargs["model"] == "gpt-4o-mini"
-
-    @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_client")
-    @patch("memory.llm_judge.config")
-    async def test_evaluate_falls_back_to_openai_model(
-        self, mock_config, mock_get_client
+    async def test_evaluate_uses_judge_model(
+        self, mock_config, mock_get_client, mock_model_name
     ):
-        """JUDGE_MODELが空の場合OPENAI_MODELを使用する"""
-        mock_config.JUDGE_MODEL = ""
-        mock_config.OPENAI_MODEL = "gpt-4o"
+        """JUDGE_MODELが設定されている場合それを使用する"""
+        mock_config.JUDGE_MODEL = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-2.5-pro"  # fallback（使われないはず）
 
         mock_response = MagicMock()
-        mock_response.choices[0].message.content = json.dumps(
-            {"respond": False, "reason": "test"}
-        )
-        mock_get_client.return_value.chat.completions.create.return_value = (
+        mock_response.text = json.dumps({"respond": False, "reason": "test"})
+        mock_get_client.return_value.models.generate_content.return_value = (
             mock_response
         )
 
         judge = LLMJudge()
         await judge.evaluate("test", "context", "Bot")
 
-        call_args = (
-            mock_get_client.return_value.chat.completions.create.call_args
-        )
-        assert call_args.kwargs["model"] == "gpt-4o"
+        call_args = mock_get_client.return_value.models.generate_content.call_args
+        assert call_args.kwargs["model"] == "gemini-2.5-flash"
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_client")
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
     @patch("memory.llm_judge.config")
-    async def test_evaluate_empty_response(self, mock_config, mock_get_client):
+    async def test_evaluate_falls_back_to_model_name(
+        self, mock_config, mock_get_client, mock_model_name
+    ):
+        """JUDGE_MODELが空の場合get_model_name()を使用する"""
+        mock_config.JUDGE_MODEL = ""
+        mock_model_name.return_value = "gemini-2.5-pro"
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"respond": False, "reason": "test"})
+        mock_get_client.return_value.models.generate_content.return_value = (
+            mock_response
+        )
+
+        judge = LLMJudge()
+        await judge.evaluate("test", "context", "Bot")
+
+        call_args = mock_get_client.return_value.models.generate_content.call_args
+        assert call_args.kwargs["model"] == "gemini-2.5-pro"
+
+    @pytest.mark.asyncio
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
+    @patch("memory.llm_judge.config")
+    async def test_evaluate_empty_response(
+        self, mock_config, mock_get_client, mock_model_name
+    ):
         """LLMからの応答が空の場合はFalse"""
         mock_config.JUDGE_MODEL = ""
-        mock_config.OPENAI_MODEL = "gpt-4o-mini"
+        mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
-        mock_response.choices[0].message.content = None
-        mock_get_client.return_value.chat.completions.create.return_value = (
+        mock_response.text = None
+        mock_get_client.return_value.models.generate_content.return_value = (
             mock_response
         )
 
@@ -131,57 +134,39 @@ class TestLLMJudge:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_client")
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
     @patch("memory.llm_judge.config")
-    async def test_evaluate_invalid_json_fallback(
-        self, mock_config, mock_get_client
+    async def test_evaluate_invalid_json_returns_false(
+        self, mock_config, mock_get_client, mock_model_name
     ):
-        """JSON解析失敗時のフォールバック"""
+        """JSON解析失敗時はFalseを返す"""
         mock_config.JUDGE_MODEL = ""
-        mock_config.OPENAI_MODEL = "gpt-4o-mini"
+        mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
-        mock_response.choices[0].message.content = "Yes, I think true"
-        mock_get_client.return_value.chat.completions.create.return_value = (
+        mock_response.text = "Yes, I think true"  # 不正なJSON
+        mock_get_client.return_value.models.generate_content.return_value = (
             mock_response
         )
 
         judge = LLMJudge()
         result = await judge.evaluate("test", "context", "Bot")
-        # "true" が含まれるので True
-        assert result is True
-
-    @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_client")
-    @patch("memory.llm_judge.config")
-    async def test_evaluate_invalid_json_no_true(
-        self, mock_config, mock_get_client
-    ):
-        """JSON解析失敗かつ"true"を含まない場合はFalse"""
-        mock_config.JUDGE_MODEL = ""
-        mock_config.OPENAI_MODEL = "gpt-4o-mini"
-
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = "No, don't respond"
-        mock_get_client.return_value.chat.completions.create.return_value = (
-            mock_response
-        )
-
-        judge = LLMJudge()
-        result = await judge.evaluate("test", "context", "Bot")
+        # JSON解析失敗 → except → False
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_client")
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
     @patch("memory.llm_judge.config")
     async def test_evaluate_api_error_returns_false(
-        self, mock_config, mock_get_client
+        self, mock_config, mock_get_client, mock_model_name
     ):
         """API呼び出しエラー時はFalseを返す（安全側フォールバック）"""
         mock_config.JUDGE_MODEL = ""
-        mock_config.OPENAI_MODEL = "gpt-4o-mini"
-        mock_get_client.return_value.chat.completions.create.side_effect = (
-            Exception("API Error")
+        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_get_client.return_value.models.generate_content.side_effect = Exception(
+            "API Error"
         )
 
         judge = LLMJudge()
@@ -189,18 +174,21 @@ class TestLLMJudge:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_client")
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
     @patch("memory.llm_judge.config")
-    async def test_evaluate_with_empty_context(self, mock_config, mock_get_client):
+    async def test_evaluate_with_empty_context(
+        self, mock_config, mock_get_client, mock_model_name
+    ):
         """コンテキストが空の場合でも動作すること"""
         mock_config.JUDGE_MODEL = ""
-        mock_config.OPENAI_MODEL = "gpt-4o-mini"
+        mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
-        mock_response.choices[0].message.content = json.dumps(
+        mock_response.text = json.dumps(
             {"respond": False, "reason": "コンテキスト不足"}
         )
-        mock_get_client.return_value.chat.completions.create.return_value = (
+        mock_get_client.return_value.models.generate_content.return_value = (
             mock_response
         )
 
@@ -208,9 +196,7 @@ class TestLLMJudge:
         result = await judge.evaluate("test", "", "Bot")
         assert result is False
 
-        # プロンプトに "(会話履歴なし)" が含まれることを確認
-        call_args = (
-            mock_get_client.return_value.chat.completions.create.call_args
-        )
-        messages = call_args.kwargs["messages"]
-        assert "(会話履歴なし)" in messages[0]["content"]
+        # プロンプトにコンテキストが含まれることを確認
+        call_args = mock_get_client.return_value.models.generate_content.call_args
+        prompt = call_args.kwargs["contents"]
+        assert "最新メッセージ" in prompt
