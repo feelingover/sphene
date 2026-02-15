@@ -76,7 +76,7 @@
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
 | `LLM_JUDGE_ENABLED` | `false` | LLM二次判定の有効化 |
-| `JUDGE_MODEL` | `""` | 判定用モデル。空なら OPENAI_MODEL を使用 |
+| `JUDGE_MODEL` | `""` | 判定用モデル。空なら GEMINI_MODEL を使用 |
 | `JUDGE_LLM_THRESHOLD_LOW` | `20` | この値以下はLLM判定せずスキップ |
 | `JUDGE_LLM_THRESHOLD_HIGH` | `80` | この値以上はLLM判定せず即応答 |
 
