@@ -7,7 +7,12 @@ from discord.ext import commands  # commands をインポート
 import config
 
 # Sphene と load_system_prompt をインポート
-from ai.conversation import Sphene, load_system_prompt, user_conversations
+from ai.conversation import (
+    Sphene,
+    generate_contextual_response,
+    load_system_prompt,
+    user_conversations,
+)
 from log_utils.logger import logger
 from utils.channel_config import ChannelConfigManager
 from utils.text_utils import split_message, truncate_text
@@ -132,6 +137,148 @@ async def process_conversation(
             )
 
 
+async def _try_autonomous_response(
+    bot: commands.Bot,
+    message: discord.Message,
+    images: list[str],
+) -> None:
+    """自律応答の判定と実行
+
+    RuleBasedJudgeでスコアリングし、必要に応じてLLM Judgeで二次判定を行う。
+
+    Args:
+        bot: Discordクライアント
+        message: Discordメッセージオブジェクト
+        images: 添付画像URLリスト
+    """
+    from memory.judge import get_judge
+    from memory.short_term import ChannelMessage, get_channel_buffer
+
+    buffer = get_channel_buffer()
+    judge = get_judge()
+
+    # バッファからChannelMessageを作成
+    channel_msg = ChannelMessage(
+        message_id=message.id,
+        channel_id=message.channel.id,
+        author_id=message.author.id,
+        author_name=message.author.display_name,
+        content=message.content or "",
+        timestamp=message.created_at,
+    )
+
+    recent_messages = buffer.get_recent_messages(message.channel.id, limit=20)
+
+    # ルールベース判定
+    result = judge.evaluate(
+        message=channel_msg,
+        recent_messages=recent_messages,
+        is_mentioned=False,
+        is_name_called=False,
+        is_reply_to_bot=False,
+    )
+
+    if result.score >= config.JUDGE_LLM_THRESHOLD_HIGH:
+        # 高スコア: 即応答
+        logger.info(
+            f"自律応答決定(高スコア): チャンネル={message.channel.id}, "
+            f"スコア={result.score}, 理由={result.reason}"
+        )
+        await _process_autonomous_response(bot, message, images)
+        return
+
+    if result.score <= config.JUDGE_LLM_THRESHOLD_LOW:
+        # 低スコア: スキップ
+        return
+
+    # 中間スコア: LLM Judgeで二次判定
+    if config.LLM_JUDGE_ENABLED:
+        from memory.llm_judge import get_llm_judge
+
+        context = buffer.get_context_string(message.channel.id, limit=15)
+        llm_judge = get_llm_judge()
+        should_respond = await llm_judge.evaluate(
+            message_content=message.content or "",
+            recent_context=context,
+            bot_name=config.BOT_NAME,
+        )
+        if should_respond:
+            logger.info(
+                f"自律応答決定(LLM Judge): チャンネル={message.channel.id}, "
+                f"スコア={result.score}"
+            )
+            await _process_autonomous_response(bot, message, images)
+    elif result.should_respond:
+        # LLM Judge無効の場合はルールベースの判定に従う
+        logger.info(
+            f"自律応答決定(ルールベース): チャンネル={message.channel.id}, "
+            f"スコア={result.score}, 理由={result.reason}"
+        )
+        await _process_autonomous_response(bot, message, images)
+
+
+async def _process_autonomous_response(
+    bot: commands.Bot,
+    message: discord.Message,
+    images: list[str],
+) -> None:
+    """自律応答を生成して送信する
+
+    Args:
+        bot: Discordクライアント
+        message: トリガーとなったDiscordメッセージ
+        images: 添付画像URLリスト
+    """
+    from memory.judge import get_judge
+    from memory.short_term import ChannelMessage, get_channel_buffer
+
+    buffer = get_channel_buffer()
+
+    # チャンネルコンテキストを取得
+    context = buffer.get_context_string(message.channel.id, limit=10)
+    if not context:
+        logger.debug("コンテキストが空のため自律応答をスキップ")
+        return
+
+    # 1-shot応答を生成
+    answer = await asyncio.to_thread(
+        generate_contextual_response,
+        channel_context=context,
+        trigger_message=message.content or "",
+    )
+
+    if answer:
+        # 通常メッセージとして送信（リプライではない = 会話に自然に参加）
+        chunks = split_message(answer)
+        for chunk in chunks:
+            await message.channel.send(chunk)
+
+        logger.info(
+            f"自律応答送信: チャンネル={message.channel.id}, "
+            f"応答={truncate_text(answer)}"
+        )
+
+        # クールダウン記録
+        judge = get_judge()
+        judge.record_response(message.channel.id)
+
+        # ボット自身の応答もバッファに追加
+        if bot.user:
+            buffer.add_message(
+                ChannelMessage(
+                    message_id=0,  # 送信済みメッセージのIDは取得困難なので0
+                    channel_id=message.channel.id,
+                    author_id=bot.user.id,
+                    author_name=bot.user.display_name,
+                    content=answer,
+                    timestamp=message.created_at,  # おおよそ同時刻
+                    is_bot=True,
+                )
+            )
+    else:
+        logger.debug("自律応答の生成に失敗、またはNoneが返りました")
+
+
 # チャンネル設定マネージャーのシングルトンインスタンスを取得
 config_manager = ChannelConfigManager.get_instance()
 
@@ -183,6 +330,22 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             )
             return  # 処理を中断
 
+        # 短期記憶: 全メッセージをチャンネルバッファに追加
+        if config.MEMORY_ENABLED:
+            from memory.short_term import ChannelMessage, get_channel_buffer
+
+            buffer = get_channel_buffer()
+            buffer.add_message(
+                ChannelMessage(
+                    message_id=message.id,
+                    channel_id=message.channel.id,
+                    author_id=message.author.id,
+                    author_name=message.author.display_name,
+                    content=message.content or "",
+                    timestamp=message.created_at,
+                )
+            )
+
         # 画像添付の検出
         images = []
         for attachment in message.attachments:
@@ -196,6 +359,16 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         is_mentioned, question, is_reply = await is_bot_mentioned(bot, message)
         if is_mentioned:
             await process_conversation(message, question, is_reply, images)
+            # エンゲージメント記録（自律応答のスコアブーストに使用）
+            if config.AUTONOMOUS_RESPONSE_ENABLED and config.MEMORY_ENABLED:
+                from memory.judge import get_judge
+
+                get_judge().record_response(message.channel.id)
+            return
+
+        # 自律応答: メンションされていない場合の判定
+        if config.AUTONOMOUS_RESPONSE_ENABLED and config.MEMORY_ENABLED:
+            await _try_autonomous_response(bot, message, images)
 
     except Exception as e:
         logger.error(f"メッセージ処理中にエラー発生: {str(e)}", exc_info=True)

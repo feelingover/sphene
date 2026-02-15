@@ -96,13 +96,20 @@ class TestEventHandling:
         )
 
     @pytest.mark.asyncio
+    @patch("bot.events.config")
     @patch("bot.events.is_bot_mentioned")
     @patch("bot.events.process_conversation")
     @patch("bot.events.config_manager")
     async def test_handle_message_not_mentioned(
-        self, mock_config_manager, mock_process_conversation, mock_is_bot_mentioned
+        self,
+        mock_config_manager,
+        mock_process_conversation,
+        mock_is_bot_mentioned,
+        mock_config,
     ):
         """ボットがメンションされていない場合のテスト"""
+        mock_config.MEMORY_ENABLED = False
+        mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
         # channel_configの代わりにconfig_managerを使用
         mock_channel_config = MagicMock()
         mock_channel_config.can_bot_speak.return_value = True

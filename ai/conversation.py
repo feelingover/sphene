@@ -683,6 +683,61 @@ user_conversations: defaultdict[str, Sphene] = defaultdict(
 )
 
 
+def generate_contextual_response(
+    channel_context: str,
+    trigger_message: str,
+    system_prompt: str | None = None,
+) -> str | None:
+    """チャンネルコンテキスト付きの1-shot応答を生成する
+
+    既存のuser_conversationsとは独立して動作する。
+    会話履歴は持たず、チャンネルの流れから1回だけ応答する。
+
+    Args:
+        channel_context: チャンネルの直近メッセージのコンテキスト
+        trigger_message: 応答のトリガーとなったメッセージ
+        system_prompt: システムプロンプト（Noneの場合はキャッシュから取得）
+
+    Returns:
+        str | None: AI応答、エラー時はNone
+    """
+    try:
+        if system_prompt is None:
+            system_prompt = load_system_prompt()
+
+        # コンテキスト付きのシステムプロンプトを構築
+        contextual_prompt = (
+            f"{system_prompt}\n\n"
+            f"--- チャンネルの直近の会話 ---\n{channel_context}\n---\n\n"
+            f"上記の会話の流れを踏まえて、自然に会話に参加してください。"
+            f"リプライではなく、会話の一参加者として自然に発言してください。"
+        )
+
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": contextual_prompt},
+            {"role": "user", "content": trigger_message},
+        ]
+
+        logger.info("コンテキスト応答を生成中")
+        result = get_client().chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+        )
+
+        content = result.choices[0].message.content
+        if content:
+            logger.debug(f"コンテキスト応答生成完了: {truncate_text(content)}")
+            return content
+        else:
+            logger.warning("コンテキスト応答が空です")
+            return None
+
+    except Exception as e:
+        # Spheneの_handle_openai_errorと同じパターンでログ出力
+        logger.error(f"コンテキスト応答生成エラー: {str(e)}", exc_info=True)
+        return None
+
+
 def cleanup_expired_conversations() -> int:
     """期限切れの会話をメモリから削除する
 
