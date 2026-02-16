@@ -38,6 +38,9 @@ FIRESTORE_COLLECTION_NAME: str = str(
     os.getenv("FIRESTORE_COLLECTION_NAME", "channel_configs")
 )
 
+# === AI会話設定 ===
+MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "5"))
+
 # === 記憶機能設定 ===
 
 # 短期記憶（チャンネルメッセージバッファ）

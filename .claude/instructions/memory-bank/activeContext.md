@@ -5,14 +5,23 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
-- 全テスト通過（277件）
+- 全テスト通過（323件）
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
 - 環境変数を `GEMINI_MODEL` 形式に統一、`OPENAI_API_KEY` を完全削除。
 - Google検索Grounding機能のサポート開始（`ENABLE_GOOGLE_SEARCH_GROUNDING`）。
 - Discord heartbeat blocking修正済み（`asyncio.to_thread()`）。
 - 記憶機能（Phase 1 + Phase 2）実装済み。
+- ツール呼び出しループの改善済み（上限の環境変数化 + ツールなし最終コール）。
 
 ## Recent Changes
+
+### 2026/2: ツール呼び出しループの改善
+
+複数回のツール呼び出しでラウンド上限に達した際、集めた情報が無駄になり固定エラーメッセージが返される問題を修正。
+
+- **`MAX_TOOL_CALL_ROUNDS`の環境変数化**: ハードコード(`3`)を廃止し、`config.py`で環境変数から注入（デフォルト: `5`）。12-factor原則に準拠。
+- **ツールなし最終コール**: ループ上限到達後、ツールを渡さずに1回追加APIコールを実行。AIがこれまでに集めた全情報を使ってテキスト応答を生成できるようにした。
+- 固定エラー文「処理が複雑すぎて諦めちゃった…」はAPI自体が失敗した場合の最終フォールバックとしてのみ残存。
 
 ### 2026/2: Vertex AI Native SDK (`google-genai`) 完全移行
 
