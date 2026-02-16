@@ -186,6 +186,106 @@ class TestConversationExtensive:
         assert success is False
         assert "複雑すぎて" in msg
 
+    @patch("ai.conversation.MAX_TOOL_CALL_ROUNDS", 1)
+    @patch("ai.conversation.get_model_name")
+    @patch("ai.conversation._get_genai_client")
+    def test_call_genai_with_tools_final_call_without_tools(
+        self, mock_get_client, mock_model_name
+    ):
+        """ツール呼び出しラウンド上限到達後、ツールなし最終コールでテキスト応答を返すテスト"""
+        mock_model_name.return_value = "gemini-2.5-flash"
+
+        # ツール呼び出しを返すレスポンス
+        mock_fc = MagicMock()
+        mock_fc.name = "search_item"
+        mock_fc.args = {"query": "test"}
+
+        mock_tool_part = MagicMock()
+        mock_tool_part.function_call = mock_fc
+        mock_tool_part.text = None
+
+        mock_tool_content = MagicMock()
+        mock_tool_content.parts = [mock_tool_part]
+
+        mock_tool_response = MagicMock()
+        mock_tool_response.candidates = [MagicMock(content=mock_tool_content)]
+
+        # テキスト応答を返すレスポンス（最終コール用）
+        mock_text_part = MagicMock()
+        mock_text_part.function_call = None
+        mock_text_part.text = "調べた結果をまとめるね！"
+
+        mock_text_content = MagicMock()
+        mock_text_content.parts = [mock_text_part]
+
+        mock_text_response = MagicMock()
+        mock_text_response.candidates = [MagicMock(content=mock_text_content)]
+
+        # MAX_TOOL_CALL_ROUNDS=1 → ループ2回 + 最終コール1回 = 3回
+        mock_client = mock_get_client.return_value
+        mock_client.models.generate_content.side_effect = [
+            mock_tool_response,  # ラウンド1: ツール呼び出し
+            mock_tool_response,  # ラウンド2: ツール呼び出し（ループ上限）
+            mock_text_response,  # 最終コール: テキスト応答
+        ]
+
+        fn_response_part = types.Part.from_function_response(
+            name="search_item", response={"result": "ok"}
+        )
+        with patch(
+            "ai.conversation._execute_tool_calls",
+            return_value=[fn_response_part],
+        ):
+            success, msg, _ = _call_genai_with_tools([], "system")
+
+        assert success is True
+        assert msg == "調べた結果をまとめるね！"
+        assert mock_client.models.generate_content.call_count == 3
+
+    @patch("ai.conversation.MAX_TOOL_CALL_ROUNDS", 1)
+    @patch("ai.conversation.get_model_name")
+    @patch("ai.conversation._get_genai_client")
+    def test_call_genai_with_tools_final_call_api_error(
+        self, mock_get_client, mock_model_name
+    ):
+        """ツールなし最終コールでAPI例外が発生した場合のテスト"""
+        mock_model_name.return_value = "gemini-2.5-flash"
+
+        # ツール呼び出しを返すレスポンス
+        mock_fc = MagicMock()
+        mock_fc.name = "search_item"
+        mock_fc.args = {}
+
+        mock_part = MagicMock()
+        mock_part.function_call = mock_fc
+        mock_part.text = None
+
+        mock_content = MagicMock()
+        mock_content.parts = [mock_part]
+
+        mock_tool_response = MagicMock()
+        mock_tool_response.candidates = [MagicMock(content=mock_content)]
+
+        # MAX_TOOL_CALL_ROUNDS=1 → ループ2回 + 最終コール(例外)
+        mock_client = mock_get_client.return_value
+        mock_client.models.generate_content.side_effect = [
+            mock_tool_response,  # ラウンド1: ツール呼び出し
+            mock_tool_response,  # ラウンド2: ツール呼び出し（ループ上限）
+            Exception("429 Resource exhausted"),  # 最終コール: API例外
+        ]
+
+        fn_response_part = types.Part.from_function_response(
+            name="search_item", response={"result": "ok"}
+        )
+        with patch(
+            "ai.conversation._execute_tool_calls",
+            return_value=[fn_response_part],
+        ):
+            success, msg, _ = _call_genai_with_tools([], "system")
+
+        assert success is False
+        assert "混み合ってる" in msg
+
     @patch("ai.conversation._call_genai_with_tools")
     def test_generate_contextual_response_success(self, mock_call):
         """コンテキスト付き応答生成の成功テスト"""

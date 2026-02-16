@@ -11,6 +11,7 @@ applyTo: "**"
 - uv移行: pyproject.toml + uv.lock による依存管理、CI/Dockerfileのuv対応
 - Discord応答（メンション、名前呼び、リプライ）、スラッシュコマンド
 - Gemini-2.5-flash対話、会話履歴管理、マルチモーダル（画像）
+- ツール呼び出しループ改善: `MAX_TOOL_CALL_ROUNDS`環境変数化（デフォルト5）+ ツールなし最終コール追加
 - Function Calling → XIVAPI v2検索（アイテム・アクション・レシピ・クエスト等、詳細フィルタ対応）
 - 翻訳（国旗リアクション: US/JP）
 - チャンネル管理（全体/限定モード、追加/削除）

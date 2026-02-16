@@ -16,6 +16,7 @@ from google.api_core import exceptions as google_exceptions
 from ai.client import _get_genai_client, get_model_name
 from config import (
     GEMINI_MODEL,
+    MAX_TOOL_CALL_ROUNDS,
     SYSTEM_PROMPT_FILENAME,
     SYSTEM_PROMPT_PATH,
     ENABLE_GOOGLE_SEARCH_GROUNDING,
@@ -26,7 +27,6 @@ from log_utils.logger import logger
 # 定数の定義
 MAX_CONVERSATION_AGE_MINUTES = 30
 MAX_CONVERSATION_TURNS = 10
-MAX_TOOL_CALL_ROUNDS = 3
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5MB
 IMAGE_REQUEST_TIMEOUT = (3, 5)  # (connect, read)
 ALLOWED_IMAGE_DOMAINS = {"cdn.discordapp.com", "media.discordapp.net"}
@@ -168,6 +168,29 @@ def _call_genai_with_tools(
             return True, final_text, local_history
         
         return False, "応答を読み取れなかったよ…😢", local_history
+
+    # ループ上限到達: ツールなしで最終応答を取得（集めた情報を活かす）
+    logger.info("ツール呼び出しラウンド上限到達 - ツールなしで最終応答を取得")
+    try:
+        response = client.models.generate_content(
+            model=model_id,
+            contents=local_history,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+            ),
+        )
+    except Exception as e:
+        return False, _handle_api_error(e), local_history
+
+    if response.candidates:
+        candidate = response.candidates[0]
+        resp_content = candidate.content
+        local_history.append(resp_content)
+        text_parts = [p.text for p in resp_content.parts if p.text]
+        if text_parts:
+            final_text = "".join(text_parts)
+            logger.debug(f"最終応答受信: {truncate_text(final_text)}")
+            return True, final_text, local_history
 
     return False, "処理が複雑すぎて諦めちゃった…😢", local_history
 
