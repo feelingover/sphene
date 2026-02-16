@@ -263,3 +263,78 @@ class TestConversationExtensive:
 
         assert success is False
         assert "空" in text
+
+    @patch("ai.conversation.get_model_name")
+    @patch("ai.conversation._get_genai_client")
+    def test_call_genai_with_grounding_config(
+        self, mock_get_client, mock_model_name
+    ):
+        """Groundingが有効な時に正しいツール構成でSDKが呼ばれるかテスト"""
+        mock_model_name.return_value = "gemini-3-flash"
+        
+        # モックの戻り値設定
+        mock_response = MagicMock()
+        mock_response.candidates = [MagicMock()]
+        mock_response.candidates[0].content.parts = [types.Part.from_text(text="response")]
+        mock_get_client.return_value.models.generate_content.return_value = mock_response
+
+        with patch("ai.conversation.ENABLE_GOOGLE_SEARCH_GROUNDING", True):
+            _call_genai_with_tools([], "system_instruction")
+            
+            # generate_content の呼び出し引数を確認
+            args, kwargs = mock_get_client.return_value.models.generate_content.call_args
+            config = kwargs["config"]
+            
+            # toolsの中にgoogle_searchが含まれていること
+            grounding_tools = [t for t in config.tools if hasattr(t, "google_search") and t.google_search]
+            assert len(grounding_tools) == 1
+            assert isinstance(grounding_tools[0].google_search, types.GoogleSearch)
+
+    @patch("ai.conversation._call_genai_with_tools")
+    def test_input_message_includes_tool_instruction(self, mock_call):
+        """通常の会話入力時にツール使用指示が含まれているかテスト"""
+        mock_call.return_value = (True, "Answer", [])
+        sphene = Sphene("Base Prompt")
+        
+        sphene.input_message("Hello")
+        
+        # _call_genai_with_tools の引数を確認
+        _, kwargs = mock_call.call_args
+        instruction = kwargs["system_instruction"]
+        assert "Base Prompt" in instruction
+        assert "積極的にツールを使って調べてね" in instruction
+
+    @patch("ai.conversation._call_genai_with_tools")
+    def test_generate_contextual_response_includes_tool_instruction(self, mock_call):
+        """自律応答生成時にツール使用指示が含まれているかテスト"""
+        mock_call.return_value = (True, "Answer", [])
+        
+        generate_contextual_response("Context", "Trigger", system_prompt="System Prompt")
+        
+        # _call_genai_with_tools の引数を確認
+        _, kwargs = mock_call.call_args
+        instruction = kwargs["system_instruction"]
+        assert "System Prompt" in instruction
+        assert "積極的にツールを使って調べてね" in instruction
+
+    @patch("ai.conversation.get_model_name")
+    @patch("ai.conversation._get_genai_client")
+    def test_call_genai_with_grounding_metadata(
+        self, mock_get_client, mock_model_name
+    ):
+        """Groundingメタデータが含まれるレスポンスの処理テスト"""
+        mock_model_name.return_value = "gemini-3-flash"
+
+        candidate = MagicMock()
+        candidate.content.parts = [types.Part.from_text(text="grounded response")]
+        candidate.grounding_metadata = MagicMock() # メタデータあり
+        
+        mock_response = MagicMock()
+        mock_response.candidates = [candidate]
+        mock_get_client.return_value.models.generate_content.return_value = mock_response
+
+        success, text, _ = _call_genai_with_tools([], "system")
+
+        assert success is True
+        assert text == "grounded response"
+        # ログ出力されるはず（副作用の検証は省略するが、クラッシュしないことが重要）
