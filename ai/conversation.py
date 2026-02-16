@@ -31,6 +31,10 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5MB
 IMAGE_REQUEST_TIMEOUT = (3, 5)  # (connect, read)
 ALLOWED_IMAGE_DOMAINS = {"cdn.discordapp.com", "media.discordapp.net"}
 
+TOOL_USAGE_INSTRUCTION = (
+    "自然に会話に参加してね。もし知らないことや最新の情報が必要なら、積極的にツールを使って調べてね！"
+)
+
 def truncate_text(text: str, max_length: int = 30) -> str:
     """テキストを切り詰める"""
     if not text:
@@ -114,7 +118,7 @@ def _call_genai_with_tools(
     # ツール設定
     tools = get_tools()
     if ENABLE_GOOGLE_SEARCH_GROUNDING:
-        tools.append(types.Tool(google_search_retrieval=types.GoogleSearchRetrieval()))
+        tools.append(types.Tool(google_search=types.GoogleSearch()))
 
     # contentsリストをコピーして操作する
     local_history = list(contents)
@@ -138,7 +142,13 @@ def _call_genai_with_tools(
         if not response.candidates:
             return False, "AIからの応答が空だったよ…🤔", local_history
 
-        resp_content = response.candidates[0].content
+        candidate = response.candidates[0]
+        resp_content = candidate.content
+        
+        # Grounding情報のログ出力
+        if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
+            logger.info(f"Groundingメタデータを検出: {candidate.grounding_metadata}")
+
         local_history.append(resp_content)
 
         # ツール呼び出しがあるか確認
@@ -246,10 +256,13 @@ class Sphene:
 
             self.history.append(types.Content(role="user", parts=parts))
             
+            # ツール使用を促す指示を追加
+            instruction = f"{self.system_prompt}\n\n{TOOL_USAGE_INSTRUCTION}"
+            
             # 共通ロジックで呼び出し
             success, response, updated_history = _call_genai_with_tools(
                 contents=self.history,
-                system_instruction=self.system_prompt
+                system_instruction=instruction
             )
             
             # 履歴を更新
@@ -271,7 +284,7 @@ def generate_contextual_response(channel_context: str, trigger_message: str, sys
         instruction = (
             f"{system_prompt}\n\n"
             f"--- チャンネルの直近の会話 ---\n{channel_context}\n---\n"
-            f"自然に会話に参加してね。もし知らないことや最新の情報が必要なら、積極的にツールを使って調べてね！"
+            f"{TOOL_USAGE_INSTRUCTION}"
         )
         
         # 1-shot のコンテンツを作成
