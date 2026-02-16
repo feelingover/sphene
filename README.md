@@ -1,21 +1,22 @@
-# 🔮 Sphene Discord Bot
+# Sphene Discord Bot
 
-Spheneは、OpenAI APIを活用した会話機能を持つ、シンプルでパワフルなDiscord botです。メンション、名前呼び、リプライのいずれかで反応し、自然な会話体験を提供します。
+SpheneはGoogle Gen AI SDK（Vertex AI経由のGemini）を活用した会話機能を持つDiscord botです。メンション、名前呼び、リプライのいずれかで反応し、自然な会話体験を提供します。
 
-## ✨ 主な機能
+## 主な機能
 
-- 💬 OpenAI / Vertex AI（Gemini）対応のマルチプロバイダー会話機能
-- 📸 画像処理対応のマルチモーダル会話
-- 👋 メンション、名前呼び、リプライによる柔軟な反応
-- 🌐 国旗リアクションによる自動翻訳機能（🇺🇸 英語 / 🇯🇵 日本語）
-- 🔄 会話履歴リセットコマンド
-- 📋 禁止チャンネル一覧表示
-- ⏱️ 30分の会話タイムアウトによるコンテキストリセット
-- 🛡️ チャンネルごとの応答制限機能（全体モード/限定モード）
-- 🎭 カスタマイズ可能なシステムプロンプトでボットのキャラクター設定が自由に変更可能
-- 🔍 XIVAPI v2連携によるFF14データ検索（アイテム、アクション、レシピ、クエスト、マウント、ミニオン等。ジョブ・IL・レベルでの絞り込み対応）
+- Google Gen AI SDK（Vertex AI / Gemini）による会話機能
+- 画像処理対応のマルチモーダル会話
+- メンション、名前呼び、リプライによる柔軟な反応
+- 国旗リアクションによる自動翻訳機能（🇺🇸 英語 / 🇯🇵 日本語）
+- 会話履歴リセットコマンド
+- チャンネルごとの応答制限機能（全体モード/限定モード）
+- カスタマイズ可能なシステムプロンプトでボットのキャラクター設定が自由に変更可能
+- XIVAPI v2連携によるFF14データ検索（アイテム、アクション、レシピ、クエスト、アチーブメント、F.A.T.E.、マウント、ミニオン、ステータス。ジョブ・IL・レベルでの絞り込み対応）
+- Google検索Grounding対応（Geminiの検索拡張機能）
+- 自律応答機能（ルールベーススコアリング＋LLM二次判定による自動会話参加）
+- 短期記憶（チャンネルメッセージバッファ）による文脈を考慮した応答
 
-## 🚀 セットアップ方法
+## セットアップ方法
 
 ### 環境変数の設定
 
@@ -23,25 +24,23 @@ Spheneは、OpenAI APIを活用した会話機能を持つ、シンプルでパ�
 
 ```
 DISCORD_TOKEN=your_discord_bot_token
-BOT_NAME=スフェーン  # ボットの呼び名（デフォルト: スフェーン）
-COMMAND_GROUP_NAME=sphene  # コマンドグループ名（デフォルト: sphene）
+BOT_NAME=スフェーン  # ボットの呼び名（コードのデフォルト: アサヒ）
+COMMAND_GROUP_NAME=sphene  # コマンドグループ名（コードのデフォルト: asahi）
 GEMINI_MODEL=google/gemini-2.5-flash  # 使用するモデル
 
-# AIプロバイダー設定: openai または vertex_ai
-AI_PROVIDER=openai
-
-# Vertex AI設定（AI_PROVIDER=vertex_ai の場合に使用）
+# Vertex AI設定
+AI_PROVIDER=vertex_ai
 # VERTEX_AI_PROJECT_ID=your-gcp-project-id  # 未設定の場合はGCEメタデータから自動取得
-# VERTEX_AI_LOCATION=asia-northeast1
-# GEMINI_MODEL=google/gemini-2.5-flash
+VERTEX_AI_LOCATION=asia-northeast1
+
+# Google検索によるGroundingを有効にするか
+ENABLE_GOOGLE_SEARCH_GROUNDING=false
 
 # システムプロンプトの設定
 SYSTEM_PROMPT_FILENAME=system.txt
 
 # チャンネル設定のストレージタイプ: local または firestore
 CHANNEL_CONFIG_STORAGE_TYPE=local
-# ローカル使用時のチャンネル設定ファイルパス
-CHANNEL_CONFIG_PATH=channel_config.json
 
 # Firestoreコレクション名（CHANNEL_CONFIG_STORAGE_TYPE=firestore の場合に使用）
 FIRESTORE_COLLECTION_NAME=channel_configs
@@ -50,6 +49,27 @@ FIRESTORE_COLLECTION_NAME=channel_configs
 
 # ログレベル設定: DEBUG, INFO, WARNING, ERROR, CRITICAL のいずれか
 LOG_LEVEL=INFO
+
+# === 記憶機能設定 ===
+
+# 短期記憶（チャンネルメッセージバッファ）
+MEMORY_ENABLED=false
+# CHANNEL_BUFFER_SIZE=50
+# CHANNEL_BUFFER_TTL_MINUTES=30
+
+# 自律応答
+AUTONOMOUS_RESPONSE_ENABLED=false
+# JUDGE_SCORE_THRESHOLD=60
+# COOLDOWN_SECONDS=120
+# ENGAGEMENT_DURATION_SECONDS=300  # エンゲージメント期間（秒）。応答後この期間中はスコアブースト
+# ENGAGEMENT_BOOST=40              # エンゲージメント中のスコア加算値
+# JUDGE_KEYWORDS=  # カンマ区切りでスコアブーストするキーワードを指定
+
+# LLM Judge（二次判定: 中間スコアのメッセージをLLMで判定）
+# LLM_JUDGE_ENABLED=false
+# JUDGE_MODEL=  # 空の場合はGEMINI_MODELと同じモデルを使用
+# JUDGE_LLM_THRESHOLD_LOW=20
+# JUDGE_LLM_THRESHOLD_HIGH=80
 ```
 
 ### システムプロンプトの用意
@@ -93,7 +113,7 @@ docker build -t sphene-discord-bot .
 docker run --env-file .env sphene-discord-bot
 ```
 
-## ☸️ Kubernetesへのデプロイ
+## Kubernetesへのデプロイ
 
 環境変数をKubernetes Secretとして作成し、Podから参照できるようにします：
 
@@ -107,15 +127,23 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 デプロイメントやサービスの設定は別途YAMLファイルで定義します。
 
-## 📝 使用方法
+## 使用方法
 
 ### ボットとの会話
 
 以下のいずれかの方法でボットと会話できます：
 
-1. **メンション**: `@スフェーン こんにちは！`
-2. **名前呼び**: `スフェーン、元気？`
+1. **メンション**: `@ボット名 こんにちは！`
+2. **名前呼び**: `ボット名、元気？`
 3. **リプライ**: ボットのメッセージに返信する
+
+### 自律応答
+
+記憶機能と自律応答を有効にすると、ボットは明示的に呼びかけられなくても、会話の流れに応じて自然に参加します。
+
+- **ルールベース判定**: キーワード一致、エンゲージメント状態、クールダウンなどのスコアリングで応答要否を判定
+- **LLM二次判定（オプション）**: 中間スコアのメッセージに対して、LLMが会話文脈を考慮して追加判定
+- 詳細は `docs/autonomous-response.md` を参照
 
 ### 翻訳機能の使い方
 
@@ -128,114 +156,135 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 ### スラッシュコマンド
 
-- `/sphene reset` - 会話履歴をリセットします
-- `/sphene mode` - 評価モード（全体モード/限定モード）を切り替えます（管理者のみ）
-- `/sphene channels` - チャンネルリストと現在の評価モードを表示します（管理者のみ）
-- `/sphene addlist` - 現在のチャンネルをリストに追加します（管理者のみ）
-- `/sphene removelist` - 現在のチャンネルをリストから削除します（管理者のみ）
-- `/sphene clearlist` - チャンネルリストをクリアします（管理者のみ）
-- `/sphene updatelist` - チャンネル設定を手動で保存します（管理者のみ）
-- `/sphene reload_prompt` - システムプロンプトを再読み込みします（管理者のみ）
-- `/sphene translation` - 翻訳機能の有効/無効を切り替えます（管理者のみ）
+コマンドプレフィックスは `COMMAND_GROUP_NAME` 環境変数で設定（デフォルト: `asahi`）。
 
-## 🛠️ プロジェクト構成
+- `/<prefix> reset` - 会話履歴をリセットします
+- `/<prefix> mode` - 評価モード（全体モード/限定モード）を切り替えます（管理者のみ）
+- `/<prefix> channels` - チャンネルリストと現在の評価モードを表示します（管理者のみ）
+- `/<prefix> addlist` - 現在のチャンネルをリストに追加します（管理者のみ）
+- `/<prefix> removelist` - 現在のチャンネルをリストから削除します（管理者のみ）
+- `/<prefix> clearlist` - チャンネルリストをクリアします（管理者のみ）
+- `/<prefix> updatelist` - チャンネル設定を手動で保存します（管理者のみ）
+- `/<prefix> reload_prompt` - システムプロンプトを再読み込みします（管理者のみ）
+- `/<prefix> translation` - 翻訳機能の有効/無効を切り替えます（管理者のみ）
+
+## プロジェクト構成
 
 ```
 /
-├── app.py                # メインアプリケーション
-├── config.py             # 設定ファイル
-├── Dockerfile            # Dockerビルド設定
-├── pyproject.toml        # プロジェクト設定・依存定義
-├── uv.lock               # 依存パッケージのロックファイル
-├── .python-version       # Pythonバージョン指定
-├── run_tests.sh          # テスト実行スクリプト
-├── .env.sample           # 環境変数サンプル
-├── README.md             # このファイル
-├── ai/                   # AI関連機能
+├── app.py                  # メインアプリケーション（エントリーポイント）
+├── config.py               # 環境変数ベースの設定
+├── Dockerfile              # Dockerビルド設定
+├── pyproject.toml          # プロジェクト設定・依存定義
+├── uv.lock                 # 依存パッケージのロックファイル
+├── .python-version         # Pythonバージョン指定
+├── run_tests.sh            # テスト実行スクリプト
+├── .env.sample             # 環境変数サンプル
+├── README.md               # このファイル
+├── ai/                     # AI関連機能
 │   ├── __init__.py
-│   ├── client.py         # AIクライアント（OpenAI / Vertex AI）
-│   ├── conversation.py   # 会話管理ロジック
-│   └── tools.py          # Function Callingツール定義
-├── bot/                  # Discordボット機能
+│   ├── client.py           # Google Gen AI SDKクライアント（Vertex AI経由）
+│   ├── conversation.py     # 会話管理・プロンプト・Gen AI API呼び出し
+│   └── tools.py            # Function Calling ツール定義・変換
+├── bot/                    # Discordボット機能
 │   ├── __init__.py
-│   ├── commands.py       # スラッシュコマンド定義
-│   ├── discord_bot.py    # ボットコア実装
-│   └── events.py         # イベントハンドラ
-├── log_utils/            # ロギング機能
+│   ├── commands.py         # スラッシュコマンド定義
+│   ├── discord_bot.py      # ボットコア実装
+│   └── events.py           # メッセージ・リアクションイベントハンドラ
+├── memory/                 # 記憶・自律応答機能
 │   ├── __init__.py
-│   └── logger.py         # ロガー設定
-├── .claude/instructions/memory-bank/  # プロジェクト知識ベース
-│   ├── activeContext.md               # 現在の作業コンテキスト
-│   ├── architecture.md                # システム設計・アーキテクチャ
-│   └── progress.md                    # 進捗状況
-├── storage/              # ストレージ関連ファイル
-│   └── system.txt        # システムプロンプト(存在する場合)
-├── xivapi/               # XIVAPI v2連携
+│   ├── judge.py            # ルールベース自律応答判定
+│   ├── llm_judge.py        # LLMによる二次判定
+│   └── short_term.py       # チャンネルメッセージバッファ（短期記憶）
+├── xivapi/                 # XIVAPI v2連携
 │   ├── __init__.py
-│   ├── client.py         # ゲームデータ検索クライアント
-│   └── SPEC.md           # API仕様・設計メモ
-├── tests/                # テストコード
+│   ├── client.py           # ゲームデータ検索クライアント
+│   └── SPEC.md             # API仕様・設計メモ
+├── utils/                  # ユーティリティ機能
 │   ├── __init__.py
-│   ├── conftest.py       # テスト設定
-│   ├── test_ai/          # AI機能テスト
-│   ├── test_bot/         # ボット機能テスト
-│   ├── test_utils/       # ユーティリティテスト
-│   └── test_xivapi/      # XIVAPI機能テスト
-└── utils/                # ユーティリティ機能
-    ├── __init__.py
-    ├── channel_config.py # チャンネル設定管理
-    ├── firestore_client.py # Firestoreクライアント
-    └── text_utils.py     # テキスト処理ユーティリティ
+│   ├── channel_config.py   # チャンネル設定管理（local/Firestore）
+│   ├── firestore_client.py # Firestoreクライアント（シングルトン）
+│   └── text_utils.py       # テキスト処理・翻訳
+├── log_utils/              # ロギング機能
+│   ├── __init__.py
+│   └── logger.py           # ロガー設定
+├── storage/                # ローカルファイルストレージ（プロンプト、設定）
+├── scripts/                # ユーティリティスクリプト
+│   ├── migrate_s3_to_firestore.py  # S3→Firestoreマイグレーションツール
+│   └── verify_grounding.py         # Grounding検証スクリプト
+├── docs/                   # ドキュメント
+│   └── autonomous-response.md      # 自律応答機能の仕様
+├── tests/                  # テストコード
+│   ├── conftest.py         # テスト設定
+│   ├── test_ai/            # AI機能テスト
+│   ├── test_bot/           # ボット機能テスト
+│   ├── test_memory/        # 記憶・自律応答テスト
+│   ├── test_utils/         # ユーティリティテスト
+│   └── test_xivapi/       # XIVAPI機能テスト
+└── .claude/instructions/memory-bank/  # プロジェクト知識ベース
+    ├── activeContext.md               # 現在の作業コンテキスト
+    ├── architecture.md                # システム設計・アーキテクチャ
+    └── progress.md                    # 進捗状況
 ```
 
-## 📊 技術仕様
+## 技術仕様
 
 - Python 3.14+
 - uv - パッケージ管理・仮想環境管理
 - discord.py - Discordボットフレームワーク
-- OpenAI API - GPT-4o-mini会話モデル（マルチモーダル対応）
-- Google Vertex AI - Gemini等のモデルにOpenAI互換APIで接続（GCE Workload Identity対応）
+- Google Gen AI SDK (`google-genai`) - Vertex AI経由のGeminiモデルによる会話（マルチモーダル対応）
 - google-auth - GCP認証（Vertex AI利用時）
+- google-cloud-aiplatform - Vertex AI基盤
 - Docker - コンテナ化
 - Kubernetes - オプショナルデプロイ環境
 - Cloud Firestore (オプション) - チャンネル設定のリモートストレージ
-- XIVAPI v2 - FF14アイテム情報検索API
+- XIVAPI v2 - FF14ゲームデータ検索API
 - httpx - HTTPクライアント（XIVAPI通信用）
+- requests - HTTPクライアント（画像取得用）
 
-## 📋 開発状況
+## 開発状況
 
 ### 現在実装済みの機能
 
-✅ **基本インフラ**
+**基本インフラ**
 
 - Discord接続と基本的なボット機能
-- OpenAI API連携
+- Google Gen AI SDK（Vertex AI）連携
 - 環境変数による設定
 - ログ記録システム
 
-✅ **コアボット機能**
+**コアボット機能**
 
 - メンションによる応答
 - 名前呼びによる応答
 - リプライによる応答
 - スラッシュコマンド処理
 
-✅ **AIチャット機能**
+**AIチャット機能**
 
-- マルチプロバイダー対応（OpenAI / Vertex AI）
+- Google Gen AI SDK（Vertex AI / Gemini）による会話
 - マルチモーダル対応（画像処理）
 - 会話履歴の管理
 - 会話タイムアウト（30分）
 - 会話履歴制限（最大10ターン）
-- Function Callingによるツール連携（XIVAPI アイテム検索）
+- Function Callingによるツール連携（XIVAPI ゲームデータ検索）
+- Google検索Grounding（オプション）
 
-✅ **翻訳機能**
+**記憶・自律応答機能**
+
+- チャンネルメッセージバッファ（短期記憶）
+- ルールベースのスコアリングによる自律応答判定
+- LLMによる二次判定（オプション）
+- エンゲージメント追跡とクールダウン制御
+- キーワードベースのスコアブースト
+
+**翻訳機能**
 
 - 国旗リアクションによる翻訳（🇺🇸 英語 / 🇯🇵 日本語）
 - 翻訳機能の有効/無効切り替え
 - スレッド内での翻訳サポート
 
-✅ **管理機能**
+**管理機能**
 
 - 会話リセットコマンド
 - チャンネルモード切替（全体/限定）
@@ -243,31 +292,24 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - チャンネル追加/削除/クリア
 - システムプロンプト再読み込み
 
-### 今後の開発予定
-
-- チャンネル固有のカスタムプロンプト
-- 使用統計の収集と分析
-- パフォーマンス最適化
-- モニタリングとアラート機能
-
-## 🔒 セキュリティ情報
+## セキュリティ情報
 
 - APIキーなどの秘密情報は`.env`ファイルまたはKubernetes Secretに保存してください
 - チャンネル制限機能を使用することで、ボットの応答可能なチャンネルを制御できます：
   - **全体モード（deny）**: リストに含まれるチャンネル以外で応答可能
   - **限定モード（allow）**: リストに含まれるチャンネルのみで応答可能
 
-## 📝 システムプロンプトのカスタマイズ
+## システムプロンプトのカスタマイズ
 
 ボットのキャラクター設定やふるまいは、システムプロンプトをカスタマイズすることで自由に変更できます。
-プロンプトファイルは`storage/system.txt`ディレクトリに配置します。
+プロンプトファイルは`storage/system.txt`に配置します。
 
 ```bash
 # システムプロンプトのカスタマイズ
 vi storage/system.txt  # ボットのキャラクター設定を編集
 ```
 
-## 📚 メモリーバンク
+## メモリーバンク
 
 Spheneプロジェクトでは、`.claude/instructions/memory-bank/`ディレクトリに重要なプロジェクト情報を整理して保存しています。
 これは開発者間の知識共有や、プロジェクトの継続的な発展をサポートするためのものです。
