@@ -343,3 +343,54 @@ def test_generate_short_ack_error() -> None:
         )
 
         assert result is None
+
+
+def test_generate_content_retry_logic() -> None:
+    """_generate_content_with_retryのリトライロジックをテスト"""
+    from ai.conversation import _generate_content_with_retry
+    from google.api_core import exceptions as google_exceptions
+    
+    # 429エラーを3回投げた後に成功するケース
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = [
+        google_exceptions.TooManyRequests("Busy"),
+        google_exceptions.TooManyRequests("Busy"),
+        google_exceptions.TooManyRequests("Busy"),
+        "Success"
+    ]
+    
+    # tenacityのsleepをスキップ
+    with patch("time.sleep", return_value=None):
+        result = _generate_content_with_retry(
+            client=mock_client,
+            model="test-model",
+            contents=[],
+            config=MagicMock()
+        )
+        
+    assert result == "Success"
+    assert mock_client.models.generate_content.call_count == 4
+
+
+def test_generate_content_retry_on_genai_apierror() -> None:
+    """google.genai.errors.APIError に対するリトライをテスト"""
+    from ai.conversation import _generate_content_with_retry
+    from google.genai import errors as genai_errors
+    
+    # 429エラーを投げた後に成功するケース
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = [
+        genai_errors.APIError(code=429, response_json={"error": {"code": 429, "message": "Rate limit"}}),
+        "Success"
+    ]
+    
+    with patch("time.sleep", return_value=None):
+        result = _generate_content_with_retry(
+            client=mock_client,
+            model="test-model",
+            contents=[],
+            config=MagicMock()
+        )
+        
+    assert result == "Success"
+    assert mock_client.models.generate_content.call_count == 2

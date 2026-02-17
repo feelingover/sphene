@@ -7,6 +7,7 @@ from google.genai import types
 
 import config
 from ai.client import _get_genai_client, get_model_name
+from ai.conversation import _generate_content_with_retry
 from log_utils.logger import logger
 from memory.channel_context import ChannelContext, get_channel_context_store
 from memory.short_term import ChannelMessage
@@ -105,9 +106,10 @@ class Summarizer:
         )
 
         try:
-            response = client.models.generate_content(
+            response = _generate_content_with_retry(
+                client=client,
                 model=model_name,
-                contents=prompt,
+                contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
                 config=types.GenerateContentConfig(
                     temperature=0.3,
                     response_mime_type="application/json",
