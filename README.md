@@ -15,6 +15,8 @@ SpheneはGoogle Gen AI SDK（Vertex AI経由のGemini）を活用した会話機
 - Google検索Grounding対応（Geminiの検索拡張機能）
 - 自律応答機能（ルールベーススコアリング＋LLM二次判定による自動会話参加）
 - 短期記憶（チャンネルメッセージバッファ）による文脈を考慮した応答
+- チャンネルコンテキスト（ローリング要約による場の空気把握）
+- 応答多様性（リアクション / 相槌 / フル応答の3段階で自然な会話参加）
 
 ## セットアップ方法
 
@@ -70,6 +72,16 @@ AUTONOMOUS_RESPONSE_ENABLED=false
 # JUDGE_MODEL=  # 空の場合はGEMINI_MODELと同じモデルを使用
 # JUDGE_LLM_THRESHOLD_LOW=20
 # JUDGE_LLM_THRESHOLD_HIGH=80
+
+# チャンネルコンテキスト（ローリング要約による場の空気把握）
+# CHANNEL_CONTEXT_ENABLED=false
+# CHANNEL_CONTEXT_STORAGE_TYPE=memory  # memory | local | firestore
+# SUMMARIZE_EVERY_N_MESSAGES=20        # N件ごとに要約実行
+# SUMMARIZE_EVERY_N_MINUTES=15         # N分経過で要約実行（メッセージ1件以上の場合）
+# SUMMARIZE_MODEL=                     # 空の場合はGEMINI_MODELと同じモデルを使用
+
+# 応答多様性（有効にするとスコアに応じてリアクション/相槌/フル応答を使い分け）
+# RESPONSE_DIVERSITY_ENABLED=false
 ```
 
 ### システムプロンプトの用意
@@ -141,8 +153,13 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 記憶機能と自律応答を有効にすると、ボットは明示的に呼びかけられなくても、会話の流れに応じて自然に参加します。
 
-- **ルールベース判定**: キーワード一致、エンゲージメント状態、クールダウンなどのスコアリングで応答要否を判定
+- **ルールベース判定**: キーワード一致、エンゲージメント状態、クールダウン、会話フロー分析によるスコアリング
 - **LLM二次判定（オプション）**: 中間スコアのメッセージに対して、LLMが会話文脈を考慮して追加判定
+- **応答多様性（オプション）**: スコアに応じた3段階の応答タイプ
+  - **リアクション**: 低スコア時に絵文字リアクションで軽く参加
+  - **相槌**: 中スコア時に一言の短い相槌で反応
+  - **フル応答**: 高スコア時にチャンネルの文脈を踏まえた本格的な応答
+- **チャンネルコンテキスト（オプション）**: ローリング要約でチャンネルの雰囲気・話題・参加者を把握し、応答品質を向上
 - 詳細は `docs/autonomous-response.md` を参照
 
 ### 翻訳機能の使い方
@@ -193,9 +210,11 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 │   └── events.py           # メッセージ・リアクションイベントハンドラ
 ├── memory/                 # 記憶・自律応答機能
 │   ├── __init__.py
+│   ├── channel_context.py  # チャンネルコンテキスト（ローリング要約）
 │   ├── judge.py            # ルールベース自律応答判定
 │   ├── llm_judge.py        # LLMによる二次判定
-│   └── short_term.py       # チャンネルメッセージバッファ（短期記憶）
+│   ├── short_term.py       # チャンネルメッセージバッファ（短期記憶）
+│   └── summarizer.py       # ローリング要約エンジン
 ├── xivapi/                 # XIVAPI v2連携
 │   ├── __init__.py
 │   ├── client.py           # ゲームデータ検索クライアント
@@ -277,6 +296,9 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - LLMによる二次判定（オプション）
 - エンゲージメント追跡とクールダウン制御
 - キーワードベースのスコアブースト
+- チャンネルコンテキスト（ローリング要約 - メッセージ数/時間ベースのハイブリッドトリガー）
+- 応答多様性（リアクション / 相槌 / フル応答の3段階）
+- 会話フロー分析（2人会話検出、高頻度検出、沈黙後検出、会話減衰検出）
 
 **翻訳機能**
 

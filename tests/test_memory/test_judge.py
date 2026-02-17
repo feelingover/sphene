@@ -8,7 +8,15 @@ from unittest.mock import patch
 
 import pytest
 
-from memory.judge import JudgeResult, RuleBasedJudge
+from memory.judge import (
+    JudgeResult,
+    RuleBasedJudge,
+    _count_unique_authors,
+    _detect_conversation_decay,
+    _has_bot_mention_in_recent,
+    _is_first_after_silence,
+    _is_high_frequency,
+)
 from memory.short_term import ChannelMessage
 
 
@@ -16,15 +24,24 @@ def _make_message(
     content: str = "テストメッセージ",
     channel_id: int = 100,
     minutes_ago: int = 0,
+    author_id: int = 12345,
+    author_name: str = "TestUser",
+    is_bot: bool = False,
+    seconds_ago: int | None = None,
 ) -> ChannelMessage:
     """テスト用ChannelMessageを生成するヘルパー"""
+    if seconds_ago is not None:
+        delta = timedelta(seconds=seconds_ago)
+    else:
+        delta = timedelta(minutes=minutes_ago)
     return ChannelMessage(
         message_id=1,
         channel_id=channel_id,
-        author_id=12345,
-        author_name="TestUser",
+        author_id=author_id,
+        author_name=author_name,
         content=content,
-        timestamp=datetime.now(timezone.utc) - timedelta(minutes=minutes_ago),
+        timestamp=datetime.now(timezone.utc) - delta,
+        is_bot=is_bot,
     )
 
 
@@ -37,6 +54,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         msg = _make_message()
@@ -57,6 +76,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         msg = _make_message()
@@ -77,6 +98,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         msg = _make_message()
@@ -97,6 +120,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         msg = _make_message(content="これってどうなの？")
@@ -116,6 +141,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         msg = _make_message(content="How about this?")
@@ -134,6 +161,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = "Python,Rust,ゲーム"
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         msg = _make_message(content="Pythonの書き方教えて")
@@ -153,6 +182,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = "Python"
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         msg = _make_message(content="Pythonの書き方って？")
@@ -173,6 +204,8 @@ class TestRuleBasedJudge:
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         # まずクールダウンを記録
@@ -197,6 +230,8 @@ class TestRuleBasedJudge:
         mock_config.ENGAGEMENT_DURATION_SECONDS = 1  # エンゲージメントも1秒
         mock_config.ENGAGEMENT_BOOST = 40
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         # 2秒前に応答したことにする（クールダウンもエンゲージメントも切れ）
@@ -220,6 +255,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         msg = _make_message(content="普通のメッセージ")
@@ -241,6 +278,8 @@ class TestRuleBasedJudge:
         mock_config.ENGAGEMENT_DURATION_SECONDS = 0  # エンゲージメント無効
         mock_config.ENGAGEMENT_BOOST = 40
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         # クールダウン中 + 条件なし = -50 -> 0
@@ -261,6 +300,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = "test"
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 30
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         # 疑問符(20) + キーワード(15) = 35 >= 30 -> True
@@ -281,6 +322,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         assert judge._keywords == []
@@ -291,6 +334,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         assert 100 not in judge._last_response_times
@@ -305,6 +350,8 @@ class TestRuleBasedJudge:
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         # クールダウン期間外・エンゲージメント期間内（例: 30秒前に応答）
@@ -332,6 +379,8 @@ class TestRuleBasedJudge:
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         # 直後に応答（クールダウン中 かつ エンゲージメント中）
@@ -358,6 +407,8 @@ class TestRuleBasedJudge:
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         # 301秒前に応答 → エンゲージメント期間外
@@ -385,6 +436,8 @@ class TestRuleBasedJudge:
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
 
@@ -408,6 +461,8 @@ class TestRuleBasedJudge:
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
         mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
 
         judge = RuleBasedJudge()
         # チャンネル200で応答
@@ -425,3 +480,282 @@ class TestRuleBasedJudge:
         # 疑問符(+20)のみ、エンゲージメントなし
         assert result.score == 20
         assert "エンゲージメント" not in result.reason
+
+    # === Phase 2A: 新ルールのテスト ===
+
+    @patch("memory.judge.config")
+    def test_two_person_conversation_penalty(self, mock_config):
+        """2人会話で-20"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+
+        judge = RuleBasedJudge()
+        recent = [
+            _make_message(author_id=1, author_name="User1", content="hello"),
+            _make_message(author_id=2, author_name="User2", content="hi"),
+            _make_message(author_id=1, author_name="User1", content="how are you?"),
+        ]
+        msg = _make_message(content="テスト？")
+        result = judge.evaluate(
+            message=msg,
+            recent_messages=recent,
+            is_mentioned=False,
+            is_name_called=False,
+            is_reply_to_bot=False,
+        )
+        assert "2人会話" in result.reason
+
+    @patch("memory.judge.config")
+    def test_no_bot_mention_penalty(self, mock_config):
+        """ボット言及なしで-10"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+
+        judge = RuleBasedJudge()
+        recent = [
+            _make_message(author_id=1, author_name="User1", content="hello"),
+        ]
+        msg = _make_message(content="テスト")
+        result = judge.evaluate(
+            message=msg,
+            recent_messages=recent,
+            is_mentioned=False,
+            is_name_called=False,
+            is_reply_to_bot=False,
+        )
+        assert "ボット言及なし" in result.reason
+
+    @patch("memory.judge.config")
+    def test_bot_mentioned_in_recent_no_penalty(self, mock_config):
+        """ボット名が含まれていればペナルティなし"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+
+        judge = RuleBasedJudge()
+        recent = [
+            _make_message(
+                author_id=1, author_name="User1",
+                content="テストボットに聞いてみよう",
+            ),
+        ]
+        msg = _make_message(content="テスト？")
+        result = judge.evaluate(
+            message=msg,
+            recent_messages=recent,
+            is_mentioned=False,
+            is_name_called=False,
+            is_reply_to_bot=False,
+        )
+        assert "ボット言及なし" not in result.reason
+
+    @patch("memory.judge.config")
+    def test_silence_after_gap(self, mock_config):
+        """沈黙後の最初のメッセージで+10"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+
+        judge = RuleBasedJudge()
+        recent = [
+            _make_message(
+                author_id=1, author_name="User1",
+                content="テストボット おーい", minutes_ago=15,
+            ),
+            _make_message(
+                author_id=2, author_name="User2",
+                content="戻ってきた", minutes_ago=0,
+            ),
+        ]
+        msg = _make_message(content="テスト")
+        result = judge.evaluate(
+            message=msg,
+            recent_messages=recent,
+            is_mentioned=False,
+            is_name_called=False,
+            is_reply_to_bot=False,
+        )
+        assert "沈黙後" in result.reason
+
+    @patch("memory.judge.config")
+    def test_response_type_full_response_when_disabled(self, mock_config):
+        """RESPONSE_DIVERSITY_ENABLED=Falseなら常にfull_response"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+
+        judge = RuleBasedJudge()
+        msg = _make_message(content="テスト")
+        result = judge.evaluate(
+            message=msg,
+            recent_messages=[],
+            is_mentioned=False,
+            is_name_called=False,
+            is_reply_to_bot=False,
+        )
+        assert result.response_type == "full_response"
+
+    @patch("memory.judge.config")
+    def test_response_type_mention_always_full(self, mock_config):
+        """メンション時は常にfull_response"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.RESPONSE_DIVERSITY_ENABLED = True
+        mock_config.BOT_NAME = "テストボット"
+
+        judge = RuleBasedJudge()
+        msg = _make_message()
+        result = judge.evaluate(
+            message=msg,
+            recent_messages=[],
+            is_mentioned=True,
+            is_name_called=False,
+            is_reply_to_bot=False,
+        )
+        assert result.response_type == "full_response"
+
+    @patch("memory.judge.config")
+    def test_judge_result_default_response_type(self, mock_config):
+        """JudgeResultのデフォルトresponse_type"""
+        result = JudgeResult(score=50, should_respond=True, reason="test")
+        assert result.response_type == "full_response"
+
+
+class TestHelperFunctions:
+    """ヘルパー関数のテスト"""
+
+    def test_count_unique_authors_empty(self):
+        """空リストは0人"""
+        assert _count_unique_authors([]) == 0
+
+    def test_count_unique_authors_excludes_bot(self):
+        """Bot著者は除外"""
+        messages = [
+            _make_message(author_id=1, is_bot=False),
+            _make_message(author_id=2, is_bot=True),
+            _make_message(author_id=3, is_bot=False),
+        ]
+        assert _count_unique_authors(messages) == 2
+
+    def test_count_unique_authors_deduplicates(self):
+        """同一著者は1回だけカウント"""
+        messages = [
+            _make_message(author_id=1, is_bot=False),
+            _make_message(author_id=1, is_bot=False),
+            _make_message(author_id=2, is_bot=False),
+        ]
+        assert _count_unique_authors(messages) == 2
+
+    @patch("memory.judge.config")
+    def test_has_bot_mention_true(self, mock_config):
+        """BOT_NAMEを含むメッセージがあればTrue"""
+        mock_config.BOT_NAME = "テストボット"
+        messages = [
+            _make_message(content="テストボット こんにちは"),
+        ]
+        assert _has_bot_mention_in_recent(messages) is True
+
+    @patch("memory.judge.config")
+    def test_has_bot_mention_false(self, mock_config):
+        """BOT_NAMEを含まなければFalse"""
+        mock_config.BOT_NAME = "テストボット"
+        messages = [
+            _make_message(content="こんにちは"),
+        ]
+        assert _has_bot_mention_in_recent(messages) is False
+
+    @patch("memory.judge.config")
+    def test_has_bot_mention_ignores_bot_messages(self, mock_config):
+        """Botメッセージは無視"""
+        mock_config.BOT_NAME = "テストボット"
+        messages = [
+            _make_message(content="テストボット です", is_bot=True),
+        ]
+        assert _has_bot_mention_in_recent(messages) is False
+
+    def test_is_high_frequency_below_threshold(self):
+        """10件未満はFalse"""
+        messages = [_make_message(seconds_ago=i) for i in range(5)]
+        assert _is_high_frequency(messages) is False
+
+    def test_is_high_frequency_true(self):
+        """10件が60秒以内ならTrue"""
+        # 古い順に並べる（バッファと同じ順序）
+        messages = [_make_message(seconds_ago=(9 - i) * 5) for i in range(10)]
+        assert _is_high_frequency(messages) is True
+
+    def test_is_high_frequency_false_spread_out(self):
+        """10件が60秒超ならFalse"""
+        # 古い順に並べる（バッファと同じ順序）
+        messages = [_make_message(seconds_ago=(9 - i) * 10) for i in range(10)]
+        assert _is_high_frequency(messages) is False
+
+    def test_is_first_after_silence_true(self):
+        """10分以上の間隔があればTrue"""
+        messages = [
+            _make_message(minutes_ago=15),
+            _make_message(minutes_ago=0),
+        ]
+        assert _is_first_after_silence(messages) is True
+
+    def test_is_first_after_silence_false(self):
+        """10分未満の間隔ならFalse"""
+        messages = [
+            _make_message(minutes_ago=5),
+            _make_message(minutes_ago=0),
+        ]
+        assert _is_first_after_silence(messages) is False
+
+    def test_is_first_after_silence_too_few(self):
+        """メッセージ1件以下はFalse"""
+        assert _is_first_after_silence([_make_message()]) is False
+        assert _is_first_after_silence([]) is False
+
+    def test_detect_conversation_decay_no_decay(self):
+        """減衰なしは0"""
+        messages = [
+            _make_message(content="a" * 50) for _ in range(6)
+        ]
+        assert _detect_conversation_decay(messages) == 0
+
+    def test_detect_conversation_decay_moderate(self):
+        """文字数が50-70%に低下で-10"""
+        messages = [
+            _make_message(content="a" * 100),
+            _make_message(content="a" * 100),
+            _make_message(content="a" * 100),
+            _make_message(content="a" * 60),
+            _make_message(content="a" * 60),
+            _make_message(content="a" * 60),
+        ]
+        assert _detect_conversation_decay(messages) == -10
+
+    def test_detect_conversation_decay_severe(self):
+        """文字数が50%以下に低下で-15"""
+        messages = [
+            _make_message(content="a" * 100),
+            _make_message(content="a" * 100),
+            _make_message(content="a" * 100),
+            _make_message(content="a" * 30),
+            _make_message(content="a" * 30),
+            _make_message(content="a" * 30),
+        ]
+        assert _detect_conversation_decay(messages) == -15
+
+    def test_detect_conversation_decay_too_few(self):
+        """メッセージ数不足は0"""
+        messages = [_make_message() for _ in range(3)]
+        assert _detect_conversation_decay(messages) == 0

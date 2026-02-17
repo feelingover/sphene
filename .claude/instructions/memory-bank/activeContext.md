@@ -5,7 +5,7 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
-- 全テスト通過（323件）
+- 全テスト通過（423件）
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
 - 環境変数を `GEMINI_MODEL` 形式に統一、`OPENAI_API_KEY` を完全削除。
 - Google検索Grounding機能のサポート開始（`ENABLE_GOOGLE_SEARCH_GROUNDING`）。
@@ -14,6 +14,31 @@ applyTo: "**"
 - ツール呼び出しループの改善済み（上限の環境変数化 + ツールなし最終コール）。
 
 ## Recent Changes
+
+### 2026/2: Phase 2A - チャンネルコンテキスト + 応答多様性 + Judge拡張
+
+「場の空気を読む」能力を追加。全機能opt-in（デフォルト無効）で後方互換性維持。
+
+#### チャンネルコンテキスト（ローリング要約）
+- `memory/channel_context.py`: `ChannelContext` dataclass + `ChannelContextStore`（memory/local/firestore ストレージ対応）
+- `memory/summarizer.py`: `Summarizer` - メッセージ数 or 時間経過でLLM要約を非同期実行（`asyncio.ensure_future` で fire-and-forget）
+- チャンネルの summary, mood, topic_keywords, active_users を管理
+- `bot/discord_bot.py`: 15分クリーンアップタスクに時間ベース要約チェックを追加
+
+#### 応答多様性（3段階）
+- `react_only`: ランダム絵文字リアクション（👀😊👍🤔✨💡）
+- `short_ack`: 軽量相槌生成（`generate_short_ack()`, `max_output_tokens=50`）
+- `full_response`: 既存の自律応答（チャンネル要約注入対応追加）
+- `bot/events.py`: `_dispatch_response()` で3タイプを統一ディスパッチ
+
+#### Judge拡張（新スコアリングルール）
+- `JudgeResult` に `response_type` フィールド追加（デフォルト `"full_response"` で後方互換）
+- 新ルール: 2人会話(-20), ボット言及なし(-10), 高頻度(-10), 得意話題(+15), 沈黙後(+10), 会話減衰(-10〜-15)
+- `_determine_response_type()`: `RESPONSE_DIVERSITY_ENABLED` 時にスコアに応じた応答タイプ選択
+
+#### 新規環境変数（7個）
+- `CHANNEL_CONTEXT_ENABLED`, `CHANNEL_CONTEXT_STORAGE_TYPE`, `SUMMARIZE_EVERY_N_MESSAGES`, `SUMMARIZE_EVERY_N_MINUTES`, `SUMMARIZE_MODEL`
+- `RESPONSE_DIVERSITY_ENABLED`
 
 ### 2026/2: ツール呼び出しループの改善
 

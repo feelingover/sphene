@@ -79,6 +79,26 @@ class SpheneBot:
                     exc_info=True,
                 )
 
+        # 時間ベースの要約チェック
+        if config.CHANNEL_CONTEXT_ENABLED and config.MEMORY_ENABLED:
+            try:
+                from memory.channel_context import get_channel_context_store
+                from memory.short_term import get_channel_buffer
+                from memory.summarizer import get_summarizer
+
+                store = get_channel_context_store()
+                buffer = get_channel_buffer()
+                summarizer = get_summarizer()
+                for channel_id, ctx in store._contexts.items():
+                    if ctx.should_summarize_by_time():
+                        recent = buffer.get_recent_messages(channel_id, limit=20)
+                        summarizer.maybe_summarize(channel_id, recent)
+            except Exception as e:
+                logger.error(
+                    f"時間ベース要約チェックでエラー: {str(e)}",
+                    exc_info=True,
+                )
+
     def run(self) -> None:
         """ボットを起動する"""
         logger.info("Discordボットの起動を開始")
