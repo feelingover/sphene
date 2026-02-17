@@ -10,8 +10,16 @@ from pathlib import Path
 from typing import Any
 
 import requests
-from google.genai import types
+from google.genai import types, errors as genai_errors
 from google.api_core import exceptions as google_exceptions
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    retry_if_exception,
+    before_sleep_log,
+)
 
 from ai.client import _get_genai_client, get_model_name
 from config import (
@@ -56,6 +64,45 @@ def _load_prompt_from_local(fail_on_error: bool = False) -> str | None:
 
 def _get_default_prompt() -> str:
     return "あなたは役立つAIアシスタントです。"
+
+def _should_retry_api_error(exception: BaseException) -> bool:
+    """リトライすべきエラーかどうかを判定する"""
+    if isinstance(exception, genai_errors.APIError):
+        # 429: Too Many Requests, 500: Internal Server Error, 503: Service Unavailable, 504: Gateway Timeout
+        # また、ResourceExhausted (通常429) なども含める
+        return exception.code in (429, 500, 503, 504)
+    
+    # google.api_core.exceptions も念のためハンドル
+    if isinstance(exception, (
+        google_exceptions.TooManyRequests,
+        google_exceptions.ResourceExhausted,
+        google_exceptions.ServiceUnavailable,
+        google_exceptions.InternalServerError,
+        google_exceptions.DeadlineExceeded,
+    )):
+        return True
+    
+    # エラーメッセージに 429 が含まれている場合もリトライを検討（SDKがラップしていないケース用）
+    error_str = str(exception)
+    if "429" in error_str or "503" in error_str or "500" in error_str:
+        return True
+        
+    return False
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=60),
+    retry=retry_if_exception(_should_retry_api_error),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+)
+def _generate_content_with_retry(client: Any, model: str, contents: list[types.Content], config: types.GenerateContentConfig) -> Any:
+    """Vertex AI API呼び出しをリトライ付きで実行する"""
+    return client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=config,
+    )
 
 def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) -> str:
     if SYSTEM_PROMPT_FILENAME in _prompt_cache and not force_reload:
@@ -127,7 +174,8 @@ def _call_genai_with_tools(
         logger.info(f"GenAIリクエスト送信 (ラウンド {round_num + 1}, モデル: {model_id})")
         
         try:
-            response = client.models.generate_content(
+            response = _generate_content_with_retry(
+                client=client,
                 model=model_id,
                 contents=local_history,
                 config=types.GenerateContentConfig(
@@ -172,7 +220,8 @@ def _call_genai_with_tools(
     # ループ上限到達: ツールなしで最終応答を取得（集めた情報を活かす）
     logger.info("ツール呼び出しラウンド上限到達 - ツールなしで最終応答を取得")
     try:
-        response = client.models.generate_content(
+        response = _generate_content_with_retry(
+            client=client,
             model=model_id,
             contents=local_history,
             config=types.GenerateContentConfig(
@@ -362,7 +411,8 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
             )
         ]
 
-        response = client.models.generate_content(
+        response = _generate_content_with_retry(
+            client=client,
             model=model_id,
             contents=contents,
             config=types.GenerateContentConfig(

@@ -5,6 +5,7 @@ import asyncio
 
 import config
 from ai.client import _get_genai_client, get_model_name
+from ai.conversation import _generate_content_with_retry
 from google.genai import types
 from log_utils.logger import logger
 
@@ -51,9 +52,10 @@ class LLMJudge:
         logger.debug(f"LLM Judge呼び出し: model={model_name}")
 
         try:
-            response = client.models.generate_content(
+            response = _generate_content_with_retry(
+                client=client,
                 model=model_name,
-                contents=prompt,
+                contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
                 config=types.GenerateContentConfig(
                     temperature=0.1,
                     response_mime_type="application/json", # JSONモードを有効化！
