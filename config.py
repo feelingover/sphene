@@ -65,3 +65,17 @@ LLM_JUDGE_ENABLED: bool = (
 JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "")
 JUDGE_LLM_THRESHOLD_LOW: int = int(os.getenv("JUDGE_LLM_THRESHOLD_LOW", "20"))
 JUDGE_LLM_THRESHOLD_HIGH: int = int(os.getenv("JUDGE_LLM_THRESHOLD_HIGH", "80"))
+
+# === チャンネルコンテキスト設定 ===
+CHANNEL_CONTEXT_ENABLED: bool = (
+    os.getenv("CHANNEL_CONTEXT_ENABLED", "false").lower() == "true"
+)
+CHANNEL_CONTEXT_STORAGE_TYPE: str = os.getenv("CHANNEL_CONTEXT_STORAGE_TYPE", "memory")
+SUMMARIZE_EVERY_N_MESSAGES: int = int(os.getenv("SUMMARIZE_EVERY_N_MESSAGES", "20"))
+SUMMARIZE_EVERY_N_MINUTES: int = int(os.getenv("SUMMARIZE_EVERY_N_MINUTES", "15"))
+SUMMARIZE_MODEL: str = os.getenv("SUMMARIZE_MODEL", "")
+
+# === 応答多様性設定 ===
+RESPONSE_DIVERSITY_ENABLED: bool = (
+    os.getenv("RESPONSE_DIVERSITY_ENABLED", "false").lower() == "true"
+)

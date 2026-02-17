@@ -265,3 +265,100 @@ class TestEventHandling:
         # セキュリティ改善により、エラー詳細は非公開（一般的なメッセージのみ）
         assert "エラー" in args[0]
         assert args[0] == "ごめん！メッセージ処理中にエラーが発生しちゃった...😢"
+
+
+class TestDispatchResponse:
+    """_dispatch_response のテスト"""
+
+    @pytest.mark.asyncio
+    @patch("bot.events._process_autonomous_response")
+    async def test_dispatch_full_response(self, mock_process):
+        """full_responseの場合_process_autonomous_responseが呼ばれる"""
+        bot = MagicMock()
+        message = MagicMock()
+
+        from bot.events import _dispatch_response
+        await _dispatch_response(bot, message, [], "full_response")
+
+        mock_process.assert_called_once_with(bot, message, [])
+
+    @pytest.mark.asyncio
+    @patch("bot.events._send_reaction")
+    async def test_dispatch_react_only(self, mock_reaction):
+        """react_onlyの場合_send_reactionが呼ばれる"""
+        bot = MagicMock()
+        message = MagicMock()
+
+        from bot.events import _dispatch_response
+        await _dispatch_response(bot, message, [], "react_only")
+
+        mock_reaction.assert_called_once_with(message)
+
+    @pytest.mark.asyncio
+    @patch("bot.events._process_short_ack")
+    async def test_dispatch_short_ack(self, mock_ack):
+        """short_ackの場合_process_short_ackが呼ばれる"""
+        bot = MagicMock()
+        message = MagicMock()
+
+        from bot.events import _dispatch_response
+        await _dispatch_response(bot, message, [], "short_ack")
+
+        mock_ack.assert_called_once_with(bot, message)
+
+
+class TestSendReaction:
+    """_send_reaction のテスト"""
+
+    @pytest.mark.asyncio
+    @patch("memory.judge.get_judge")
+    async def test_send_reaction_adds_emoji(self, mock_get_judge):
+        """リアクションが追加される"""
+        mock_judge = MagicMock()
+        mock_get_judge.return_value = mock_judge
+
+        message = MagicMock()
+        message.add_reaction = AsyncMock()
+        message.channel.id = 100
+
+        from bot.events import _send_reaction
+        await _send_reaction(message)
+
+        message.add_reaction.assert_called_once()
+        mock_judge.record_response.assert_called_once_with(100)
+
+
+class TestProcessShortAck:
+    """_process_short_ack のテスト"""
+
+    @pytest.mark.asyncio
+    @patch("asyncio.to_thread")
+    @patch("memory.judge.get_judge")
+    @patch("memory.short_term.get_channel_buffer")
+    async def test_short_ack_success(self, mock_buffer_fn, mock_get_judge, mock_to_thread):
+        """相槌が正常に送信される"""
+        mock_buffer = MagicMock()
+        mock_buffer.get_context_string.return_value = "User1: hello"
+        mock_buffer_fn.return_value = mock_buffer
+
+        mock_judge = MagicMock()
+        mock_get_judge.return_value = mock_judge
+
+        mock_to_thread.return_value = "なるほどー"
+
+        bot = MagicMock()
+        bot.user = MagicMock()
+        bot.user.id = 999
+        bot.user.display_name = "Bot"
+
+        message = MagicMock()
+        message.channel.id = 100
+        message.channel.send = AsyncMock()
+        message.content = "テスト"
+        message.created_at = MagicMock()
+
+        from bot.events import _process_short_ack
+        await _process_short_ack(bot, message)
+
+        message.channel.send.assert_called_once_with("なるほどー")
+        mock_judge.record_response.assert_called_once_with(100)

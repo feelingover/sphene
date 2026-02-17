@@ -298,14 +298,23 @@ class Sphene:
             logger.critical(f"input_messageエラー: {e}", exc_info=True)
             return "予期せぬエラーが発生しちゃった...😢"
 
-def generate_contextual_response(channel_context: str, trigger_message: str, system_prompt: str | None = None) -> str | None:
+def generate_contextual_response(
+    channel_context: str,
+    trigger_message: str,
+    system_prompt: str | None = None,
+    channel_summary: str = "",
+) -> str | None:
     try:
         if system_prompt is None:
             system_prompt = load_system_prompt()
-        
+
+        # チャンネル要約がある場合は注入
+        summary_section = f"\n\n{channel_summary}" if channel_summary else ""
+
         # ツールを積極的に使うように指示を追加！
         instruction = (
-            f"{system_prompt}\n\n"
+            f"{system_prompt}"
+            f"{summary_section}\n\n"
             f"--- チャンネルの直近の会話 ---\n{channel_context}\n---\n"
             f"{TOOL_USAGE_INSTRUCTION}"
         )
@@ -323,6 +332,60 @@ def generate_contextual_response(channel_context: str, trigger_message: str, sys
     except Exception as e:
         logger.error(f"コンテキスト応答生成エラー: {e}", exc_info=True)
         return None
+
+def generate_short_ack(channel_context: str, trigger_message: str) -> str | None:
+    """軽量な相槌を生成する
+
+    Args:
+        channel_context: チャンネルの直近会話コンテキスト
+        trigger_message: トリガーメッセージ
+
+    Returns:
+        相槌テキスト、またはエラー時None
+    """
+    try:
+        client = _get_genai_client()
+        model_id = get_model_name()
+        system_prompt = load_system_prompt()
+
+        instruction = (
+            f"{system_prompt}\n\n"
+            f"以下の会話の流れを読んで、一言の自然な相槌を返してね。"
+            f"長い説明は不要、短く自然に。\n\n"
+            f"--- チャンネルの直近の会話 ---\n{channel_context}\n---"
+        )
+
+        contents = [
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=trigger_message)],
+            )
+        ]
+
+        response = client.models.generate_content(
+            model=model_id,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=instruction,
+                max_output_tokens=50,
+            ),
+        )
+
+        if response.candidates:
+            text_parts = [
+                p.text
+                for p in response.candidates[0].content.parts
+                if p.text
+            ]
+            if text_parts:
+                result = "".join(text_parts)
+                logger.debug(f"相槌生成: {result}")
+                return result
+        return None
+    except Exception as e:
+        logger.error(f"相槌生成エラー: {e}", exc_info=True)
+        return None
+
 
 def reload_system_prompt(fail_on_error: bool = False) -> bool:
     """システムプロンプトを強制的に再読み込みする"""

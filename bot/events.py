@@ -1,4 +1,5 @@
 import asyncio
+import random
 
 import discord
 from discord import app_commands
@@ -10,12 +11,16 @@ import config
 from ai.conversation import (
     Sphene,
     generate_contextual_response,
+    generate_short_ack,
     load_system_prompt,
     user_conversations,
 )
 from log_utils.logger import logger
 from utils.channel_config import ChannelConfigManager
 from utils.text_utils import split_message, truncate_text
+
+# リアクション用の絵文字リスト
+_REACTION_EMOJIS = ["👀", "😊", "👍", "🤔", "✨", "💡"]
 
 
 # bot の型ヒントを commands.Bot に変更
@@ -184,7 +189,7 @@ async def _try_autonomous_response(
             f"自律応答決定(高スコア): チャンネル={message.channel.id}, "
             f"スコア={result.score}, 理由={result.reason}"
         )
-        await _process_autonomous_response(bot, message, images)
+        await _dispatch_response(bot, message, images, result.response_type)
         return
 
     if result.score <= config.JUDGE_LLM_THRESHOLD_LOW:
@@ -207,14 +212,93 @@ async def _try_autonomous_response(
                 f"自律応答決定(LLM Judge): チャンネル={message.channel.id}, "
                 f"スコア={result.score}"
             )
-            await _process_autonomous_response(bot, message, images)
+            await _dispatch_response(bot, message, images, result.response_type)
     elif result.should_respond:
         # LLM Judge無効の場合はルールベースの判定に従う
         logger.info(
             f"自律応答決定(ルールベース): チャンネル={message.channel.id}, "
             f"スコア={result.score}, 理由={result.reason}"
         )
+        await _dispatch_response(bot, message, images, result.response_type)
+
+
+async def _dispatch_response(
+    bot: commands.Bot,
+    message: discord.Message,
+    images: list[str],
+    response_type: str,
+) -> None:
+    """応答タイプに応じて適切な応答を実行する
+
+    Args:
+        bot: Discordクライアント
+        message: トリガーとなったDiscordメッセージ
+        images: 添付画像URLリスト
+        response_type: "full_response" | "short_ack" | "react_only"
+    """
+    if response_type == "react_only":
+        await _send_reaction(message)
+    elif response_type == "short_ack":
+        await _process_short_ack(bot, message)
+    else:
         await _process_autonomous_response(bot, message, images)
+
+
+async def _send_reaction(message: discord.Message) -> None:
+    """ランダムな絵文字リアクションを追加する"""
+    from memory.judge import get_judge
+
+    try:
+        emoji = random.choice(_REACTION_EMOJIS)
+        await message.add_reaction(emoji)
+        logger.info(
+            f"リアクション応答: チャンネル={message.channel.id}, 絵文字={emoji}"
+        )
+        get_judge().record_response(message.channel.id)
+    except Exception as e:
+        logger.error(f"リアクション追加エラー: {e}", exc_info=True)
+
+
+async def _process_short_ack(
+    bot: commands.Bot,
+    message: discord.Message,
+) -> None:
+    """短い相槌を生成して送信する"""
+    from memory.judge import get_judge
+    from memory.short_term import ChannelMessage, get_channel_buffer
+
+    buffer = get_channel_buffer()
+    context = buffer.get_context_string(message.channel.id, limit=10)
+    if not context:
+        return
+
+    answer = await asyncio.to_thread(
+        generate_short_ack,
+        channel_context=context,
+        trigger_message=message.content or "",
+    )
+
+    if answer:
+        await message.channel.send(answer)
+        logger.info(
+            f"相槌応答: チャンネル={message.channel.id}, "
+            f"応答={truncate_text(answer)}"
+        )
+        get_judge().record_response(message.channel.id)
+
+        # ボット自身の応答もバッファに追加
+        if bot.user:
+            buffer.add_message(
+                ChannelMessage(
+                    message_id=0,
+                    channel_id=message.channel.id,
+                    author_id=bot.user.id,
+                    author_name=bot.user.display_name,
+                    content=answer,
+                    timestamp=message.created_at,
+                    is_bot=True,
+                )
+            )
 
 
 async def _process_autonomous_response(
@@ -240,11 +324,20 @@ async def _process_autonomous_response(
         logger.debug("コンテキストが空のため自律応答をスキップ")
         return
 
+    # チャンネル要約を取得（有効な場合）
+    channel_summary = ""
+    if config.CHANNEL_CONTEXT_ENABLED and config.MEMORY_ENABLED:
+        from memory.channel_context import get_channel_context_store
+
+        ctx = get_channel_context_store().get_context(message.channel.id)
+        channel_summary = ctx.format_for_injection()
+
     # 1-shot応答を生成
     answer = await asyncio.to_thread(
         generate_contextual_response,
         channel_context=context,
         trigger_message=message.content or "",
+        channel_summary=channel_summary,
     )
 
     if answer:
@@ -345,6 +438,16 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
                     timestamp=message.created_at,
                 )
             )
+
+            # チャンネルコンテキスト: メッセージカウント + 要約トリガー
+            if config.CHANNEL_CONTEXT_ENABLED:
+                from memory.channel_context import get_channel_context_store
+                from memory.summarizer import get_summarizer
+
+                ctx = get_channel_context_store().get_context(message.channel.id)
+                ctx.increment_message_count()
+                recent = buffer.get_recent_messages(message.channel.id, limit=20)
+                get_summarizer().maybe_summarize(message.channel.id, recent)
 
         # 画像添付の検出
         images = []

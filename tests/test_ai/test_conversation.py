@@ -264,3 +264,82 @@ def test_input_message_with_non_string_input() -> None:
 
     for invalid in invalid_inputs:
         assert sphene.input_message(invalid) is None  # type: ignore
+
+
+def test_generate_contextual_response_with_channel_summary() -> None:
+    """generate_contextual_response にchannel_summaryを渡した場合"""
+    with patch("ai.conversation._call_genai_with_tools") as mock_call:
+        mock_call.return_value = (True, "テスト応答", [])
+
+        from ai.conversation import generate_contextual_response
+        result = generate_contextual_response(
+            channel_context="User1: hello\nUser2: hi",
+            trigger_message="テスト",
+            channel_summary="【チャンネルの状況】\nゲームの話をしている",
+        )
+
+        assert result == "テスト応答"
+        # system_instruction にchannel_summaryが含まれていることを確認
+        call_args = mock_call.call_args
+        instruction = call_args[1]["system_instruction"] if "system_instruction" in call_args[1] else call_args[0][1]
+        assert "チャンネルの状況" in instruction
+
+
+def test_generate_contextual_response_without_channel_summary() -> None:
+    """generate_contextual_response にchannel_summaryなしの場合"""
+    with patch("ai.conversation._call_genai_with_tools") as mock_call:
+        mock_call.return_value = (True, "テスト応答", [])
+
+        from ai.conversation import generate_contextual_response
+        result = generate_contextual_response(
+            channel_context="User1: hello",
+            trigger_message="テスト",
+        )
+
+        assert result == "テスト応答"
+
+
+def test_generate_short_ack_success() -> None:
+    """generate_short_ack 正常系"""
+    with patch("ai.conversation._get_genai_client") as mock_client_fn, \
+         patch("ai.conversation.get_model_name", return_value="test-model"):
+        mock_part = MagicMock()
+        mock_part.text = "そだねー"
+
+        mock_content = MagicMock()
+        mock_content.parts = [mock_part]
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = mock_content
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_fn.return_value = mock_client
+
+        from ai.conversation import generate_short_ack
+        result = generate_short_ack(
+            channel_context="User1: 今日疲れた",
+            trigger_message="ほんとねー",
+        )
+
+        assert result == "そだねー"
+
+
+def test_generate_short_ack_error() -> None:
+    """generate_short_ack エラー時はNone"""
+    with patch("ai.conversation._get_genai_client") as mock_client_fn, \
+         patch("ai.conversation.get_model_name", return_value="test-model"):
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
+        mock_client_fn.return_value = mock_client
+
+        from ai.conversation import generate_short_ack
+        result = generate_short_ack(
+            channel_context="User1: hello",
+            trigger_message="hi",
+        )
+
+        assert result is None
