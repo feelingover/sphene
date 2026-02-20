@@ -20,7 +20,7 @@ from ai.conversation import (
     generate_contextual_response,
     load_system_prompt,
     reload_system_prompt,
-    user_conversations,
+    channel_conversations,
     _prompt_cache,
 )
 
@@ -31,7 +31,7 @@ class TestConversationExtensive:
     def setup_method(self):
         """テストごとのセットアップ"""
         _prompt_cache.clear()
-        user_conversations.clear()
+        channel_conversations.clear()
 
     @patch("ai.conversation._load_prompt_from_local")
     def test_load_system_prompt_cache(self, mock_load_local):
@@ -267,21 +267,28 @@ class TestConversationExtensive:
         mock_tool_response.candidates = [MagicMock(content=mock_content)]
 
         # MAX_TOOL_CALL_ROUNDS=1 → ループ2回 + 最終コール(例外)
+        # @retry(stop_after_attempt(5)) なので、最終コールで5回失敗させる
         mock_client = mock_get_client.return_value
         mock_client.models.generate_content.side_effect = [
             mock_tool_response,  # ラウンド1: ツール呼び出し
             mock_tool_response,  # ラウンド2: ツール呼び出し（ループ上限）
-            Exception("429 Resource exhausted"),  # 最終コール: API例外
+            Exception("429 Resource exhausted"),  # 最終コール：試行1
+            Exception("429 Resource exhausted"),  # 最終コール：試行2
+            Exception("429 Resource exhausted"),  # 最終コール：試行3
+            Exception("429 Resource exhausted"),  # 最終コール：試行4
+            Exception("429 Resource exhausted"),  # 最終コール：試行5（ここで終了）
         ]
 
-        fn_response_part = types.Part.from_function_response(
-            name="search_item", response={"result": "ok"}
-        )
-        with patch(
-            "ai.conversation._execute_tool_calls",
-            return_value=[fn_response_part],
-        ):
-            success, msg, _ = _call_genai_with_tools([], "system")
+        # tenacityのsleepをスキップして高速化
+        with patch("time.sleep", return_value=None):
+            fn_response_part = types.Part.from_function_response(
+                name="search_item", response={"result": "ok"}
+            )
+            with patch(
+                "ai.conversation._execute_tool_calls",
+                return_value=[fn_response_part],
+            ):
+                success, msg, _ = _call_genai_with_tools([], "system")
 
         assert success is False
         assert "混み合ってる" in msg
@@ -306,17 +313,17 @@ class TestConversationExtensive:
         """期限切れ会話のクリーンアップテスト"""
         # 有効な会話
         s1 = Sphene("S1")
-        user_conversations["u1"] = s1
+        channel_conversations["u1"] = s1
 
         # 期限切れの会話
         s2 = Sphene("S2")
         s2.last_interaction = datetime.now() - timedelta(hours=1)
-        user_conversations["u2"] = s2
+        channel_conversations["u2"] = s2
 
         count = cleanup_expired_conversations()
         assert count == 1
-        assert "u1" in user_conversations
-        assert "u2" not in user_conversations
+        assert "u1" in channel_conversations
+        assert "u2" not in channel_conversations
 
     @patch("ai.conversation.get_model_name")
     @patch("ai.conversation._get_genai_client")

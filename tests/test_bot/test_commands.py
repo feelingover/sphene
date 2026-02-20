@@ -95,12 +95,12 @@ async def test_cmd_list_channels_no_restrictions(
 @pytest.mark.asyncio
 async def test_cmd_reset_conversation(mock_discord_interaction: MagicMock) -> None:
     """会話履歴リセットコマンドのテスト"""
-    # ユーザーIDを設定
-    user_id = str(mock_discord_interaction.user.id)
+    # チャンネルIDを設定
+    channel_id = str(mock_discord_interaction.channel_id)
 
-    # user_conversationsのモック
-    mock_conversations = {user_id: MagicMock()}
-    with patch("bot.commands.user_conversations", mock_conversations), patch(
+    # channel_conversationsのモック
+    mock_conversations = {channel_id: MagicMock()}
+    with patch("bot.commands.channel_conversations", mock_conversations), patch(
         "bot.commands.load_system_prompt"
     ) as mock_load_prompt, patch("bot.commands.Sphene") as mock_sphene_cls:
         mock_load_prompt.return_value = "テストシステムプロンプト"
@@ -116,7 +116,7 @@ async def test_cmd_reset_conversation(mock_discord_interaction: MagicMock) -> No
         )
 
         # 会話がリセットされたか
-        assert mock_conversations[user_id] == mock_sphene
+        assert mock_conversations[channel_id] == mock_sphene
 
         # レスポンスが送信されたか
         mock_discord_interaction.response.send_message.assert_called_once()
@@ -125,12 +125,12 @@ async def test_cmd_reset_conversation(mock_discord_interaction: MagicMock) -> No
 
 
 @pytest.mark.asyncio
-async def test_cmd_reset_conversation_new_user(
+async def test_cmd_reset_conversation_no_history(
     mock_discord_interaction: MagicMock,
 ) -> None:
-    """初めてのユーザーの会話リセットテスト"""
+    """履歴がない場合の会話リセットテスト"""
     # 空の会話辞書でモック
-    with patch("bot.commands.user_conversations", {}):
+    with patch("bot.commands.channel_conversations", {}):
         # コマンド実行 - 既存の会話がない場合
         await cmd_reset_conversation(mock_discord_interaction)
 

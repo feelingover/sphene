@@ -6,7 +6,7 @@ from ai.conversation import (
     Sphene,
     load_system_prompt,
     reload_system_prompt,
-    user_conversations,
+    channel_conversations,
 )
 from log_utils.logger import logger
 from utils.channel_config import ChannelConfigManager
@@ -451,17 +451,21 @@ async def cmd_reset_conversation(interaction: discord.Interaction) -> None:
     Args:
         interaction: インタラクションオブジェクト
     """
-    user_id = str(interaction.user.id)
+    if interaction.channel_id is None:
+        await interaction.response.send_message("❌ チャンネル情報の取得に失敗しました")
+        return
 
-    if user_id in user_conversations:
-        user_conversations[user_id] = Sphene(system_setting=load_system_prompt())
+    channel_id = str(interaction.channel_id)
+
+    if channel_id in channel_conversations:
+        channel_conversations[channel_id] = Sphene(system_setting=load_system_prompt())
         await interaction.response.send_message(
-            "🔄 会話履歴をリセットしたよ！また一から話そうね！"
+            "🔄 このチャンネルの会話履歴をリセットしたよ！また一から話そうね！"
         )
-        logger.info(f"ユーザーID {user_id} の会話履歴を手動リセット")
+        logger.info(f"チャンネルID {channel_id} の会話履歴を手動リセット")
     else:
         await interaction.response.send_message(
-            "🤔 まだ話したことがないみたいだね！これから仲良くしようね！"
+            "🤔 このチャンネルではまだ話したことがないみたいだね！これから仲良くしようね！"
         )
 
 
@@ -622,7 +626,7 @@ def setup_commands(bot: discord.Client) -> app_commands.Group:
 
     # リセットコマンド
     @command_group.command(
-        name="reset", description="あなたとの会話履歴をリセットします"
+        name="reset", description="このチャンネルの会話履歴をリセットします"
     )
     async def reset_conversation_command(interaction: discord.Interaction) -> None:
         await cmd_reset_conversation(interaction)

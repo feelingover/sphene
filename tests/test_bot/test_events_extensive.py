@@ -78,7 +78,7 @@ class TestEventsExtensive:
         assert is_reply is False
 
     @pytest.mark.asyncio
-    @patch("bot.events.user_conversations")
+    @patch("bot.events.channel_conversations")
     @patch("bot.events.split_message")
     async def test_process_conversation_chunking(self, mock_split, mock_conversations):
         """会話のチャンク分割送信テスト"""
