@@ -12,9 +12,15 @@ from log_utils.logger import logger
 LLM_JUDGE_PROMPT = """\
 あなたはDiscordボットの応答判定AIです。
 以下のチャンネルの会話の流れと最新メッセージを読んで、
-ボット「{bot_name}」が自然に会話に参加すべきかを判定してください。
+ボット「{bot_name}」が自然に会話に参加すべきかと、その場合の応答形式を判定してください。
 
-JSONで回答してください: {{"respond": true/false, "reason": "判定理由"}}
+応答形式の種類:
+- "full": 通常の返信（質問への回答、意見の提示、会話の深掘りなど）
+- "short": 短い相槌や同意（「わかる！」「そうなんだね」など）
+- "react": 絵文字リアクションのみ（スタンプ的な応答）
+- "none": 応答しない（会話を静観する）
+
+JSONで回答してください: {{"respond": true/false, "response_type": "full"|"short"|"react"|"none", "reason": "判定理由"}}
 """
 
 
@@ -26,23 +32,27 @@ class LLMJudge:
         message_content: str,
         recent_context: str,
         bot_name: str,
-    ) -> bool:
-        """LLMで応答すべきか判定する"""
+    ) -> tuple[bool, str]:
+        """LLMで応答すべきかとその形式を判定する
+
+        Returns:
+            tuple[bool, str]: (応答すべきか, 応答形式 "full_response"|"short_ack"|"react_only")
+        """
         try:
-            result = await asyncio.to_thread(
+            should_respond, response_type = await asyncio.to_thread(
                 self._call_llm, message_content, recent_context, bot_name
             )
-            return result
+            return should_respond, response_type
         except Exception as e:
             logger.error(f"LLM Judge呼び出しエラー: {str(e)}", exc_info=True)
-            return False
+            return False, "react_only"
 
     def _call_llm(
         self,
         message_content: str,
         recent_context: str,
         bot_name: str,
-    ) -> bool:
+    ) -> tuple[bool, str]:
         """Google Gen AI SDKを同期的に呼び出す"""
         client = _get_genai_client()
         model_name = config.JUDGE_MODEL or get_model_name()
@@ -64,16 +74,33 @@ class LLMJudge:
 
             content = response.text
             if not content:
-                return False
+                return False, "none"
 
             result = json.loads(content)
             should_respond = bool(result.get("respond", False))
-            logger.info(f"LLM Judge判定: respond={should_respond}, reason={result.get('reason', '')}")
-            return should_respond
+            llm_type = result.get("response_type", "none")
+            
+            # 内部形式に変換
+            type_map = {
+                "full": "full_response",
+                "short": "short_ack",
+                "react": "react_only",
+                "none": "none"
+            }
+            final_type = type_map.get(llm_type, "react_only")
+            
+            if not should_respond:
+                final_type = "none"
+
+            logger.info(
+                f"LLM Judge判定: respond={should_respond}, type={final_type}, "
+                f"reason={result.get('reason', '')}"
+            )
+            return should_respond, final_type
 
         except Exception as e:
             logger.warning(f"LLM Judge処理失敗: {str(e)}")
-            return False
+            return False, "none"
 
 
 _llm_judge: LLMJudge | None = None

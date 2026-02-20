@@ -53,7 +53,9 @@ class TestRuleBasedJudge:
         """@メンションで即スコア100"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -75,7 +77,9 @@ class TestRuleBasedJudge:
         """ボットへのリプライで即スコア100"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -97,7 +101,9 @@ class TestRuleBasedJudge:
         """名前呼びでスコア80"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -119,7 +125,9 @@ class TestRuleBasedJudge:
         """疑問符で+20"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -140,7 +148,9 @@ class TestRuleBasedJudge:
         """半角疑問符でも+20"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -160,7 +170,9 @@ class TestRuleBasedJudge:
         """キーワードマッチで+15"""
         mock_config.JUDGE_KEYWORDS = "Python,Rust,ゲーム"
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -181,7 +193,9 @@ class TestRuleBasedJudge:
         """疑問符+キーワードの組み合わせ"""
         mock_config.JUDGE_KEYWORDS = "Python"
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -203,7 +217,9 @@ class TestRuleBasedJudge:
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -229,7 +245,9 @@ class TestRuleBasedJudge:
         mock_config.COOLDOWN_SECONDS = 1  # 1秒
         mock_config.ENGAGEMENT_DURATION_SECONDS = 1  # エンゲージメントも1秒
         mock_config.ENGAGEMENT_BOOST = 40
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -254,7 +272,9 @@ class TestRuleBasedJudge:
         """条件なしでスコア0"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -277,7 +297,9 @@ class TestRuleBasedJudge:
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.ENGAGEMENT_DURATION_SECONDS = 0  # エンゲージメント無効
         mock_config.ENGAGEMENT_BOOST = 40
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -321,7 +343,9 @@ class TestRuleBasedJudge:
         """空のキーワード設定"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -333,7 +357,9 @@ class TestRuleBasedJudge:
         """record_responseでクールダウンが記録されること"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -349,7 +375,9 @@ class TestRuleBasedJudge:
         mock_config.COOLDOWN_SECONDS = 10
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -378,7 +406,9 @@ class TestRuleBasedJudge:
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -406,7 +436,9 @@ class TestRuleBasedJudge:
         mock_config.COOLDOWN_SECONDS = 10
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -435,7 +467,9 @@ class TestRuleBasedJudge:
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -460,7 +494,9 @@ class TestRuleBasedJudge:
         mock_config.COOLDOWN_SECONDS = 10
         mock_config.ENGAGEMENT_DURATION_SECONDS = 300
         mock_config.ENGAGEMENT_BOOST = 40
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -488,7 +524,9 @@ class TestRuleBasedJudge:
         """2人会話で-20"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -513,7 +551,9 @@ class TestRuleBasedJudge:
         """ボット言及なしで-10"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -536,7 +576,9 @@ class TestRuleBasedJudge:
         """ボット名が含まれていればペナルティなし"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -562,7 +604,9 @@ class TestRuleBasedJudge:
         """沈黙後の最初のメッセージで+10"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -592,7 +636,9 @@ class TestRuleBasedJudge:
         """RESPONSE_DIVERSITY_ENABLED=Falseなら常にfull_response"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
@@ -612,7 +658,9 @@ class TestRuleBasedJudge:
         """メンション時は常にfull_response"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 60
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = True
         mock_config.BOT_NAME = "テストボット"
 
