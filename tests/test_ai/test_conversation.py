@@ -182,7 +182,7 @@ def test_input_message_with_images() -> None:
         )
 
         response = sphene.input_message(
-            "この画像は何？", ["https://cdn.discordapp.com/image.jpg"]
+            "この画像は何？", image_urls=["https://cdn.discordapp.com/image.jpg"]
         )
 
         assert response == "画像を確認しました"
@@ -199,7 +199,7 @@ def test_input_message_with_disallowed_image_domain() -> None:
         mock_call.return_value = (True, "テスト応答", [MagicMock()])
 
         response = sphene.input_message(
-            "テスト", ["https://evil.com/image.jpg"]
+            "テスト", image_urls=["https://evil.com/image.jpg"]
         )
 
         # requests.getは呼ばれないこと（ドメインが許可されていない）

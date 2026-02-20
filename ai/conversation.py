@@ -118,13 +118,17 @@ def _execute_tool_calls(tool_calls: list[types.FunctionCall]) -> list[types.Part
     results: list[types.Part] = []
     for call in tool_calls:
         function_name = call.name
+        if function_name is None:
+            logger.warning("名前のないツール呼び出しをスキップ")
+            continue
         logger.info(f"ツール呼び出し: {function_name}")
         func = TOOL_FUNCTIONS.get(function_name)
+        result_content: dict[str, object] | str
         if func is None:
             result_content = {"error": f"未知の関数: {function_name}"}
         else:
             try:
-                arguments = call.args
+                arguments = call.args or {}
                 result_content = func(**arguments)
             except Exception as e:
                 logger.error(f"ツール実行エラー: {function_name}: {e}", exc_info=True)
@@ -180,7 +184,7 @@ def _call_genai_with_tools(
                 contents=local_history,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
-                    tools=tools,
+                    tools=tools,  # type: ignore[arg-type]
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True), # 手動ループ
                 ),
             )

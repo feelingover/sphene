@@ -401,8 +401,9 @@ class TestSummarizerCallSummarizeLlm:
         summarizer._call_summarize_llm(context, messages)
 
         call_args = mock_client.models.generate_content.call_args
-        prompt = call_args.kwargs["contents"]
-        assert "前回の要約: 前回の要約です" in prompt
+        contents = call_args.kwargs["contents"]
+        prompt_text = contents[0].parts[0].text
+        assert "前回の要約: 前回の要約です" in prompt_text
 
 
 class TestSummarizerApplyResult:

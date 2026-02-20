@@ -38,7 +38,7 @@ def test_input_message_skips_oversize_image() -> None:
 
         mock_call.return_value = (True, "ok", [])
 
-        result = sphene.input_message("hi", [DISCORD_CDN_URL])
+        result = sphene.input_message("hi", image_urls=[DISCORD_CDN_URL])
 
         assert result == "ok"
         mock_get.assert_called_once()
@@ -59,7 +59,7 @@ def test_input_message_skips_non_image_content_type() -> None:
 
         mock_call.return_value = (True, "ok", [])
 
-        result = sphene.input_message("hi", [DISCORD_CDN_URL])
+        result = sphene.input_message("hi", image_urls=[DISCORD_CDN_URL])
 
         assert result == "ok"
         mock_get.assert_called_once()
@@ -81,7 +81,7 @@ def test_input_message_skips_streaming_overflow_without_length() -> None:
 
         mock_call.return_value = (True, "ok", [])
 
-        result = sphene.input_message("hi", [DISCORD_CDN_URL])
+        result = sphene.input_message("hi", image_urls=[DISCORD_CDN_URL])
 
         assert result == "ok"
         mock_get.assert_called_once()
@@ -97,7 +97,7 @@ def test_input_message_skips_disallowed_domain() -> None:
     ) as mock_get, patch("ai.conversation.types.Part.from_bytes") as mock_from_bytes:
         mock_call.return_value = (True, "ok", [])
 
-        result = sphene.input_message("hi", ["https://evil.example.com/img.jpg"])
+        result = sphene.input_message("hi", image_urls=["https://evil.example.com/img.jpg"])
 
         assert result == "ok"
         mock_get.assert_not_called()
@@ -122,7 +122,7 @@ def test_input_message_allows_discord_media_domain() -> None:
 
         mock_call.return_value = (True, "ok", [])
 
-        result = sphene.input_message("hi", [DISCORD_MEDIA_URL])
+        result = sphene.input_message("hi", image_urls=[DISCORD_MEDIA_URL])
 
         assert result == "ok"
         mock_get.assert_called_once()
@@ -150,7 +150,7 @@ def test_input_message_handles_invalid_content_length() -> None:
 
         mock_call.return_value = (True, "ok", [])
 
-        result = sphene.input_message("hi", [DISCORD_CDN_URL])
+        result = sphene.input_message("hi", image_urls=[DISCORD_CDN_URL])
 
         assert result == "ok"
         # Content-Lengthが不正でもクラッシュせず、ストリーミングで読み込まれる
