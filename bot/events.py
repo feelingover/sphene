@@ -202,17 +202,17 @@ async def _try_autonomous_response(
 
         context = buffer.get_context_string(message.channel.id, limit=15)
         llm_judge = get_llm_judge()
-        should_respond = await llm_judge.evaluate(
+        should_respond, llm_response_type = await llm_judge.evaluate(
             message_content=message.content or "",
             recent_context=context,
             bot_name=config.BOT_NAME,
         )
-        if should_respond:
+        if should_respond and llm_response_type != "none":
             logger.info(
                 f"自律応答決定(LLM Judge): チャンネル={message.channel.id}, "
-                f"スコア={result.score}"
+                f"スコア={result.score}, タイプ={llm_response_type}"
             )
-            await _dispatch_response(bot, message, images, result.response_type)
+            await _dispatch_response(bot, message, images, llm_response_type)
     elif result.should_respond:
         # LLM Judge無効の場合はルールベースの判定に従う
         logger.info(

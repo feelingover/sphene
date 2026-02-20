@@ -192,12 +192,17 @@ class RuleBasedJudge:
         """スコアに基づいて応答タイプを決定する"""
         if not config.RESPONSE_DIVERSITY_ENABLED:
             return "full_response"
-        if score >= 80:
+        
+        full_threshold = config.JUDGE_SCORE_FULL_RESPONSE
+        short_threshold = config.JUDGE_SCORE_SHORT_ACK
+        
+        if score >= full_threshold:
             return "full_response"
-        if score >= 60 and not is_engaged:
+        if score >= short_threshold and not is_engaged:
             return "short_ack"
-        if score < 60:
+        if score < short_threshold:
             return "react_only"
+        
         return "full_response"
 
 

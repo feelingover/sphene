@@ -26,18 +26,23 @@ class TestLLMJudge:
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
-        mock_response.text = json.dumps({"respond": True, "reason": "テスト"})
+        mock_response.text = json.dumps({
+            "respond": True, 
+            "response_type": "full",
+            "reason": "テスト"
+        })
         mock_get_client.return_value.models.generate_content.return_value = (
             mock_response
         )
 
         judge = LLMJudge()
-        result = await judge.evaluate(
+        should_respond, response_type = await judge.evaluate(
             message_content="Pythonの書き方を教えて",
             recent_context="UserA: プログラミングの話しよう",
             bot_name="アサヒ",
         )
-        assert result is True
+        assert should_respond is True
+        assert response_type == "full_response"
 
     @pytest.mark.asyncio
     @patch("memory.llm_judge.get_model_name")
@@ -51,20 +56,23 @@ class TestLLMJudge:
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
-        mock_response.text = json.dumps(
-            {"respond": False, "reason": "割り込みは不適切"}
-        )
+        mock_response.text = json.dumps({
+            "respond": False, 
+            "response_type": "none",
+            "reason": "割り込みは不適切"
+        })
         mock_get_client.return_value.models.generate_content.return_value = (
             mock_response
         )
 
         judge = LLMJudge()
-        result = await judge.evaluate(
+        should_respond, response_type = await judge.evaluate(
             message_content="今日のランチ何にする？",
             recent_context="UserA: お腹空いたね\nUserB: ラーメンどう？",
             bot_name="アサヒ",
         )
-        assert result is False
+        assert should_respond is False
+        assert response_type == "none"
 
     @pytest.mark.asyncio
     @patch("memory.llm_judge.get_model_name")
@@ -130,8 +138,9 @@ class TestLLMJudge:
         )
 
         judge = LLMJudge()
-        result = await judge.evaluate("test", "context", "Bot")
-        assert result is False
+        should_respond, response_type = await judge.evaluate("test", "context", "Bot")
+        assert should_respond is False
+        assert response_type == "none"
 
     @pytest.mark.asyncio
     @patch("memory.llm_judge.get_model_name")
@@ -151,9 +160,10 @@ class TestLLMJudge:
         )
 
         judge = LLMJudge()
-        result = await judge.evaluate("test", "context", "Bot")
+        should_respond, response_type = await judge.evaluate("test", "context", "Bot")
         # JSON解析失敗 → except → False
-        assert result is False
+        assert should_respond is False
+        assert response_type == "none"
 
     @pytest.mark.asyncio
     @patch("memory.llm_judge.get_model_name")
@@ -170,8 +180,9 @@ class TestLLMJudge:
         )
 
         judge = LLMJudge()
-        result = await judge.evaluate("test", "context", "Bot")
-        assert result is False
+        should_respond, response_type = await judge.evaluate("test", "context", "Bot")
+        assert should_respond is False
+        assert response_type == "none"
 
     @pytest.mark.asyncio
     @patch("memory.llm_judge.get_model_name")
@@ -185,18 +196,21 @@ class TestLLMJudge:
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
-        mock_response.text = json.dumps(
-            {"respond": False, "reason": "コンテキスト不足"}
-        )
+        mock_response.text = json.dumps({
+            "respond": False, 
+            "response_type": "none",
+            "reason": "コンテキスト不足"
+        })
         mock_get_client.return_value.models.generate_content.return_value = (
             mock_response
         )
 
         judge = LLMJudge()
-        result = await judge.evaluate("test", "", "Bot")
-        assert result is False
+        should_respond, response_type = await judge.evaluate("test", "", "Bot")
+        assert should_respond is False
 
         # プロンプトにコンテキストが含まれることを確認
         call_args = mock_get_client.return_value.models.generate_content.call_args
-        prompt = call_args.kwargs["contents"]
-        assert "最新メッセージ" in prompt
+        contents = call_args.kwargs["contents"]
+        prompt_text = contents[0].parts[0].text
+        assert "最新メッセージ" in prompt_text
