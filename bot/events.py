@@ -10,7 +10,6 @@ import config
 # Sphene と load_system_prompt をインポート
 from ai.conversation import (
     Sphene,
-    generate_contextual_response,
     generate_short_ack,
     load_system_prompt,
     channel_conversations,
@@ -155,7 +154,7 @@ async def process_conversation(
             get_judge().record_response(message.channel.id)
 
         # ボット自身の応答もバッファに追加
-        if config.MEMORY_ENABLED and message.guild.me:
+        if config.MEMORY_ENABLED and message.guild and message.guild.me:
             buffer.add_message(
                 ChannelMessage(
                     message_id=0,
@@ -354,8 +353,8 @@ async def _process_autonomous_response(
     buffer = get_channel_buffer()
 
     # チャンネルコンテキストを取得
-    context = buffer.get_context_string(message.channel.id, limit=10)
-    if not context:
+    channel_context = buffer.get_context_string(message.channel.id, limit=10)
+    if not channel_context:
         logger.debug("コンテキストが空のため自律応答をスキップ")
         return
 
@@ -381,7 +380,7 @@ async def _process_autonomous_response(
         input_text=message.content or "",
         author_name=author_name,
         image_urls=images,
-        channel_context=context,
+        channel_context=channel_context,
         channel_summary=channel_summary,
     )
 

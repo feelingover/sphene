@@ -363,6 +363,8 @@ class Sphene:
         except Exception as e:
             logger.critical(f"input_messageエラー: {e}", exc_info=True)
             return "予期せぬエラーが発生しちゃった...😢"
+
+
 def generate_contextual_response(
     channel_context: str,
     trigger_message: str,
