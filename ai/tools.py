@@ -4,13 +4,13 @@ LLMが使用できるツール（関数）の定義を集約するモジュー�
 新しいSDK (google-genai) に対応。
 """
 
-from typing import Callable
+from typing import Any, Callable
 from google.genai import types
 
 from xivapi.client import search_action, search_game_content, search_item, search_recipe
 
 # ツール定義リスト（OpenAI互換形式を維持しつつ、後で変換する）
-TOOL_DEFINITIONS_RAW = [
+TOOL_DEFINITIONS_RAW: list[dict[str, Any]] = [
     {
         "name": "search_item",
         "description": (
