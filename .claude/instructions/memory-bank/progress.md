@@ -6,7 +6,7 @@ applyTo: "**"
 ## Completed Features
 
 - **Vertex AI Native SDK (`google-genai`) 移行**: OpenAI互換APIを廃止し、最新SDKへ完全移行（Gemini 3/2.5対応、Grounding対応）
-- 記憶機能（Phase 1+2+2A）: 短期記憶バッファ + 自律応答（ハイブリッドJudge）+ チャンネルコンテキスト + 応答多様性
+- **記憶機能（Phase 1+2+2A+2B）**: 短期記憶バッファ + 自律応答（ハイブリッドJudge）+ チャンネルコンテキスト + 応答多様性 + **コンテキスト統合（チャンネル単位履歴）**
 - S3廃止 + Firestore移行: AWS依存完全削除、チャンネル設定をFirestoreに移行
 - uv移行: pyproject.toml + uv.lock による依存管理、CI/Dockerfileのuv対応
 - Discord応答（メンション、名前呼び、リプライ）、スラッシュコマンド

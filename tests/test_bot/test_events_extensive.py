@@ -78,7 +78,7 @@ class TestEventsExtensive:
         assert is_reply is False
 
     @pytest.mark.asyncio
-    @patch("bot.events.user_conversations")
+    @patch("bot.events.channel_conversations")
     @patch("bot.events.split_message")
     async def test_process_conversation_chunking(self, mock_split, mock_conversations):
         """会話のチャンク分割送信テスト"""
@@ -156,22 +156,26 @@ class TestEventsExtensive:
 
     @pytest.mark.asyncio
     @patch("memory.short_term.get_channel_buffer")
-    @patch("bot.events.generate_contextual_response")
+    @patch("bot.events.channel_conversations")
     @patch("bot.events.split_message")
     @patch("memory.judge.get_judge")
-    async def test_process_autonomous_response(self, mock_get_judge, mock_split, mock_gen, mock_get_buffer):
+    async def test_process_autonomous_response(self, mock_get_judge, mock_split, mock_conversations, mock_get_buffer):
         """自律応答の生成と送信プロセステスト"""
         bot = MagicMock()
         bot.user.id = 123
         message = MagicMock()
         message.channel.id = 100
         message.content = "Hello"
-        
+
         mock_buffer = MagicMock()
         mock_buffer.get_context_string.return_value = "Past context"
         mock_get_buffer.return_value = mock_buffer
-        
-        mock_gen.return_value = "Autonomous Answer"
+
+        mock_api = MagicMock()
+        mock_api.is_expired.return_value = False
+        mock_api.input_message.return_value = "Autonomous Answer"
+        mock_conversations.__getitem__.return_value = mock_api
+
         mock_split.return_value = ["Autonomous Answer"]
         message.channel.send = AsyncMock()
 

@@ -10,10 +10,9 @@ import config
 # Sphene と load_system_prompt をインポート
 from ai.conversation import (
     Sphene,
-    generate_contextual_response,
     generate_short_ack,
     load_system_prompt,
-    user_conversations,
+    channel_conversations,
 )
 from log_utils.logger import logger
 from utils.channel_config import ChannelConfigManager
@@ -95,24 +94,43 @@ async def process_conversation(
         is_reply: リプライによるメッセージかどうか
         images: 添付された画像のURLリスト
     """
-    user_id = str(message.author.id)
+    from memory.judge import get_judge
+    from memory.short_term import ChannelMessage, get_channel_buffer
+
+    channel_id = str(message.channel.id)
+    author_name = message.author.display_name
 
     # 期限切れなら会話をリセット
-    if user_conversations[user_id].is_expired():
-        logger.info(f"ユーザーID {user_id} の会話が期限切れのためリセット")
+    if channel_conversations[channel_id].is_expired():
+        logger.info(f"チャンネルID {channel_id} の会話が期限切れのためリセット")
         # 新しい Sphene インスタンスを作成してリセット
-        user_conversations[user_id] = Sphene(system_setting=load_system_prompt())
+        channel_conversations[channel_id] = Sphene(system_setting=load_system_prompt())
 
-    # ユーザーの会話インスタンスを取得
-    api = user_conversations[user_id]
-    # 画像付きかどうかでログ出力を変える
-    if images and len(images) > 0:
-        logger.info(
-            f"画像付きメッセージを処理: ユーザーID {user_id}, 画像数 {len(images)}"
-        )
-        answer = await asyncio.to_thread(api.input_message, question, images)
-    else:
-        answer = await asyncio.to_thread(api.input_message, question)
+    # チャンネルバッファからコンテキストを取得
+    channel_context = ""
+    channel_summary = ""
+    buffer = get_channel_buffer()
+    if config.MEMORY_ENABLED:
+        channel_context = buffer.get_context_string(message.channel.id, limit=10)
+
+        if config.CHANNEL_CONTEXT_ENABLED:
+            from memory.channel_context import get_channel_context_store
+
+            ctx = get_channel_context_store().get_context(message.channel.id)
+            channel_summary = ctx.format_for_injection()
+
+    # チャンネルの会話インスタンスを取得
+    api = channel_conversations[channel_id]
+
+    # 会話履歴とコンテキストを使用して応答生成
+    answer = await asyncio.to_thread(
+        api.input_message,
+        input_text=question,
+        author_name=author_name,
+        image_urls=images,
+        channel_context=channel_context,
+        channel_summary=channel_summary,
+    )
 
     if answer:
         chunks = split_message(answer)
@@ -120,26 +138,40 @@ async def process_conversation(
             if is_reply:
                 if i == 0:
                     logger.info(
-                        f"リプライとして応答送信(chunk {i+1}/{len(chunks)}): ユーザーID {user_id}, 応答: {truncate_text(chunk)}"
+                        f"リプライとして応答送信(chunk {i+1}/{len(chunks)}): チャンネルID {channel_id}, 応答: {truncate_text(chunk)}"
                     )
                     await message.channel.send(chunk, reference=message)
                 else:
                     await message.channel.send(chunk)
             else:
                 logger.info(
-                    f"通常応答送信(chunk {i+1}/{len(chunks)}): ユーザーID {user_id}, 応答: {truncate_text(chunk)}"
+                    f"通常応答送信(chunk {i+1}/{len(chunks)}): チャンネルID {channel_id}, 応答: {truncate_text(chunk)}"
                 )
                 await message.channel.send(chunk)
+
+        # 自律応答用のエンゲージメント記録
+        if config.AUTONOMOUS_RESPONSE_ENABLED and config.MEMORY_ENABLED:
+            get_judge().record_response(message.channel.id)
+
+        # ボット自身の応答もバッファに追加
+        if config.MEMORY_ENABLED and message.guild and message.guild.me:
+            buffer.add_message(
+                ChannelMessage(
+                    message_id=0,
+                    channel_id=message.channel.id,
+                    author_id=message.guild.me.id,
+                    author_name=message.guild.me.display_name,
+                    content=answer,
+                    timestamp=message.created_at,
+                    is_bot=True,
+                )
+            )
     else:
+        error_msg = "ごめん！応答の生成中にエラーが発生しちゃった...😢 もう一度試してみてね！"
         if is_reply:
-            await message.channel.send(
-                "ごめん！応答の生成中にエラーが発生しちゃった...😢 もう一度試してみてね！",
-                reference=message,
-            )
+            await message.channel.send(error_msg, reference=message)
         else:
-            await message.channel.send(
-                "ごめん！応答の生成中にエラーが発生しちゃった...😢 もう一度試してみてね！"
-            )
+            await message.channel.send(error_msg)
 
 
 async def _try_autonomous_response(
@@ -316,11 +348,13 @@ async def _process_autonomous_response(
     from memory.judge import get_judge
     from memory.short_term import ChannelMessage, get_channel_buffer
 
+    channel_id_str = str(message.channel.id)
+    author_name = message.author.display_name
     buffer = get_channel_buffer()
 
     # チャンネルコンテキストを取得
-    context = buffer.get_context_string(message.channel.id, limit=10)
-    if not context:
+    channel_context = buffer.get_context_string(message.channel.id, limit=10)
+    if not channel_context:
         logger.debug("コンテキストが空のため自律応答をスキップ")
         return
 
@@ -332,11 +366,21 @@ async def _process_autonomous_response(
         ctx = get_channel_context_store().get_context(message.channel.id)
         channel_summary = ctx.format_for_injection()
 
-    # 1-shot応答を生成
+    # 期限切れなら会話をリセット
+    if channel_conversations[channel_id_str].is_expired():
+        channel_conversations[channel_id_str] = Sphene(
+            system_setting=load_system_prompt()
+        )
+
+    api = channel_conversations[channel_id_str]
+
+    # 会話履歴を使用した応答生成 (1-shotからマルチターンに変更)
     answer = await asyncio.to_thread(
-        generate_contextual_response,
-        channel_context=context,
-        trigger_message=message.content or "",
+        api.input_message,
+        input_text=message.content or "",
+        author_name=author_name,
+        image_urls=images,
+        channel_context=channel_context,
         channel_summary=channel_summary,
     )
 

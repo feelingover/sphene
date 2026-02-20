@@ -11,7 +11,7 @@ from ai.conversation import (
     Sphene,
     _handle_api_error,
     load_system_prompt,
-    user_conversations,
+    channel_conversations,
 )
 
 # conftest.py で load_system_prompt は自動モックされるため、
@@ -210,20 +210,20 @@ def test_input_message_with_disallowed_image_domain() -> None:
 # --- ユーザー別会話テスト ---
 
 
-def test_user_conversations() -> None:
-    """ユーザー別会話管理をテスト"""
+def test_channel_conversations() -> None:
+    """チャンネル別会話管理をテスト"""
     # デフォルトで新しい会話が作成されるか
-    user_id = "test_user_123"
-    conversation = user_conversations[user_id]
+    channel_id = "test_channel_123"
+    conversation = channel_conversations[channel_id]
     assert isinstance(conversation, Sphene)
 
-    # 同じユーザーIDで同じ会話インスタンスが返されるか
-    same_conversation = user_conversations[user_id]
+    # 同じチャンネルIDで同じ会話インスタンスが返されるか
+    same_conversation = channel_conversations[channel_id]
     assert conversation is same_conversation
 
-    # 別のユーザーIDで別の会話インスタンスが作成されるか
-    another_user_id = "another_user_456"
-    another_conversation = user_conversations[another_user_id]
+    # 別のチャンネルIDで別の会話インスタンスが作成されるか
+    another_channel_id = "another_channel_456"
+    another_conversation = channel_conversations[another_channel_id]
     assert another_conversation is not conversation
 
 

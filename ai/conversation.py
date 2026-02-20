@@ -272,13 +272,23 @@ class Sphene:
                 break
         self.history = recent_history[start_idx:]
 
-    def input_message(self, input_text: str | None, image_urls: list[str] | None = None) -> str | None:
+    def input_message(
+        self,
+        input_text: str | None,
+        author_name: str = "User",
+        image_urls: list[str] | None = None,
+        channel_context: str | None = None,
+        channel_summary: str | None = None,
+    ) -> str | None:
         if not isinstance(input_text, str) or not input_text.strip():
             return None
 
         try:
             self.update_interaction_time()
-            parts = [types.Part.from_text(text=input_text)]
+            
+            # 発言者を明示して履歴に追加
+            text_with_author = f"{author_name}: {input_text}"
+            parts = [types.Part.from_text(text=text_with_author)]
             
             if image_urls:
                 for url in image_urls:
@@ -328,8 +338,15 @@ class Sphene:
 
             self.history.append(types.Content(role="user", parts=parts))
             
-            # ツール使用を促す指示を追加
-            instruction = f"{self.system_prompt}\n\n{TOOL_USAGE_INSTRUCTION}"
+            # チャンネルのコンテキスト情報を構築
+            context_section = ""
+            if channel_context:
+                context_section += f"\n\n--- チャンネルの直近の会話 ---\n{channel_context}\n---"
+            if channel_summary:
+                context_section += f"\n\n{channel_summary}"
+
+            # ツール使用を促す指示とコンテキストを統合
+            instruction = f"{self.system_prompt}{context_section}\n\n{TOOL_USAGE_INSTRUCTION}"
             
             # 共通ロジックで呼び出し
             success, response, updated_history = _call_genai_with_tools(
@@ -346,6 +363,7 @@ class Sphene:
         except Exception as e:
             logger.critical(f"input_messageエラー: {e}", exc_info=True)
             return "予期せぬエラーが発生しちゃった...😢"
+
 
 def generate_contextual_response(
     channel_context: str,
@@ -448,18 +466,18 @@ def reload_system_prompt(fail_on_error: bool = False) -> bool:
             raise
         return False
 
-# ユーザーごとの会話インスタンスを保持する辞書
-user_conversations: defaultdict[str, Sphene] = defaultdict(
+# チャンネルごとの会話インスタンスを保持する辞書
+channel_conversations: defaultdict[str, Sphene] = defaultdict(
     lambda: Sphene(system_setting=load_system_prompt())
 )
 
 def cleanup_expired_conversations() -> int:
     """期限切れの会話をメモリから削除する"""
     expired_ids = [
-        user_id for user_id, api in user_conversations.items() if api.is_expired()
+        channel_id for channel_id, api in channel_conversations.items() if api.is_expired()
     ]
-    for user_id in expired_ids:
-        del user_conversations[user_id]
+    for channel_id in expired_ids:
+        del channel_conversations[channel_id]
 
     if expired_ids:
         logger.info(f"期限切れの会話をクリーンアップしました: {len(expired_ids)}件")

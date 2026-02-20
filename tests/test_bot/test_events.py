@@ -6,6 +6,7 @@ Discordイベント処理のテスト
 # type: ignore
 # mypy: ignore-errors
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -74,6 +75,7 @@ class TestEventHandling:
         message.content = "テストメッセージ"
         message.author.id = 67890
         message.attachments = []  # 添付ファイルなし
+        message.created_at = datetime.now(timezone.utc)
         # guildのモック
         message.guild = MagicMock()
         message.guild.id = 54321
@@ -211,6 +213,7 @@ class TestEventHandling:
         message.content = "画像テスト"
         message.author.id = 67890
         message.attachments = [mock_attachment1, mock_attachment2]
+        message.created_at = datetime.now(timezone.utc)
         # guildのモック
         message.guild = MagicMock()
         message.guild.id = 54321
