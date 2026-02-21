@@ -190,7 +190,7 @@ class UserProfileStore:
 
             db = get_firestore_client()
             doc = (
-                db.collection("user_profiles")
+                db.collection(config.USER_PROFILES_COLLECTION_NAME)
                 .document(str(user_id))
                 .get()
             )
@@ -211,7 +211,7 @@ class UserProfileStore:
             from utils.firestore_client import get_firestore_client
 
             db = get_firestore_client()
-            db.collection("user_profiles").document(
+            db.collection(config.USER_PROFILES_COLLECTION_NAME).document(
                 str(profile.user_id)
             ).set(profile.to_dict())
         except Exception as e:
