@@ -5,15 +5,47 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
-- 全テスト通過（423件）
+- 全テスト通過（460件）
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
 - 環境変数を `GEMINI_MODEL` 形式に統一、`OPENAI_API_KEY` を完全削除。
 - Google検索Grounding機能のサポート開始（`ENABLE_GOOGLE_SEARCH_GROUNDING`）。
 - Discord heartbeat blocking修正済み（`asyncio.to_thread()`）。
-- 記憶機能（Phase 1 + Phase 2）実装済み。
+- 記憶機能（Phase 1 + Phase 2 + Phase 2A + Phase 2B）実装済み。
 - ツール呼び出しループの改善済み（上限の環境変数化 + ツールなし最終コール）。
 
 ## Recent Changes
+
+### 2026/2: Phase 2B - ユーザープロファイル（相手を知る）
+
+各ユーザーとの交流回数・関係性レベル・直近話題を記録し、初見 vs 常連で接し方を変える人間らしい振る舞いを実現。
+
+- **`memory/user_profile.py`（新規）**: `UserProfile` dataclass + `UserProfileStore`
+  - `interaction_count`, `mentioned_bot_count`, `channels_active`, `last_interaction`, `last_topic` を保持
+  - `familiarity_level` プロパティ: interaction_count の閾値から自動算出（LLM不要）
+    - `stranger`（0-5回）→ `acquaintance`（6-30回）→ `regular`（31-100回）→ `close`（101回〜）
+  - `format_for_injection()`: interaction_count=0 のとき空文字（新規ユーザーはプロファイル注入しない）
+  - ストレージ: memory / local (`storage/user_profile.{user_id}.json`) / firestore (`user_profiles/{user_id}`)
+  - アトミック書き込み（tempfile + os.replace）でデータロスを防止
+  - シングルトン: `get_user_profile_store()`
+- **`config.py`**: 環境変数5個追加
+  - `USER_PROFILE_ENABLED`, `USER_PROFILE_STORAGE_TYPE`
+  - `FAMILIARITY_THRESHOLD_ACQUAINTANCE`（デフォルト6）, `FAMILIARITY_THRESHOLD_REGULAR`（デフォルト31）, `FAMILIARITY_THRESHOLD_CLOSE`（デフォルト101）
+- **`ai/conversation.py`**: `input_message()` に `user_profile: str = ""` パラメータ追加、context_section に注入
+- **`bot/events.py`**: 3箇所に処理追加
+  - `_handle_message()`: `MEMORY_ENABLED` かつメッセージ受信時に `record_message()` 呼び出し（チャンネルコンテキスト追加の直後）
+  - `_handle_message()`: ボットメンション検出時に `record_bot_mention()` 呼び出し
+  - `process_conversation()`: プロファイル取得・注入、応答後に `update_last_topic()` でチャンネルコンテキストの topic_keywords を同期
+  - `_process_autonomous_response()`: 同様のプロファイル取得・注入・last_topic更新
+- **`bot/discord_bot.py`**: `_cleanup_task`（15分ループ）に `persist_all()` を追加
+- **`.env.sample`**: 新変数5個をコメント付きでドキュメント化
+
+#### LLM注入フォーマット例
+
+```
+【Orz さんについて】
+関係性: regular（45回のやりとり）
+直近の話題: Rust, async, tokio
+```
 
 ### 2026/2: Phase 2B - 自律応答とトリガー応答のコンテキスト統合
 
@@ -141,4 +173,5 @@ requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini 
 1. **API制限**: 高負荷時のレート制限対応（基本リトライは実装済み）
 2. **コスト最適化**: モデル選択、プロンプト最適化、キャッシング
 3. **AsyncOpenAI移行**: フルasync化（中期候補）
-4. **記憶機能 Phase 3+**: 中期記憶（Firestore保存）・長期記憶（ベクトル検索）は将来Phase
+4. **記憶機能 Phase 3A**: 反省会 + ファクトストア + 自発的会話（キーワードベース長期記憶）
+5. **記憶機能 Phase 3B**: ベクトル検索 + リッチプロファイル（タグ・性格メモ・LLM抽出）

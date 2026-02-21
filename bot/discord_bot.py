@@ -79,6 +79,16 @@ class SpheneBot:
                     exc_info=True,
                 )
 
+        # ユーザープロファイルの永続化
+        if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
+            try:
+                from memory.user_profile import get_user_profile_store
+
+                get_user_profile_store().persist_all()
+                logger.debug("ユーザープロファイルを永続化しました")
+            except Exception as e:
+                logger.error(f"ユーザープロファイル永続化エラー: {str(e)}", exc_info=True)
+
         # 時間ベースの要約チェック
         if config.CHANNEL_CONTEXT_ENABLED and config.MEMORY_ENABLED:
             try:

@@ -81,3 +81,13 @@ SUMMARIZE_MODEL: str = os.getenv("SUMMARIZE_MODEL", "")
 RESPONSE_DIVERSITY_ENABLED: bool = (
     os.getenv("RESPONSE_DIVERSITY_ENABLED", "false").lower() == "true"
 )
+
+# === ユーザープロファイル設定 (Phase 2B) ===
+USER_PROFILE_ENABLED: bool = os.getenv("USER_PROFILE_ENABLED", "false").lower() == "true"
+USER_PROFILE_STORAGE_TYPE: str = os.getenv("USER_PROFILE_STORAGE_TYPE", "memory")
+FAMILIARITY_THRESHOLD_ACQUAINTANCE: int = int(os.getenv("FAMILIARITY_THRESHOLD_ACQUAINTANCE", "6"))
+FAMILIARITY_THRESHOLD_REGULAR: int = int(os.getenv("FAMILIARITY_THRESHOLD_REGULAR", "31"))
+FAMILIARITY_THRESHOLD_CLOSE: int = int(os.getenv("FAMILIARITY_THRESHOLD_CLOSE", "101"))
+USER_PROFILES_COLLECTION_NAME: str = str(
+    os.getenv("USER_PROFILES_COLLECTION_NAME", "user_profiles")
+)

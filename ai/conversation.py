@@ -283,6 +283,7 @@ class Sphene:
         image_urls: list[str] | None = None,
         channel_context: str | None = None,
         channel_summary: str | None = None,
+        user_profile: str = "",
     ) -> str | None:
         if not isinstance(input_text, str) or not input_text.strip():
             return None
@@ -348,6 +349,8 @@ class Sphene:
                 context_section += f"\n\n--- チャンネルの直近の会話 ---\n{channel_context}\n---"
             if channel_summary:
                 context_section += f"\n\n{channel_summary}"
+            if user_profile:
+                context_section += f"\n\n{user_profile}"
 
             # ツール使用を促す指示とコンテキストを統合
             instruction = f"{self.system_prompt}{context_section}\n\n{TOOL_USAGE_INSTRUCTION}"
