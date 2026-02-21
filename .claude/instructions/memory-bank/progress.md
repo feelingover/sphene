@@ -6,7 +6,16 @@ applyTo: "**"
 ## Completed Features
 
 - **Vertex AI Native SDK (`google-genai`) 移行**: OpenAI互換APIを廃止し、最新SDKへ完全移行（Gemini 3/2.5対応、Grounding対応）
-- **記憶機能（Phase 1+2+2A+2B）**: 短期記憶バッファ + 自律応答（ハイブリッドJudge）+ チャンネルコンテキスト + 応答多様性 + **コンテキスト統合（チャンネル単位履歴）**
+- **記憶機能 Phase 1**: 短期記憶バッファ（ChannelMessageBuffer、dequeリングバッファ）
+- **記憶機能 Phase 2**: 自律応答（ハイブリッドJudge: RuleBasedJudge + LLMJudge）
+- **記憶機能 Phase 2A**: チャンネルコンテキスト（ローリング要約）+ 応答多様性（3段階）+ Judge拡張（会話フロー考慮）
+- **記憶機能 Phase 2B（コンテキスト統合）**: チャンネル単位履歴 + メンション/自律応答の共有コンテキスト注入
+- **記憶機能 Phase 2B（ユーザープロファイル）**: 交流回数・関係性レベル・直近話題の記録と応答生成への注入
+  - `UserProfile` dataclass + `UserProfileStore`（memory/local/firestore）
+  - `familiarity_level`（stranger/acquaintance/regular/close）閾値ベース自動算出
+  - `last_topic`: チャンネルコンテキストの topic_keywords を応答後に同期
+  - `input_message()` に `user_profile` パラメータ追加
+  - 15分ごとの定期永続化
 - S3廃止 + Firestore移行: AWS依存完全削除、チャンネル設定をFirestoreに移行
 - uv移行: pyproject.toml + uv.lock による依存管理、CI/Dockerfileのuv対応
 - Discord応答（メンション、名前呼び、リプライ）、スラッシュコマンド
@@ -26,9 +35,8 @@ applyTo: "**"
 - 統合テストのSDK対応
 
 ### Mid-term
-- 記憶機能 Phase 2B: 応答品質向上（ペルソナ一貫性、コンテキスト活用の深化）
-- 記憶機能 Phase 3: 中期記憶（Firestore保存 - ユーザープロファイル）
-- 記憶機能 Phase 4: 長期記憶（ベクトル検索 - エピソード記憶）
+- 記憶機能 Phase 3A: 反省会 + ファクトストア（Jaccard類似度キーワード検索）+ 自発的会話開始
+- 記憶機能 Phase 3B: ベクトル検索（Vertex AI Embeddings）+ リッチプロファイル（LLMタグ抽出）
 - チャンネル固有プロンプト
 - 使用統計・モニタリング
 - CI/CD強化

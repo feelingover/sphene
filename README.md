@@ -19,6 +19,7 @@ SpheneはGoogle Gen AI SDK（Vertex AI経由のGemini）を活用した会話機
 - **コンテキスト統合**: メンション応答と自律応答が共通の履歴とチャンネル文脈を参照
 - チャンネルコンテキスト（ローリング要約による場の空気把握）
 - 応答多様性（リアクション / 相槌 / フル応答の3段階で自然な会話参加）
+- **ユーザープロファイル**: 交流回数・関係性レベル（stranger/acquaintance/regular/close）・直近の話題を記録し、初見と常連で自然に接し方を変える
 
 ## セットアップ方法
 
@@ -86,6 +87,13 @@ AUTONOMOUS_RESPONSE_ENABLED=false
 
 # 応答多様性（有効にするとスコアに応じてリアクション/相槌/フル応答を使い分け）
 # RESPONSE_DIVERSITY_ENABLED=false
+
+# ユーザープロファイル（交流回数・関係性・直近話題の記録）
+# USER_PROFILE_ENABLED=false
+# USER_PROFILE_STORAGE_TYPE=memory  # memory | local | firestore
+# FAMILIARITY_THRESHOLD_ACQUAINTANCE=6    # 0-5回: stranger / 6回以上: acquaintance
+# FAMILIARITY_THRESHOLD_REGULAR=31        # 6-30回: acquaintance / 31回以上: regular
+# FAMILIARITY_THRESHOLD_CLOSE=101         # 31-100回: regular / 101回以上: close
 ```
 
 ### システムプロンプトの用意
@@ -218,7 +226,8 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 │   ├── judge.py            # ルールベース自律応答判定
 │   ├── llm_judge.py        # LLMによる二次判定
 │   ├── short_term.py       # チャンネルメッセージバッファ（短期記憶）
-│   └── summarizer.py       # ローリング要約エンジン
+│   ├── summarizer.py       # ローリング要約エンジン
+│   └── user_profile.py     # ユーザープロファイル（関係性・直近話題）
 ├── xivapi/                 # XIVAPI v2連携
 │   ├── __init__.py
 │   ├── client.py           # ゲームデータ検索クライアント
@@ -303,6 +312,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - チャンネルコンテキスト（ローリング要約 - メッセージ数/時間ベースのハイブリッドトリガー）
 - 応答多様性（リアクション / 相槌 / フル応答の3段階）
 - 会話フロー分析（2人会話検出、高頻度検出、沈黙後検出、会話減衰検出）
+- ユーザープロファイル（交流回数・関係性レベル・直近話題の記録、15分ごとの定期永続化）
 
 **翻訳機能**
 

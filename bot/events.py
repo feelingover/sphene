@@ -119,6 +119,22 @@ async def process_conversation(
             ctx = get_channel_context_store().get_context(message.channel.id)
             channel_summary = ctx.format_for_injection()
 
+    # ユーザープロファイルの取得
+    user_profile_str = ""
+    topic_keywords: list[str] = []
+    if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
+        from memory.user_profile import get_user_profile_store
+
+        profile = get_user_profile_store().get_profile(
+            message.author.id, message.author.display_name
+        )
+        user_profile_str = profile.format_for_injection()
+        if config.CHANNEL_CONTEXT_ENABLED:
+            from memory.channel_context import get_channel_context_store
+
+            topic_ctx = get_channel_context_store().get_context(message.channel.id)
+            topic_keywords = topic_ctx.topic_keywords
+
     # チャンネルの会話インスタンスを取得
     api = channel_conversations[channel_id]
 
@@ -130,6 +146,7 @@ async def process_conversation(
         image_urls=images,
         channel_context=channel_context,
         channel_summary=channel_summary,
+        user_profile=user_profile_str,
     )
 
     if answer:
@@ -152,6 +169,12 @@ async def process_conversation(
         # 自律応答用のエンゲージメント記録
         if config.AUTONOMOUS_RESPONSE_ENABLED and config.MEMORY_ENABLED:
             get_judge().record_response(message.channel.id)
+
+        # ユーザープロファイル: 直近の話題を更新
+        if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED and topic_keywords:
+            from memory.user_profile import get_user_profile_store
+
+            get_user_profile_store().update_last_topic(message.author.id, topic_keywords)
 
         # ボット自身の応答もバッファに追加
         if config.MEMORY_ENABLED and message.guild and message.guild.me:
@@ -360,11 +383,23 @@ async def _process_autonomous_response(
 
     # チャンネル要約を取得（有効な場合）
     channel_summary = ""
+    auto_topic_keywords: list[str] = []
     if config.CHANNEL_CONTEXT_ENABLED and config.MEMORY_ENABLED:
         from memory.channel_context import get_channel_context_store
 
         ctx = get_channel_context_store().get_context(message.channel.id)
         channel_summary = ctx.format_for_injection()
+        auto_topic_keywords = ctx.topic_keywords
+
+    # ユーザープロファイルの取得
+    auto_user_profile_str = ""
+    if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
+        from memory.user_profile import get_user_profile_store
+
+        auto_profile = get_user_profile_store().get_profile(
+            message.author.id, message.author.display_name
+        )
+        auto_user_profile_str = auto_profile.format_for_injection()
 
     # 期限切れなら会話をリセット
     if channel_conversations[channel_id_str].is_expired():
@@ -382,6 +417,7 @@ async def _process_autonomous_response(
         image_urls=images,
         channel_context=channel_context,
         channel_summary=channel_summary,
+        user_profile=auto_user_profile_str,
     )
 
     if answer:
@@ -398,6 +434,14 @@ async def _process_autonomous_response(
         # クールダウン記録
         judge = get_judge()
         judge.record_response(message.channel.id)
+
+        # ユーザープロファイル: 直近の話題を更新
+        if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED and auto_topic_keywords:
+            from memory.user_profile import get_user_profile_store
+
+            get_user_profile_store().update_last_topic(
+                message.author.id, auto_topic_keywords
+            )
 
         # ボット自身の応答もバッファに追加
         if bot.user:
@@ -493,6 +537,14 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
                 recent = buffer.get_recent_messages(message.channel.id, limit=20)
                 get_summarizer().maybe_summarize(message.channel.id, recent)
 
+            # ユーザープロファイル: メッセージ記録
+            if config.USER_PROFILE_ENABLED:
+                from memory.user_profile import get_user_profile_store
+
+                get_user_profile_store().record_message(
+                    message.author.id, message.channel.id, message.author.display_name
+                )
+
         # 画像添付の検出
         images = []
         for attachment in message.attachments:
@@ -505,6 +557,12 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         # ボットが呼ばれたかどうかをチェック
         is_mentioned, question, is_reply = await is_bot_mentioned(bot, message)
         if is_mentioned:
+            # ユーザープロファイル: ボットメンション記録
+            if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
+                from memory.user_profile import get_user_profile_store
+
+                get_user_profile_store().record_bot_mention(message.author.id)
+
             await process_conversation(message, question, is_reply, images)
             # エンゲージメント記録（自律応答のスコアブーストに使用）
             if config.AUTONOMOUS_RESPONSE_ENABLED and config.MEMORY_ENABLED:
