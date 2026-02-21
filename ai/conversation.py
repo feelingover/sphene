@@ -196,10 +196,13 @@ def _call_genai_with_tools(
 
         candidate = response.candidates[0]
         resp_content = candidate.content
-        
+
         # Grounding情報のログ出力
         if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
             logger.info(f"Groundingメタデータを検出: {candidate.grounding_metadata}")
+
+        if resp_content is None or resp_content.parts is None:
+            return False, "応答を読み取れなかったよ…😢", local_history
 
         local_history.append(resp_content)
 
@@ -238,12 +241,13 @@ def _call_genai_with_tools(
     if response.candidates:
         candidate = response.candidates[0]
         resp_content = candidate.content
-        local_history.append(resp_content)
-        text_parts = [p.text for p in resp_content.parts if p.text]
-        if text_parts:
-            final_text = "".join(text_parts)
-            logger.debug(f"最終応答受信: {truncate_text(final_text)}")
-            return True, final_text, local_history
+        if resp_content and resp_content.parts:
+            local_history.append(resp_content)
+            text_parts = [p.text for p in resp_content.parts if p.text]
+            if text_parts:
+                final_text = "".join(text_parts)
+                logger.debug(f"最終応答受信: {truncate_text(final_text)}")
+                return True, final_text, local_history
 
     return False, "処理が複雑すぎて諦めちゃった…😢", local_history
 
@@ -446,10 +450,11 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
             ),
         )
 
-        if response.candidates:
+        candidate = response.candidates[0] if response.candidates else None
+        if candidate and candidate.content and candidate.content.parts:
             text_parts = [
                 p.text
-                for p in response.candidates[0].content.parts
+                for p in candidate.content.parts
                 if p.text
             ]
             if text_parts:
