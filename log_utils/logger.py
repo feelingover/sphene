@@ -22,6 +22,30 @@ def get_log_level(level_name: str) -> int:
     return level_map.get(level_name.upper(), logging.INFO)
 
 
+def _create_formatter() -> logging.Formatter:
+    """ログフォーマッターを生成する。
+
+    LOG_FORMAT=json の場合は Google Cloud Logging 向け JSON フォーマッター、
+    それ以外は人間が読みやすいテキストフォーマッターを返す。
+
+    Returns:
+        logging.Formatter: 設定されたフォーマッターインスタンス
+    """
+    if config.LOG_FORMAT == "json":
+        from pythonjsonlogger.json import JsonFormatter
+
+        return JsonFormatter(
+            "%(asctime)s %(levelname)s %(name)s %(message)s",
+            rename_fields={
+                "asctime": "time",
+                "levelname": "severity",
+                "name": "logger",
+            },
+            datefmt="%Y-%m-%dT%H:%M:%S%z",
+        )
+    return logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+
 def setup_logger(name: str = "sphene") -> logging.Logger:
     """アプリケーション用のロガーをセットアップする
 
@@ -31,13 +55,12 @@ def setup_logger(name: str = "sphene") -> logging.Logger:
     Returns:
         logging.Logger: 設定されたロガーインスタンス
     """
-    # 環境変数からログレベルを取得
     log_level = get_log_level(config.LOG_LEVEL)
 
-    # ロギングの基本設定
-    logging.basicConfig(
-        level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(_create_formatter())
+
+    logging.basicConfig(level=log_level, handlers=[handler])
     return logging.getLogger(name)
 
 

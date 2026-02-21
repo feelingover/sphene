@@ -6,6 +6,8 @@ load_dotenv()
 
 # ログレベル設定（デフォルトはINFO）
 LOG_LEVEL: str = str(os.getenv("LOG_LEVEL", "INFO"))
+# ログフォーマット設定（"json" または "text"）
+LOG_FORMAT: str = str(os.getenv("LOG_FORMAT", "json"))
 
 # AIプロバイダー設定（現在は Vertex AI 固定）
 AI_PROVIDER: str = os.getenv("AI_PROVIDER", "vertex_ai")

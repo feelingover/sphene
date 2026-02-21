@@ -54,6 +54,8 @@ FIRESTORE_COLLECTION_NAME=channel_configs
 
 # ログレベル設定: DEBUG, INFO, WARNING, ERROR, CRITICAL のいずれか
 LOG_LEVEL=INFO
+# ログフォーマット設定: json（デフォルト・Google Cloud Logging向け）または text（ローカル開発向け）
+LOG_FORMAT=json
 
 # === 記憶機能設定 ===
 
