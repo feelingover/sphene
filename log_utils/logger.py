@@ -32,16 +32,21 @@ def _create_formatter() -> logging.Formatter:
         logging.Formatter: 設定されたフォーマッターインスタンス
     """
     if config.LOG_FORMAT == "json":
+        from datetime import datetime, timezone
+
         from pythonjsonlogger.json import JsonFormatter
 
-        return JsonFormatter(
+        class _GCLJsonFormatter(JsonFormatter):
+            def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+                return datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(timespec="seconds")
+
+        return _GCLJsonFormatter(
             "%(asctime)s %(levelname)s %(name)s %(message)s",
             rename_fields={
                 "asctime": "time",
                 "levelname": "severity",
                 "name": "logger",
             },
-            datefmt="%Y-%m-%dT%H:%M:%S%z",
         )
     return logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
