@@ -129,9 +129,7 @@ class UserProfileStore:
 
     def persist_all(self) -> None:
         """全プロファイルを永続化する（定期タスクから呼ばれる）"""
-        storage_type = config.USER_PROFILE_STORAGE_TYPE
-        if storage_type == "memory":
-            return
+        storage_type = config.STORAGE_TYPE
 
         for profile in self._profiles.values():
             if storage_type == "local":
@@ -141,7 +139,7 @@ class UserProfileStore:
 
     def _load_profile(self, user_id: int) -> "UserProfile | None":
         """永続化先からプロファイルを読み込む"""
-        storage_type = config.USER_PROFILE_STORAGE_TYPE
+        storage_type = config.STORAGE_TYPE
 
         if storage_type == "local":
             return self._load_from_local(user_id)
@@ -230,6 +228,6 @@ def get_user_profile_store() -> UserProfileStore:
     if _store is None:
         _store = UserProfileStore()
         logger.info(
-            f"UserProfileStore初期化: storage_type={config.USER_PROFILE_STORAGE_TYPE}"
+            f"UserProfileStore初期化: storage_type={config.STORAGE_TYPE}"
         )
     return _store

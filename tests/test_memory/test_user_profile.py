@@ -64,7 +64,7 @@ class TestFamiliarityLevel:
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
-            mock_cfg.USER_PROFILE_STORAGE_TYPE = "memory"
+            mock_cfg.STORAGE_TYPE = "local"
             yield mock_cfg
 
     def _make_profile(self, count: int) -> UserProfile:
@@ -114,7 +114,7 @@ class TestFormatForInjection:
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
-            mock_cfg.USER_PROFILE_STORAGE_TYPE = "memory"
+            mock_cfg.STORAGE_TYPE = "local"
             yield mock_cfg
 
     def test_empty_when_no_interactions(self):
@@ -204,8 +204,9 @@ class TestUserProfileStoreRecordMessage:
 
     @pytest.fixture(autouse=True)
     def mock_config(self):
-        with patch("memory.user_profile.config") as mock_cfg:
-            mock_cfg.USER_PROFILE_STORAGE_TYPE = "memory"
+        with patch("memory.user_profile.config") as mock_cfg, \
+             patch("memory.user_profile.os.path.exists", return_value=False):
+            mock_cfg.STORAGE_TYPE = "local"
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
@@ -255,8 +256,9 @@ class TestUserProfileStoreRecordBotMention:
 
     @pytest.fixture(autouse=True)
     def mock_config(self):
-        with patch("memory.user_profile.config") as mock_cfg:
-            mock_cfg.USER_PROFILE_STORAGE_TYPE = "memory"
+        with patch("memory.user_profile.config") as mock_cfg, \
+             patch("memory.user_profile.os.path.exists", return_value=False):
+            mock_cfg.STORAGE_TYPE = "local"
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
@@ -281,8 +283,9 @@ class TestUserProfileStoreUpdateLastTopic:
 
     @pytest.fixture(autouse=True)
     def mock_config(self):
-        with patch("memory.user_profile.config") as mock_cfg:
-            mock_cfg.USER_PROFILE_STORAGE_TYPE = "memory"
+        with patch("memory.user_profile.config") as mock_cfg, \
+             patch("memory.user_profile.os.path.exists", return_value=False):
+            mock_cfg.STORAGE_TYPE = "local"
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
@@ -317,24 +320,26 @@ class TestUserProfileStoreUpdateLastTopic:
         store.update_last_topic(9999, ["topic"])  # エラーが起きないこと
 
 
-class TestUserProfileStoreMemoryStorage:
-    """memory ストレージ: 永続化なし動作確認"""
+class TestUserProfileStoreBasicStorage:
+    """local ストレージ: 基本動作確認"""
 
     @pytest.fixture(autouse=True)
     def mock_config(self):
-        with patch("memory.user_profile.config") as mock_cfg:
-            mock_cfg.USER_PROFILE_STORAGE_TYPE = "memory"
+        with patch("memory.user_profile.config") as mock_cfg, \
+             patch("memory.user_profile.os.path.exists", return_value=False):
+            mock_cfg.STORAGE_TYPE = "local"
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
             yield mock_cfg
 
-    def test_persist_all_is_noop(self):
-        """memory ストレージのとき persist_all は何もしない"""
+    def test_persist_all_calls_save_to_local(self):
+        """local ストレージのとき persist_all が _save_to_local を呼ぶこと"""
         store = UserProfileStore()
         store.record_message(1, 100, "User")
-        # エラーなく完了すること
-        store.persist_all()
+        with patch.object(store, "_save_to_local") as mock_save:
+            store.persist_all()
+            mock_save.assert_called_once()
 
     def test_get_profile_creates_new_if_not_found(self):
         """プロファイルが存在しない場合、新規作成される"""
@@ -360,7 +365,7 @@ class TestUserProfileStoreLocalStorage:
     @pytest.fixture(autouse=True)
     def mock_config(self):
         with patch("memory.user_profile.config") as mock_cfg:
-            mock_cfg.USER_PROFILE_STORAGE_TYPE = "local"
+            mock_cfg.STORAGE_TYPE = "local"
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
@@ -451,7 +456,7 @@ class TestGetUserProfileStore:
         up_module._store = None
         try:
             with patch("memory.user_profile.config") as mock_cfg:
-                mock_cfg.USER_PROFILE_STORAGE_TYPE = "memory"
+                mock_cfg.STORAGE_TYPE = "local"
                 mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
                 mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
                 mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101

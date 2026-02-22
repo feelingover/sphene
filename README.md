@@ -44,10 +44,10 @@ ENABLE_GOOGLE_SEARCH_GROUNDING=false
 # システムプロンプトの設定
 SYSTEM_PROMPT_FILENAME=system.txt
 
-# チャンネル設定のストレージタイプ: local または firestore
-CHANNEL_CONFIG_STORAGE_TYPE=local
+# ストレージタイプ: local または firestore（チャンネル設定・コンテキスト・プロファイルで共有）
+STORAGE_TYPE=local
 
-# Firestoreコレクション名（CHANNEL_CONFIG_STORAGE_TYPE=firestore の場合に使用）
+# Firestoreコレクション名（STORAGE_TYPE=firestore の場合に使用）
 FIRESTORE_COLLECTION_NAME=channel_configs
 # GCPサービスアカウントキーのパス（Workload Identity使用時は不要）
 # GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
@@ -82,7 +82,6 @@ AUTONOMOUS_RESPONSE_ENABLED=false
 
 # チャンネルコンテキスト（ローリング要約による場の空気把握）
 # CHANNEL_CONTEXT_ENABLED=false
-# CHANNEL_CONTEXT_STORAGE_TYPE=memory  # memory | local | firestore
 # SUMMARIZE_EVERY_N_MESSAGES=20        # N件ごとに要約実行
 # SUMMARIZE_EVERY_N_MINUTES=15         # N分経過で要約実行（メッセージ1件以上の場合）
 # SUMMARIZE_MODEL=                     # 空の場合はGEMINI_MODELと同じモデルを使用
@@ -92,7 +91,6 @@ AUTONOMOUS_RESPONSE_ENABLED=false
 
 # ユーザープロファイル（交流回数・関係性・直近話題の記録）
 # USER_PROFILE_ENABLED=false
-# USER_PROFILE_STORAGE_TYPE=memory  # memory | local | firestore
 # FAMILIARITY_THRESHOLD_ACQUAINTANCE=6    # 0-5回: stranger / 6回以上: acquaintance
 # FAMILIARITY_THRESHOLD_REGULAR=31        # 6-30回: acquaintance / 31回以上: regular
 # FAMILIARITY_THRESHOLD_CLOSE=101         # 31-100回: regular / 101回以上: close

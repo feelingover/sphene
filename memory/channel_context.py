@@ -108,17 +108,16 @@ class ChannelContextStore:
     def save_context(self, context: ChannelContext) -> None:
         """コンテキストを永続化する"""
         self._contexts[context.channel_id] = context
-        storage_type = config.CHANNEL_CONTEXT_STORAGE_TYPE
+        storage_type = config.STORAGE_TYPE
 
         if storage_type == "local":
             self._save_to_local(context)
         elif storage_type == "firestore":
             self._save_to_firestore(context)
-        # "memory" の場合はインメモリキャッシュのみ（no-op）
 
     def _load_context(self, channel_id: int) -> ChannelContext | None:
         """永続化先からコンテキストを読み込む"""
-        storage_type = config.CHANNEL_CONTEXT_STORAGE_TYPE
+        storage_type = config.STORAGE_TYPE
 
         if storage_type == "local":
             return self._load_from_local(channel_id)
@@ -207,6 +206,6 @@ def get_channel_context_store() -> ChannelContextStore:
     if _store is None:
         _store = ChannelContextStore()
         logger.info(
-            f"ChannelContextStore初期化: storage_type={config.CHANNEL_CONTEXT_STORAGE_TYPE}"
+            f"ChannelContextStore初期化: storage_type={config.STORAGE_TYPE}"
         )
     return _store

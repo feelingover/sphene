@@ -111,7 +111,7 @@ class ChannelConfigManager:
 
         # ストレージから削除
         if not self.debug_mode:
-            storage_type = config.CHANNEL_CONFIG_STORAGE_TYPE
+            storage_type = config.STORAGE_TYPE
             if storage_type == "firestore":
                 success = self._delete_firestore_document(guild_id)
             else:
@@ -197,7 +197,7 @@ class ChannelConfig:
             raise ValueError(f"Invalid guild_id format: {self.guild_id}")
 
         self.debug_mode = debug_mode
-        self.storage_type = storage_type or config.CHANNEL_CONFIG_STORAGE_TYPE
+        self.storage_type = storage_type or config.STORAGE_TYPE
         self.config_data: dict[str, Any] = {
             "behavior": "deny",  # デフォルトは全体モード
             "channels": [],
