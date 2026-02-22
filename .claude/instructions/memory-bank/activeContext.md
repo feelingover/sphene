@@ -134,10 +134,10 @@ OpenAI互換エンドポイントの制限（最新モデルの404エラー等�
 
 ### 2026/2: Vertex AI OpenAI互換API対応
 
-`AI_PROVIDER`環境変数（`openai`/`vertex_ai`）でプロバイダーを切り替え可能にした。
+Vertex AI固定構成。`AI_PROVIDER`環境変数は廃止済み。
 
-- `ai/client.py`: シングルトン`client`を廃止、`get_client()`関数に統一。Vertex AI選択時はGCEのWorkload Identity認証（`google.auth.default()`）でトークンを自動取得・リフレッシュ。
-- `config.py`: `AI_PROVIDER`, `VERTEX_AI_PROJECT_ID`, `VERTEX_AI_LOCATION`環境変数を追加。
+- `ai/client.py`: シングルトン`client`を廃止、`get_client()`関数に統一。GCEのWorkload Identity認証（`google.auth.default()`）でトークンを自動取得・リフレッシュ。
+- `config.py`: `VERTEX_AI_PROJECT_ID`, `VERTEX_AI_LOCATION`環境変数で設定。
 - `ai/conversation.py`, `utils/text_utils.py`: クライアント参照を`get_client()`に変更。
 - `pyproject.toml`: `google-auth`を明示的依存に追加。
 - OpenAI互換APIのため、`tools.py`のツール定義やAPIコールパラメータは変更不要。
@@ -174,7 +174,7 @@ requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini 
 | 2026/2 | システムプロンプトはローカルのみ | k8s configmapマウントで十分 |
 | 2026/2 | `asyncio.to_thread()`で最小修正 | 2ファイル10行で全ブロッキングポイントをカバー。フルasync化は中期候補 |
 | 2026/2 | XIVAPI全パラメータにデフォルト値 | `func(**arguments)`動的呼び出しとの後方互換性維持 |
-| 2026/2 | Vertex AI OpenAI互換API対応 | GCP一本化方針。Workload Identity認証でAPIキー管理不要。`AI_PROVIDER`で切替可能 |
+| 2026/2 | Vertex AI固定化 | GCP一本化方針。Workload Identity認証でAPIキー管理不要。`AI_PROVIDER`環境変数は廃止 |
 
 ## Open Issues
 

@@ -34,7 +34,6 @@ COMMAND_GROUP_NAME=sphene  # コマンドグループ名（コードのデフォ
 GEMINI_MODEL=google/gemini-2.5-flash  # 使用するモデル
 
 # Vertex AI設定
-AI_PROVIDER=vertex_ai
 # VERTEX_AI_PROJECT_ID=your-gcp-project-id  # 未設定の場合はGCEメタデータから自動取得
 VERTEX_AI_LOCATION=asia-northeast1
 
