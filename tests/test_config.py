@@ -1,8 +1,5 @@
 """config.py のテスト"""
 
-# type: ignore
-# mypy: ignore-errors
-
 from unittest.mock import patch
 
 from config import get_collection_name

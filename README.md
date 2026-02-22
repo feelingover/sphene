@@ -344,6 +344,7 @@ uv run python scripts/migrate_firestore_namespace.py --namespace prod --execute
 uv run python scripts/migrate_firestore_namespace.py --namespace prod \
   --src-channel-configs my_custom_channels \
   --src-user-profiles my_custom_profiles \
+  --src-channel-contexts my_custom_contexts \
   --execute
 
 # 既存ドキュメントを上書きする場合
