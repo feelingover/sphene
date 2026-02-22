@@ -69,7 +69,7 @@ class TestChannelConfigExtensive:
         mock_get_firestore.return_value = mock_db
         
         with patch("config.STORAGE_TYPE", "firestore"):
-            with patch("config.FIRESTORE_COLLECTION_NAME", "test_cols"):
+            with patch("config.FIRESTORE_COLLECTION_CHANNEL_CONFIGS", "test_cols"):
                 result = manager.delete_guild_config("54321")
                 assert result is True
                 mock_db.collection.assert_called_with("test_cols")

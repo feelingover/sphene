@@ -46,8 +46,9 @@ SYSTEM_PROMPT_FILENAME=system.txt
 # ストレージタイプ: local または firestore（チャンネル設定・コンテキスト・プロファイルで共有）
 STORAGE_TYPE=local
 
-# Firestoreコレクション名（STORAGE_TYPE=firestore の場合に使用）
-FIRESTORE_COLLECTION_NAME=channel_configs
+# Firestoreネームスペース（マルチテナント対応、空=プレフィックスなし）
+# コレクション名: {namespace}_channel_configs, {namespace}_user_profiles, {namespace}_channel_contexts
+# FIRESTORE_NAMESPACE=
 # GCPサービスアカウントキーのパス（Workload Identity使用時は不要）
 # GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 
@@ -93,7 +94,6 @@ AUTONOMOUS_RESPONSE_ENABLED=false
 # FAMILIARITY_THRESHOLD_ACQUAINTANCE=6    # 0-5回: stranger / 6回以上: acquaintance
 # FAMILIARITY_THRESHOLD_REGULAR=31        # 6-30回: acquaintance / 31回以上: regular
 # FAMILIARITY_THRESHOLD_CLOSE=101         # 31-100回: regular / 101回以上: close
-# USER_PROFILES_COLLECTION_NAME=user_profiles  # Firestoreコレクション名（マルチテナント対応）
 ```
 
 ### システムプロンプトの用意
@@ -242,8 +242,9 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 │   └── logger.py           # ロガー設定
 ├── storage/                # ローカルファイルストレージ（プロンプト、設定）
 ├── scripts/                # ユーティリティスクリプト
-│   ├── migrate_s3_to_firestore.py  # S3→Firestoreマイグレーションツール
-│   └── verify_grounding.py         # Grounding検証スクリプト
+│   ├── migrate_firestore_namespace.py  # Firestoreネームスペース移行ツール
+│   ├── migrate_s3_to_firestore.py      # S3→Firestoreマイグレーションツール
+│   └── verify_grounding.py             # Grounding検証スクリプト
 ├── docs/                   # ドキュメント
 │   └── autonomous-response.md      # 自律応答機能の仕様
 ├── tests/                  # テストコード
@@ -327,6 +328,28 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - チャンネルリスト表示
 - チャンネル追加/削除/クリア
 - システムプロンプト再読み込み
+
+## Firestoreネームスペース移行
+
+`FIRESTORE_NAMESPACE` を導入してマルチテナント対応する場合、既存のFirestoreコレクションから新しいネームスペース付きコレクションへデータを移行できます。
+
+```bash
+# デフォルトの旧コレクション名から移行（dry-run でプレビュー）
+uv run python scripts/migrate_firestore_namespace.py --namespace prod --dry-run
+
+# 実際にコピーを実行
+uv run python scripts/migrate_firestore_namespace.py --namespace prod --execute
+
+# 旧環境変数でカスタム名を使ってた場合
+uv run python scripts/migrate_firestore_namespace.py --namespace prod \
+  --src-channel-configs my_custom_channels \
+  --src-user-profiles my_custom_profiles \
+  --src-channel-contexts my_custom_contexts \
+  --execute
+
+# 既存ドキュメントを上書きする場合
+uv run python scripts/migrate_firestore_namespace.py --namespace prod --execute --force
+```
 
 ## セキュリティ情報
 

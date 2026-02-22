@@ -30,10 +30,20 @@ STORAGE_TYPE: str = str(os.getenv("STORAGE_TYPE", "local"))
 # システムプロンプトのファイルパス
 SYSTEM_PROMPT_PATH: str = str(os.getenv("SYSTEM_PROMPT_PATH", "storage/system.txt"))
 
-# Firestoreコレクション名（STORAGE_TYPE=firestore の場合に使用）
-FIRESTORE_COLLECTION_NAME: str = str(
-    os.getenv("FIRESTORE_COLLECTION_NAME", "channel_configs")
-)
+# Firestoreネームスペース（マルチテナント対応、空=プレフィックスなし）
+FIRESTORE_NAMESPACE: str = os.getenv("FIRESTORE_NAMESPACE", "")
+
+
+def get_collection_name(base_name: str) -> str:
+    """ネームスペース付きFirestoreコレクション名を返す"""
+    if FIRESTORE_NAMESPACE:
+        return f"{FIRESTORE_NAMESPACE}_{base_name}"
+    return base_name
+
+
+FIRESTORE_COLLECTION_CHANNEL_CONFIGS: str = get_collection_name("channel_configs")
+FIRESTORE_COLLECTION_USER_PROFILES: str = get_collection_name("user_profiles")
+FIRESTORE_COLLECTION_CHANNEL_CONTEXTS: str = get_collection_name("channel_contexts")
 
 # === AI会話設定 ===
 MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "5"))
@@ -83,6 +93,3 @@ USER_PROFILE_ENABLED: bool = os.getenv("USER_PROFILE_ENABLED", "false").lower() 
 FAMILIARITY_THRESHOLD_ACQUAINTANCE: int = int(os.getenv("FAMILIARITY_THRESHOLD_ACQUAINTANCE", "6"))
 FAMILIARITY_THRESHOLD_REGULAR: int = int(os.getenv("FAMILIARITY_THRESHOLD_REGULAR", "31"))
 FAMILIARITY_THRESHOLD_CLOSE: int = int(os.getenv("FAMILIARITY_THRESHOLD_CLOSE", "101"))
-USER_PROFILES_COLLECTION_NAME: str = str(
-    os.getenv("USER_PROFILES_COLLECTION_NAME", "user_profiles")
-)
