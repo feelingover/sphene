@@ -10,7 +10,7 @@ boto3はアプリ本体から削除済みのため、以下のように実行す
 必要な環境変数:
     S3_BUCKET_NAME: S3バケット名
     S3_FOLDER_PATH: S3フォルダパス（オプション）
-    FIRESTORE_COLLECTION_NAME: Firestoreコレクション名（デフォルト: channel_configs）
+    FIRESTORE_NAMESPACE: Firestoreネームスペース（オプション、空=プレフィックスなし）
     GOOGLE_APPLICATION_CREDENTIALS: GCPサービスアカウントキーのパス（Workload Identity使用時は不要）
 """
 
@@ -134,7 +134,8 @@ def main() -> None:
         sys.exit(1)
 
     folder_path = os.getenv("S3_FOLDER_PATH")
-    collection_name = os.getenv("FIRESTORE_COLLECTION_NAME", "channel_configs")
+    namespace = os.getenv("FIRESTORE_NAMESPACE", "")
+    collection_name = f"{namespace}_channel_configs" if namespace else "channel_configs"
 
     logger.info("=== S3 → Firestore マイグレーション開始 ===")
     logger.info(f"S3: bucket={bucket_name}, folder={folder_path}")

@@ -166,7 +166,7 @@ class ChannelContextStore:
 
             db = get_firestore_client()
             doc = (
-                db.collection("channel_contexts")
+                db.collection(config.FIRESTORE_COLLECTION_CHANNEL_CONTEXTS)
                 .document(str(channel_id))
                 .get()
             )
@@ -187,7 +187,7 @@ class ChannelContextStore:
             from utils.firestore_client import get_firestore_client
 
             db = get_firestore_client()
-            db.collection("channel_contexts").document(
+            db.collection(config.FIRESTORE_COLLECTION_CHANNEL_CONTEXTS).document(
                 str(context.channel_id)
             ).set(context.to_dict())
         except Exception as e:

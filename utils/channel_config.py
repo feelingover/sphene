@@ -155,7 +155,7 @@ class ChannelConfigManager:
         """
         try:
             db = get_firestore_client()
-            collection_name = config.FIRESTORE_COLLECTION_NAME
+            collection_name = config.FIRESTORE_COLLECTION_CHANNEL_CONFIGS
             db.collection(collection_name).document(guild_id).delete()
             logger.info(
                 f"Firestoreドキュメント削除: {collection_name}/{guild_id}"
@@ -251,7 +251,7 @@ class ChannelConfig:
         """Firestoreから設定を読み込む"""
         try:
             db = get_firestore_client()
-            collection_name = config.FIRESTORE_COLLECTION_NAME
+            collection_name = config.FIRESTORE_COLLECTION_CHANNEL_CONFIGS
             doc = db.collection(collection_name).document(self.guild_id).get()
             if doc.exists:  # type: ignore[union-attr]
                 self.config_data = doc.to_dict()  # type: ignore[union-attr,assignment]
@@ -323,7 +323,7 @@ class ChannelConfig:
         """Firestoreに設定を保存"""
         try:
             db = get_firestore_client()
-            collection_name = config.FIRESTORE_COLLECTION_NAME
+            collection_name = config.FIRESTORE_COLLECTION_CHANNEL_CONFIGS
             db.collection(collection_name).document(self.guild_id).set(
                 self.config_data
             )

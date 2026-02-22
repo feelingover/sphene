@@ -15,6 +15,17 @@ applyTo: "**"
 
 ## Recent Changes
 
+### 2026/2: Firestoreコレクション名のネームスペース化
+
+`FIRESTORE_COLLECTION_NAME` と `USER_PROFILES_COLLECTION_NAME` を廃止し、単一の `FIRESTORE_NAMESPACE` 環境変数でコレクション名プレフィックスを制御する形式に統一。
+
+- **削除した環境変数**: `FIRESTORE_COLLECTION_NAME`, `USER_PROFILES_COLLECTION_NAME`
+- **追加した環境変数**: `FIRESTORE_NAMESPACE`（空=プレフィックスなし、設定時: `{namespace}_channel_configs` 等）
+- **追加した定数**: `FIRESTORE_COLLECTION_CHANNEL_CONFIGS`, `FIRESTORE_COLLECTION_USER_PROFILES`, `FIRESTORE_COLLECTION_CHANNEL_CONTEXTS`
+- **ヘルパー関数**: `config.get_collection_name(base_name)` でネームスペース付きコレクション名を生成
+- `memory/channel_context.py` のハードコード `"channel_contexts"` を定数参照に修正
+- 移行スクリプト: `scripts/migrate_firestore_namespace.py`（旧コレクション→新ネームスペース付きコレクションへのコピー）
+
 ### 2026/2: ストレージタイプ設定の統合
 
 `CHANNEL_CONFIG_STORAGE_TYPE`、`CHANNEL_CONTEXT_STORAGE_TYPE`、`USER_PROFILE_STORAGE_TYPE` の3変数を廃止し、単一の `STORAGE_TYPE`（`local` | `firestore`）に統合。`memory` オプションも廃止。

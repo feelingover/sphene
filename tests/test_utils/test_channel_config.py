@@ -183,7 +183,7 @@ class TestChannelConfig:
             mock_doc
         )
 
-        with patch.object(config, "FIRESTORE_COLLECTION_NAME", "test_collection"):
+        with patch.object(config, "FIRESTORE_COLLECTION_CHANNEL_CONFIGS", "test_collection"):
             conf = ChannelConfig(
                 guild_id="test_guild", storage_type="firestore", debug_mode=True
             )
@@ -219,7 +219,7 @@ class TestChannelConfig:
             mock_doc
         )
 
-        with patch.object(config, "FIRESTORE_COLLECTION_NAME", "test_collection"):
+        with patch.object(config, "FIRESTORE_COLLECTION_CHANNEL_CONFIGS", "test_collection"):
             conf = ChannelConfig(
                 guild_id="test_guild", storage_type="firestore", debug_mode=True
             )
@@ -278,7 +278,7 @@ class TestChannelConfig:
         mock_db = MagicMock()
         mock_get_firestore_client.return_value = mock_db
 
-        with patch.object(config, "FIRESTORE_COLLECTION_NAME", "test_collection"):
+        with patch.object(config, "FIRESTORE_COLLECTION_CHANNEL_CONFIGS", "test_collection"):
             conf = ChannelConfig(
                 guild_id="test_guild", storage_type="firestore", debug_mode=True
             )
@@ -317,7 +317,7 @@ class TestChannelConfig:
 
         with patch.object(
             config, "STORAGE_TYPE", "firestore"
-        ), patch.object(config, "FIRESTORE_COLLECTION_NAME", "test_collection"):
+        ), patch.object(config, "FIRESTORE_COLLECTION_CHANNEL_CONFIGS", "test_collection"):
             # ChannelConfigの初期化時にFirestoreにアクセスしないようdebug_modeで作成
             mock_config = ChannelConfig(
                 guild_id="test_guild", debug_mode=True
