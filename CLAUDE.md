@@ -37,8 +37,6 @@ utils/
   text_utils.py           # Text processing, translation
 log_utils/logger.py       # Logging config
 storage/                  # Local file storage (prompts, configs)
-scripts/
-  migrate_s3_to_firestore.py  # S3→Firestore migration tool
 ```
 
 ### Key Config Env Vars
