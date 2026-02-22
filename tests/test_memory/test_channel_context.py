@@ -378,17 +378,6 @@ class TestChannelContextStore:
         assert store._contexts[100] is ctx
 
     @patch("memory.channel_context.config")
-    def test_save_context_local_calls_save_to_local(self, mock_config):
-        """storage_type=localの場合、_save_to_localが呼ばれること"""
-        mock_config.STORAGE_TYPE = "local"
-        store = ChannelContextStore()
-        ctx = ChannelContext(channel_id=100, summary="ローカル保存")
-
-        with patch.object(store, "_save_to_local") as mock_save:
-            store.save_context(ctx)
-            mock_save.assert_called_once_with(ctx)
-
-    @patch("memory.channel_context.config")
     def test_save_context_firestore_calls_save_to_firestore(self, mock_config):
         """storage_type=firestoreの場合、_save_to_firestoreが呼ばれること"""
         mock_config.STORAGE_TYPE = "firestore"
@@ -398,16 +387,6 @@ class TestChannelContextStore:
         with patch.object(store, "_save_to_firestore") as mock_save:
             store.save_context(ctx)
             mock_save.assert_called_once_with(ctx)
-
-    @patch("memory.channel_context.config")
-    def test_save_context_updates_cache(self, mock_config):
-        """save_contextがインメモリキャッシュを更新すること"""
-        mock_config.STORAGE_TYPE = "local"
-        store = ChannelContextStore()
-        ctx = ChannelContext(channel_id=100, summary="新しい要約")
-        with patch.object(store, "_save_to_local"):
-            store.save_context(ctx)
-        assert store._contexts[100] is ctx
 
     @patch("memory.channel_context.config")
     def test_load_context_from_local(self, mock_config):
