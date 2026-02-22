@@ -42,7 +42,7 @@ XIVAPI v2ゲームデータ検索。アイテム、アクション、レシピ�
 ## Design Patterns
 
 - **Per-channel instances**: `channel_conversations: defaultdict[str, Sphene]` でチャンネルごとに独立した会話（ユーザー間での履歴共有）
-- **Storage abstraction**: ローカル/Firestoreを環境変数で切り替え（チャンネル設定・チャンネルコンテキスト・ユーザープロファイル）
+- **Storage abstraction**: `STORAGE_TYPE`（`local` | `firestore`）1変数でバックエンドを統一切り替え（チャンネル設定・チャンネルコンテキスト・ユーザープロファイル）
 - **Singleton stores**: `get_channel_context_store()`, `get_user_profile_store()` でインメモリキャッシュを共有
 - **Atomic write**: `tempfile.NamedTemporaryFile` + `os.replace()` でデータロスを防止（channel_context, user_profile のローカル保存）
 - **Error strategy map**: `google.api_core.exceptions` に基づくエラータイプ別処理

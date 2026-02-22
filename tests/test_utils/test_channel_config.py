@@ -316,7 +316,7 @@ class TestChannelConfig:
         manager = ChannelConfigManager(debug_mode=False)
 
         with patch.object(
-            config, "CHANNEL_CONFIG_STORAGE_TYPE", "firestore"
+            config, "STORAGE_TYPE", "firestore"
         ), patch.object(config, "FIRESTORE_COLLECTION_NAME", "test_collection"):
             # ChannelConfigの初期化時にFirestoreにアクセスしないようdebug_modeで作成
             mock_config = ChannelConfig(

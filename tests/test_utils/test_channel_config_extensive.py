@@ -56,7 +56,7 @@ class TestChannelConfigExtensive:
         manager = ChannelConfigManager(debug_mode=False)
         mock_exists.return_value = True
         
-        with patch("config.CHANNEL_CONFIG_STORAGE_TYPE", "local"):
+        with patch("config.STORAGE_TYPE", "local"):
             result = manager.delete_guild_config("12345")
             assert result is True
             mock_remove.assert_called_once_with("storage/channel_list.12345.json")
@@ -68,7 +68,7 @@ class TestChannelConfigExtensive:
         mock_db = MagicMock()
         mock_get_firestore.return_value = mock_db
         
-        with patch("config.CHANNEL_CONFIG_STORAGE_TYPE", "firestore"):
+        with patch("config.STORAGE_TYPE", "firestore"):
             with patch("config.FIRESTORE_COLLECTION_NAME", "test_cols"):
                 result = manager.delete_guild_config("54321")
                 assert result is True

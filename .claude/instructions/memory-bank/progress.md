@@ -5,13 +5,14 @@ applyTo: "**"
 
 ## Completed Features
 
+- **ストレージタイプ設定の統合**: `CHANNEL_CONFIG_STORAGE_TYPE`・`CHANNEL_CONTEXT_STORAGE_TYPE`・`USER_PROFILE_STORAGE_TYPE` を `STORAGE_TYPE` 1変数に統合。`memory` オプション廃止。
 - **Vertex AI Native SDK (`google-genai`) 移行**: OpenAI互換APIを廃止し、最新SDKへ完全移行（Gemini 3/2.5対応、Grounding対応）
 - **記憶機能 Phase 1**: 短期記憶バッファ（ChannelMessageBuffer、dequeリングバッファ）
 - **記憶機能 Phase 2**: 自律応答（ハイブリッドJudge: RuleBasedJudge + LLMJudge）
 - **記憶機能 Phase 2A**: チャンネルコンテキスト（ローリング要約）+ 応答多様性（3段階）+ Judge拡張（会話フロー考慮）
 - **記憶機能 Phase 2B（コンテキスト統合）**: チャンネル単位履歴 + メンション/自律応答の共有コンテキスト注入
 - **記憶機能 Phase 2B（ユーザープロファイル）**: 交流回数・関係性レベル・直近話題の記録と応答生成への注入
-  - `UserProfile` dataclass + `UserProfileStore`（memory/local/firestore）
+  - `UserProfile` dataclass + `UserProfileStore`（local/firestore）
   - `familiarity_level`（stranger/acquaintance/regular/close）閾値ベース自動算出
   - `last_topic`: チャンネルコンテキストの topic_keywords を応答後に同期
   - `input_message()` に `user_profile` パラメータ追加

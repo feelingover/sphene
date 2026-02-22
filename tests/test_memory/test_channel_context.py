@@ -333,9 +333,10 @@ class TestChannelContextStore:
     @patch("memory.channel_context.config")
     def test_get_context_returns_new_context(self, mock_config):
         """存在しないチャンネルIDで新しいコンテキストが作成されること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "memory"
+        mock_config.STORAGE_TYPE = "local"
         store = ChannelContextStore()
-        ctx = store.get_context(100)
+        with patch("memory.channel_context.os.path.exists", return_value=False):
+            ctx = store.get_context(100)
         assert ctx.channel_id == 100
         assert ctx.summary == ""
         assert ctx.message_count_since_update == 0
@@ -343,9 +344,10 @@ class TestChannelContextStore:
     @patch("memory.channel_context.config")
     def test_get_context_caches(self, mock_config):
         """同じチャンネルIDで同一オブジェクトがキャッシュから返されること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "memory"
+        mock_config.STORAGE_TYPE = "local"
         store = ChannelContextStore()
-        ctx1 = store.get_context(100)
+        with patch("memory.channel_context.os.path.exists", return_value=False):
+            ctx1 = store.get_context(100)
         ctx1.summary = "キャッシュテスト"
         ctx2 = store.get_context(100)
         assert ctx2 is ctx1
@@ -354,41 +356,31 @@ class TestChannelContextStore:
     @patch("memory.channel_context.config")
     def test_get_context_different_channels(self, mock_config):
         """異なるチャンネルIDで別のコンテキストが返されること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "memory"
+        mock_config.STORAGE_TYPE = "local"
         store = ChannelContextStore()
-        ctx1 = store.get_context(100)
-        ctx2 = store.get_context(200)
+        with patch("memory.channel_context.os.path.exists", return_value=False):
+            ctx1 = store.get_context(100)
+            ctx2 = store.get_context(200)
         assert ctx1 is not ctx2
         assert ctx1.channel_id == 100
         assert ctx2.channel_id == 200
 
     @patch("memory.channel_context.config")
-    def test_save_context_memory_noop(self, mock_config):
-        """storage_type=memoryの場合、インメモリキャッシュのみ更新すること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "memory"
+    def test_save_context_updates_cache_and_calls_save(self, mock_config):
+        """save_contextがインメモリキャッシュを更新し、_save_to_localを呼ぶこと"""
+        mock_config.STORAGE_TYPE = "local"
         store = ChannelContextStore()
         ctx = ChannelContext(channel_id=100, summary="保存テスト")
-        store.save_context(ctx)
-        # インメモリキャッシュに反映されていること
-        cached = store.get_context(100)
-        assert cached.summary == "保存テスト"
-        assert cached is ctx
-
-    @patch("memory.channel_context.config")
-    def test_save_context_local_calls_save_to_local(self, mock_config):
-        """storage_type=localの場合、_save_to_localが呼ばれること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "local"
-        store = ChannelContextStore()
-        ctx = ChannelContext(channel_id=100, summary="ローカル保存")
-
         with patch.object(store, "_save_to_local") as mock_save:
             store.save_context(ctx)
             mock_save.assert_called_once_with(ctx)
+        # インメモリキャッシュに反映されていること
+        assert store._contexts[100] is ctx
 
     @patch("memory.channel_context.config")
     def test_save_context_firestore_calls_save_to_firestore(self, mock_config):
         """storage_type=firestoreの場合、_save_to_firestoreが呼ばれること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "firestore"
+        mock_config.STORAGE_TYPE = "firestore"
         store = ChannelContextStore()
         ctx = ChannelContext(channel_id=100, summary="Firestore保存")
 
@@ -397,18 +389,9 @@ class TestChannelContextStore:
             mock_save.assert_called_once_with(ctx)
 
     @patch("memory.channel_context.config")
-    def test_save_context_updates_cache(self, mock_config):
-        """save_contextがインメモリキャッシュを更新すること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "memory"
-        store = ChannelContextStore()
-        ctx = ChannelContext(channel_id=100, summary="新しい要約")
-        store.save_context(ctx)
-        assert store._contexts[100] is ctx
-
-    @patch("memory.channel_context.config")
     def test_load_context_from_local(self, mock_config):
         """ローカルファイルからコンテキストを読み込めること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "local"
+        mock_config.STORAGE_TYPE = "local"
         store = ChannelContextStore()
 
         stored_data = {
@@ -431,7 +414,7 @@ class TestChannelContextStore:
     @patch("memory.channel_context.config")
     def test_load_context_local_file_not_found(self, mock_config):
         """ローカルファイルが存在しない場合、新規コンテキストが作成されること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "local"
+        mock_config.STORAGE_TYPE = "local"
         store = ChannelContextStore()
 
         with patch("memory.channel_context.os.path.exists", return_value=False):
@@ -442,7 +425,7 @@ class TestChannelContextStore:
     @patch("memory.channel_context.config")
     def test_load_context_local_read_error(self, mock_config):
         """ローカルファイル読み込みエラー時にNoneが返り新規作成されること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "local"
+        mock_config.STORAGE_TYPE = "local"
         store = ChannelContextStore()
 
         with patch("memory.channel_context.os.path.exists", return_value=True), \
@@ -458,7 +441,7 @@ class TestGetChannelContextStore:
     @patch("memory.channel_context.config")
     def test_singleton(self, mock_config):
         """同一インスタンスが返されること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "memory"
+        mock_config.STORAGE_TYPE = "local"
         import memory.channel_context as mod
 
         mod._store = None  # シングルトンをリセット
@@ -470,7 +453,7 @@ class TestGetChannelContextStore:
     @patch("memory.channel_context.config")
     def test_creates_new_instance_when_none(self, mock_config):
         """_storeがNoneの場合に新しいインスタンスが作成されること"""
-        mock_config.CHANNEL_CONTEXT_STORAGE_TYPE = "memory"
+        mock_config.STORAGE_TYPE = "local"
         import memory.channel_context as mod
 
         mod._store = None

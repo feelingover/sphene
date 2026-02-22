@@ -27,15 +27,13 @@ BOT_NAME: str = str(os.getenv("BOT_NAME", "アサヒ"))
 COMMAND_GROUP_NAME: str = str(os.getenv("COMMAND_GROUP_NAME", "asahi"))
 SYSTEM_PROMPT_FILENAME: str = str(os.getenv("SYSTEM_PROMPT_FILENAME", "system.txt"))
 
-# チャンネル設定の保存場所設定（local または firestore）
-CHANNEL_CONFIG_STORAGE_TYPE: str = str(
-    os.getenv("CHANNEL_CONFIG_STORAGE_TYPE", "local")
-)
+# ストレージタイプ（local または firestore）
+STORAGE_TYPE: str = str(os.getenv("STORAGE_TYPE", "local"))
 
 # システムプロンプトのファイルパス
 SYSTEM_PROMPT_PATH: str = str(os.getenv("SYSTEM_PROMPT_PATH", "storage/system.txt"))
 
-# Firestoreコレクション名（CHANNEL_CONFIG_STORAGE_TYPE=firestore の場合に使用）
+# Firestoreコレクション名（STORAGE_TYPE=firestore の場合に使用）
 FIRESTORE_COLLECTION_NAME: str = str(
     os.getenv("FIRESTORE_COLLECTION_NAME", "channel_configs")
 )
@@ -74,7 +72,6 @@ JUDGE_LLM_THRESHOLD_HIGH: int = int(os.getenv("JUDGE_LLM_THRESHOLD_HIGH", "60"))
 CHANNEL_CONTEXT_ENABLED: bool = (
     os.getenv("CHANNEL_CONTEXT_ENABLED", "false").lower() == "true"
 )
-CHANNEL_CONTEXT_STORAGE_TYPE: str = os.getenv("CHANNEL_CONTEXT_STORAGE_TYPE", "memory")
 SUMMARIZE_EVERY_N_MESSAGES: int = int(os.getenv("SUMMARIZE_EVERY_N_MESSAGES", "20"))
 SUMMARIZE_EVERY_N_MINUTES: int = int(os.getenv("SUMMARIZE_EVERY_N_MINUTES", "15"))
 SUMMARIZE_MODEL: str = os.getenv("SUMMARIZE_MODEL", "")
@@ -86,7 +83,6 @@ RESPONSE_DIVERSITY_ENABLED: bool = (
 
 # === ユーザープロファイル設定 (Phase 2B) ===
 USER_PROFILE_ENABLED: bool = os.getenv("USER_PROFILE_ENABLED", "false").lower() == "true"
-USER_PROFILE_STORAGE_TYPE: str = os.getenv("USER_PROFILE_STORAGE_TYPE", "memory")
 FAMILIARITY_THRESHOLD_ACQUAINTANCE: int = int(os.getenv("FAMILIARITY_THRESHOLD_ACQUAINTANCE", "6"))
 FAMILIARITY_THRESHOLD_REGULAR: int = int(os.getenv("FAMILIARITY_THRESHOLD_REGULAR", "31"))
 FAMILIARITY_THRESHOLD_CLOSE: int = int(os.getenv("FAMILIARITY_THRESHOLD_CLOSE", "101"))

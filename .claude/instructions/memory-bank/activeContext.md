@@ -5,7 +5,7 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
-- 全テスト通過（460件）
+- 全テスト通過（464件）
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
 - 環境変数を `GEMINI_MODEL` 形式に統一、`OPENAI_API_KEY` を完全削除。
 - Google検索Grounding機能のサポート開始（`ENABLE_GOOGLE_SEARCH_GROUNDING`）。
@@ -14,6 +14,14 @@ applyTo: "**"
 - ツール呼び出しループの改善済み（上限の環境変数化 + ツールなし最終コール）。
 
 ## Recent Changes
+
+### 2026/2: ストレージタイプ設定の統合
+
+`CHANNEL_CONFIG_STORAGE_TYPE`、`CHANNEL_CONTEXT_STORAGE_TYPE`、`USER_PROFILE_STORAGE_TYPE` の3変数を廃止し、単一の `STORAGE_TYPE`（`local` | `firestore`）に統合。`memory` オプションも廃止。
+
+- **削除した環境変数**: `CHANNEL_CONFIG_STORAGE_TYPE`, `CHANNEL_CONTEXT_STORAGE_TYPE`, `USER_PROFILE_STORAGE_TYPE`
+- **追加した環境変数**: `STORAGE_TYPE=local`（デフォルト: `"local"`）
+- 変更ファイル: `config.py`, `utils/channel_config.py`, `memory/channel_context.py`, `memory/user_profile.py`, `.env.sample`, `README.md`, テスト4ファイル
 
 ### 2026/2: Phase 2B - ユーザープロファイル（相手を知る）
 
@@ -24,11 +32,11 @@ applyTo: "**"
   - `familiarity_level` プロパティ: interaction_count の閾値から自動算出（LLM不要）
     - `stranger`（0-5回）→ `acquaintance`（6-30回）→ `regular`（31-100回）→ `close`（101回〜）
   - `format_for_injection()`: interaction_count=0 のとき空文字（新規ユーザーはプロファイル注入しない）
-  - ストレージ: memory / local (`storage/user_profile.{user_id}.json`) / firestore (`user_profiles/{user_id}`)
+  - ストレージ: local (`storage/user_profile.{user_id}.json`) / firestore (`user_profiles/{user_id}`)
   - アトミック書き込み（tempfile + os.replace）でデータロスを防止
   - シングルトン: `get_user_profile_store()`
-- **`config.py`**: 環境変数5個追加
-  - `USER_PROFILE_ENABLED`, `USER_PROFILE_STORAGE_TYPE`
+- **`config.py`**: 環境変数4個追加
+  - `USER_PROFILE_ENABLED`
   - `FAMILIARITY_THRESHOLD_ACQUAINTANCE`（デフォルト6）, `FAMILIARITY_THRESHOLD_REGULAR`（デフォルト31）, `FAMILIARITY_THRESHOLD_CLOSE`（デフォルト101）
 - **`ai/conversation.py`**: `input_message()` に `user_profile: str = ""` パラメータ追加、context_section に注入
 - **`bot/events.py`**: 3箇所に処理追加
@@ -77,8 +85,8 @@ applyTo: "**"
 - 新ルール: 2人会話(-20), ボット言及なし(-10), 高頻度(-10), 得意話題(+15), 沈黙後(+10), 会話減衰(-10〜-15)
 - `_determine_response_type()`: `RESPONSE_DIVERSITY_ENABLED` 時にスコアに応じた応答タイプ選択
 
-#### 新規環境変数（7個）
-- `CHANNEL_CONTEXT_ENABLED`, `CHANNEL_CONTEXT_STORAGE_TYPE`, `SUMMARIZE_EVERY_N_MESSAGES`, `SUMMARIZE_EVERY_N_MINUTES`, `SUMMARIZE_MODEL`
+#### 新規環境変数（6個）
+- `CHANNEL_CONTEXT_ENABLED`, `SUMMARIZE_EVERY_N_MESSAGES`, `SUMMARIZE_EVERY_N_MINUTES`, `SUMMARIZE_MODEL`
 - `RESPONSE_DIVERSITY_ENABLED`
 
 ### 2026/2: ツール呼び出しループの改善
