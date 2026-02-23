@@ -60,7 +60,6 @@ LOG_FORMAT=json
 # === 記憶機能設定 ===
 
 # 短期記憶（チャンネルメッセージバッファ）
-MEMORY_ENABLED=false
 # CHANNEL_BUFFER_SIZE=50
 # CHANNEL_BUFFER_TTL_MINUTES=30
 

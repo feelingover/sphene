@@ -98,18 +98,17 @@ async def _collect_ai_context(
     topic_keywords: list[str] = []
     user_profile_str = ""
 
-    if config.MEMORY_ENABLED:
-        buffer = get_channel_buffer()
-        channel_context = buffer.get_context_string(message.channel.id, limit=10)
+    buffer = get_channel_buffer()
+    channel_context = buffer.get_context_string(message.channel.id, limit=10)
 
-        if config.CHANNEL_CONTEXT_ENABLED:
-            from memory.channel_context import get_channel_context_store
+    if config.CHANNEL_CONTEXT_ENABLED:
+        from memory.channel_context import get_channel_context_store
 
-            ctx = get_channel_context_store().get_context(message.channel.id)
-            channel_summary = ctx.format_for_injection()
-            topic_keywords = ctx.topic_keywords
+        ctx = get_channel_context_store().get_context(message.channel.id)
+        channel_summary = ctx.format_for_injection()
+        topic_keywords = ctx.topic_keywords
 
-    if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
+    if config.USER_PROFILE_ENABLED:
         from memory.user_profile import get_user_profile_store
 
         profile = get_user_profile_store().get_profile(
@@ -178,12 +177,12 @@ def _post_response_update(
     """
     from memory.short_term import ChannelMessage, get_channel_buffer
 
-    if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED and topic_keywords:
+    if config.USER_PROFILE_ENABLED and topic_keywords:
         from memory.user_profile import get_user_profile_store
 
         get_user_profile_store().update_last_topic(message.author.id, topic_keywords)
 
-    if config.MEMORY_ENABLED and bot_user is not None:
+    if bot_user is not None:
         get_channel_buffer().add_message(
             ChannelMessage(
                 message_id=0,
@@ -493,38 +492,37 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             return  # 処理を中断
 
         # 短期記憶: 全メッセージをチャンネルバッファに追加
-        if config.MEMORY_ENABLED:
-            from memory.short_term import ChannelMessage, get_channel_buffer
+        from memory.short_term import ChannelMessage, get_channel_buffer
 
-            buffer = get_channel_buffer()
-            buffer.add_message(
-                ChannelMessage(
-                    message_id=message.id,
-                    channel_id=message.channel.id,
-                    author_id=message.author.id,
-                    author_name=message.author.display_name,
-                    content=message.content or "",
-                    timestamp=message.created_at,
-                )
+        buffer = get_channel_buffer()
+        buffer.add_message(
+            ChannelMessage(
+                message_id=message.id,
+                channel_id=message.channel.id,
+                author_id=message.author.id,
+                author_name=message.author.display_name,
+                content=message.content or "",
+                timestamp=message.created_at,
             )
+        )
 
-            # チャンネルコンテキスト: メッセージカウント + 要約トリガー
-            if config.CHANNEL_CONTEXT_ENABLED:
-                from memory.channel_context import get_channel_context_store
-                from memory.summarizer import get_summarizer
+        # チャンネルコンテキスト: メッセージカウント + 要約トリガー
+        if config.CHANNEL_CONTEXT_ENABLED:
+            from memory.channel_context import get_channel_context_store
+            from memory.summarizer import get_summarizer
 
-                ctx = get_channel_context_store().get_context(message.channel.id)
-                ctx.increment_message_count()
-                recent = buffer.get_recent_messages(message.channel.id, limit=20)
-                get_summarizer().maybe_summarize(message.channel.id, recent)
+            ctx = get_channel_context_store().get_context(message.channel.id)
+            ctx.increment_message_count()
+            recent = buffer.get_recent_messages(message.channel.id, limit=20)
+            get_summarizer().maybe_summarize(message.channel.id, recent)
 
-            # ユーザープロファイル: メッセージ記録
-            if config.USER_PROFILE_ENABLED:
-                from memory.user_profile import get_user_profile_store
+        # ユーザープロファイル: メッセージ記録
+        if config.USER_PROFILE_ENABLED:
+            from memory.user_profile import get_user_profile_store
 
-                get_user_profile_store().record_message(
-                    message.author.id, message.channel.id, message.author.display_name
-                )
+            get_user_profile_store().record_message(
+                message.author.id, message.channel.id, message.author.display_name
+            )
 
         # 画像添付の検出
         images = []
@@ -539,21 +537,21 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         is_mentioned, question, is_reply = await is_bot_mentioned(bot, message)
         if is_mentioned:
             # ユーザープロファイル: ボットメンション記録
-            if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
+            if config.USER_PROFILE_ENABLED:
                 from memory.user_profile import get_user_profile_store
 
                 get_user_profile_store().record_bot_mention(message.author.id)
 
             await process_conversation(message, question, is_reply, images)
             # エンゲージメント記録（自律応答のスコアブーストに使用）
-            if config.AUTONOMOUS_RESPONSE_ENABLED and config.MEMORY_ENABLED:
+            if config.AUTONOMOUS_RESPONSE_ENABLED:
                 from memory.judge import get_judge
 
                 get_judge().record_response(message.channel.id)
             return
 
         # 自律応答: メンションされていない場合の判定
-        if config.AUTONOMOUS_RESPONSE_ENABLED and config.MEMORY_ENABLED:
+        if config.AUTONOMOUS_RESPONSE_ENABLED:
             await _try_autonomous_response(bot, message, images)
 
     except Exception as e:

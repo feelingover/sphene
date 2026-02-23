@@ -64,23 +64,22 @@ class SpheneBot:
             logger.error(f"クリーンアップタスクでエラーが発生しました: {str(e)}", exc_info=True)
 
         # チャンネルバッファのクリーンアップ
-        if config.MEMORY_ENABLED:
-            try:
-                from memory.short_term import get_channel_buffer
+        try:
+            from memory.short_term import get_channel_buffer
 
-                expired = get_channel_buffer().cleanup_expired()
-                if expired > 0:
-                    logger.info(
-                        f"チャンネルバッファクリーンアップ: {expired}件削除"
-                    )
-            except Exception as e:
-                logger.error(
-                    f"チャンネルバッファクリーンアップでエラー: {str(e)}",
-                    exc_info=True,
+            expired = get_channel_buffer().cleanup_expired()
+            if expired > 0:
+                logger.info(
+                    f"チャンネルバッファクリーンアップ: {expired}件削除"
                 )
+        except Exception as e:
+            logger.error(
+                f"チャンネルバッファクリーンアップでエラー: {str(e)}",
+                exc_info=True,
+            )
 
         # ユーザープロファイルの永続化
-        if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
+        if config.USER_PROFILE_ENABLED:
             try:
                 from memory.user_profile import get_user_profile_store
 
@@ -90,7 +89,7 @@ class SpheneBot:
                 logger.error(f"ユーザープロファイル永続化エラー: {str(e)}", exc_info=True)
 
         # 時間ベースの要約チェック
-        if config.CHANNEL_CONTEXT_ENABLED and config.MEMORY_ENABLED:
+        if config.CHANNEL_CONTEXT_ENABLED:
             try:
                 from memory.channel_context import get_channel_context_store
                 from memory.short_term import get_channel_buffer
