@@ -236,6 +236,7 @@ class TestCollectAiContext:
         """CHANNEL_CONTEXT_ENABLED=False のとき channel_context のみ返す"""
         mock_config.CHANNEL_CONTEXT_ENABLED = False
         mock_config.USER_PROFILE_ENABLED = False
+        mock_config.REFLECTION_ENABLED = False
 
         mock_buffer = MagicMock()
         mock_buffer.get_context_string.return_value = "past messages"
@@ -244,12 +245,13 @@ class TestCollectAiContext:
         message = MagicMock()
         message.channel.id = 100
 
-        ctx, summary, keywords, profile = await _collect_ai_context(message)
+        ctx, summary, keywords, profile, facts = await _collect_ai_context(message)
 
         assert ctx == "past messages"
         assert summary == ""
         assert keywords == []
         assert profile == ""
+        assert facts == ""
 
     @pytest.mark.asyncio
     @patch("bot.events.config")
@@ -264,6 +266,7 @@ class TestCollectAiContext:
         """CHANNEL_CONTEXT_ENABLED=True のとき summary と topic_keywords が返る"""
         mock_config.CHANNEL_CONTEXT_ENABLED = True
         mock_config.USER_PROFILE_ENABLED = False
+        mock_config.REFLECTION_ENABLED = False
 
         mock_buffer = MagicMock()
         mock_buffer.get_context_string.return_value = "ctx"
@@ -279,7 +282,7 @@ class TestCollectAiContext:
         message = MagicMock()
         message.channel.id = 100
 
-        ctx, summary, keywords, profile = await _collect_ai_context(message)
+        ctx, summary, keywords, profile, facts = await _collect_ai_context(message)
 
         assert ctx == "ctx"
         assert summary == "summary text"
@@ -298,6 +301,7 @@ class TestCollectAiContext:
         """USER_PROFILE_ENABLED=True のとき user_profile_str が返る"""
         mock_config.CHANNEL_CONTEXT_ENABLED = False
         mock_config.USER_PROFILE_ENABLED = True
+        mock_config.REFLECTION_ENABLED = False
 
         mock_buffer = MagicMock()
         mock_buffer.get_context_string.return_value = ""
@@ -314,7 +318,7 @@ class TestCollectAiContext:
         message.author.id = 200
         message.author.display_name = "Taro"
 
-        ctx, summary, keywords, profile = await _collect_ai_context(message)
+        ctx, summary, keywords, profile, facts = await _collect_ai_context(message)
 
         assert profile == "user profile text"
 

@@ -1,5 +1,10 @@
 import asyncio
 import random
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from memory.fact_store import Fact
 
 import discord
 from discord import app_commands
@@ -82,14 +87,14 @@ async def is_bot_mentioned(
 
 async def _collect_ai_context(
     message: discord.Message,
-) -> tuple[str, str, list[str], str]:
+) -> tuple[str, str, list[str], str, str]:
     """AIへの入力コンテキスト情報を収集する
 
     Args:
         message: Discordメッセージオブジェクト
 
     Returns:
-        tuple: (channel_context, channel_summary, topic_keywords, user_profile_str)
+        tuple: (channel_context, channel_summary, topic_keywords, user_profile_str, relevant_facts_str)
     """
     from memory.short_term import get_channel_buffer
 
@@ -97,6 +102,7 @@ async def _collect_ai_context(
     channel_summary = ""
     topic_keywords: list[str] = []
     user_profile_str = ""
+    relevant_facts_str = ""
 
     buffer = get_channel_buffer()
     channel_context = buffer.get_context_string(message.channel.id, limit=10)
@@ -116,7 +122,21 @@ async def _collect_ai_context(
         )
         user_profile_str = profile.format_for_injection()
 
-    return channel_context, channel_summary, topic_keywords, user_profile_str
+    if config.REFLECTION_ENABLED:
+        from memory.fact_store import extract_keywords, get_fact_store
+
+        keywords = extract_keywords(message.content or "")
+        facts = get_fact_store().search(
+            channel_id=message.channel.id,
+            keywords=keywords,
+            user_ids=[message.author.id],
+            limit=3,
+        )
+        if facts:
+            lines = ["【関連する過去の記憶】"] + [f"- {f.content}" for f in facts]
+            relevant_facts_str = "\n".join(lines)
+
+    return channel_context, channel_summary, topic_keywords, user_profile_str, relevant_facts_str
 
 
 def _get_or_reset_conversation(channel_id: str) -> "Sphene":
@@ -190,7 +210,7 @@ def _post_response_update(
                 author_id=bot_user.id,
                 author_name=bot_user.display_name,
                 content=answer,
-                timestamp=message.created_at,
+                timestamp=datetime.now(timezone.utc),
                 is_bot=True,
             )
         )
@@ -213,7 +233,7 @@ async def process_conversation(
     channel_id = str(message.channel.id)
     author_name = message.author.display_name
 
-    channel_context, channel_summary, topic_keywords, user_profile_str = (
+    channel_context, channel_summary, topic_keywords, user_profile_str, relevant_facts_str = (
         await _collect_ai_context(message)
     )
     api = _get_or_reset_conversation(channel_id)
@@ -226,6 +246,7 @@ async def process_conversation(
         channel_context=channel_context,
         channel_summary=channel_summary,
         user_profile=user_profile_str,
+        relevant_facts=relevant_facts_str,
     )
 
     if answer:
@@ -390,7 +411,7 @@ async def _process_short_ack(
                     author_id=bot.user.id,
                     author_name=bot.user.display_name,
                     content=answer,
-                    timestamp=message.created_at,
+                    timestamp=datetime.now(timezone.utc),
                     is_bot=True,
                 )
             )
@@ -412,7 +433,7 @@ async def _process_autonomous_response(
 
     channel_id_str = str(message.channel.id)
 
-    channel_context, channel_summary, topic_keywords, user_profile_str = (
+    channel_context, channel_summary, topic_keywords, user_profile_str, relevant_facts_str = (
         await _collect_ai_context(message)
     )
 
@@ -430,6 +451,7 @@ async def _process_autonomous_response(
         channel_context=channel_context,
         channel_summary=channel_summary,
         user_profile=user_profile_str,
+        relevant_facts=relevant_facts_str,
     )
 
     if answer:
@@ -495,6 +517,10 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         from memory.short_term import ChannelMessage, get_channel_buffer
 
         buffer = get_channel_buffer()
+
+        # バッファ追加前に最終メッセージ時刻を取得（再活性化チェック用）
+        pre_add_last_time = buffer.get_last_message_time(message.channel.id)
+
         buffer.add_message(
             ChannelMessage(
                 message_id=message.id,
@@ -523,6 +549,18 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             get_user_profile_store().record_message(
                 message.author.id, message.channel.id, message.author.display_name
             )
+
+        # バッファ量ベースの反省会トリガー
+        if config.REFLECTION_ENABLED:
+            from memory.reflection import get_reflection_engine
+
+            engine = get_reflection_engine()
+            recent = buffer.get_recent_messages(message.channel.id, limit=100)
+            if (
+                buffer.count_messages_since_reflection(message.channel.id)
+                >= config.REFLECTION_MAX_BUFFER_MESSAGES
+            ):
+                engine.maybe_reflect(message.channel.id, recent)
 
         # 画像添付の検出
         images = []
@@ -554,9 +592,85 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         if config.AUTONOMOUS_RESPONSE_ENABLED:
             await _try_autonomous_response(bot, message, images)
 
+        # 自発的会話: 沈黙後の再活性化チェック
+        if config.PROACTIVE_CONVERSATION_ENABLED and pre_add_last_time is not None:
+            await _try_proactive_conversation(bot, message, pre_add_last_time)
+
     except Exception as e:
         logger.error(f"メッセージ処理中にエラー発生: {str(e)}", exc_info=True)
         await message.channel.send("ごめん！メッセージ処理中にエラーが発生しちゃった...😢")
+
+
+async def _try_proactive_conversation(
+    bot: commands.Bot,
+    message: discord.Message,
+    pre_add_last_time: datetime,
+) -> None:
+    """沈黙後の再活性化時、shareable ファクトで自発会話を試みる
+
+    Args:
+        bot: Discordクライアント
+        message: トリガーとなったDiscordメッセージ
+        pre_add_last_time: バッファ追加前の最終メッセージ時刻（UTC）
+    """
+    from memory.fact_store import get_fact_store
+    from memory.judge import get_judge
+
+    # 再活性化チェック（前のメッセージからの沈黙時間）
+    msg_time = message.created_at
+    if msg_time.tzinfo is None:
+        msg_time = msg_time.replace(tzinfo=timezone.utc)
+    silence_minutes = (msg_time - pre_add_last_time).total_seconds() / 60
+    if silence_minutes < config.PROACTIVE_SILENCE_MINUTES:
+        return
+
+    # クールダウンチェック
+    if get_judge().is_in_cooldown(message.channel.id):
+        return
+
+    # shareable ファクト取得
+    facts = get_fact_store().get_shareable_facts(message.channel.id)
+    if not facts:
+        return
+
+    # 最上位のファクトで自発会話メッセージを生成・送信
+    fact = facts[0]
+    await _dispatch_proactive_message(bot, message, fact)
+
+
+async def _dispatch_proactive_message(
+    bot: commands.Bot,
+    message: discord.Message,
+    fact: "Fact",
+) -> None:
+    """shareable ファクトをもとに自発会話メッセージを生成して送信する。
+
+    Sphene の会話履歴を汚染しないよう generate_proactive_message を使う。
+
+    Args:
+        bot: Discordクライアント
+        message: トリガーとなったDiscordメッセージ
+        fact: 話題にするファクト
+    """
+    from ai.conversation import generate_proactive_message
+    from memory.judge import get_judge
+    from memory.short_term import get_channel_buffer
+
+    channel_context = get_channel_buffer().get_context_string(message.channel.id, limit=10) or None
+
+    answer = await asyncio.to_thread(
+        generate_proactive_message,
+        fact_content=fact.content,
+        channel_context=channel_context,
+    )
+
+    if answer:
+        await _send_chunks(message, split_message(answer), is_reply=False)
+        logger.info(
+            f"自発会話送信: チャンネル={message.channel.id}, "
+            f"fact={fact.content[:50]}"
+        )
+        get_judge().record_response(message.channel.id)
 
 
 async def _handle_on_ready(

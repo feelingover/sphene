@@ -95,6 +95,7 @@ class Sphene:
         channel_context: str | None = None,
         channel_summary: str | None = None,
         user_profile: str = "",
+        relevant_facts: str = "",
     ) -> str | None:
         if not isinstance(input_text, str) or not input_text.strip():
             return None
@@ -162,6 +163,8 @@ class Sphene:
                 context_section += f"\n\n{channel_summary}"
             if user_profile:
                 context_section += f"\n\n{user_profile}"
+            if relevant_facts:
+                context_section += f"\n\n{relevant_facts}"
 
             # ツール使用を促す指示とコンテキストを統合
             instruction = f"{self.system_prompt}{context_section}\n\n{TOOL_USAGE_INSTRUCTION}"
@@ -181,7 +184,6 @@ class Sphene:
         except Exception as e:
             logger.critical(f"input_messageエラー: {e}", exc_info=True)
             return "予期せぬエラーが発生しちゃった...😢"
-
     async def async_input_message(
         self,
         input_text: str | None,
@@ -190,6 +192,7 @@ class Sphene:
         channel_context: str | None = None,
         channel_summary: str | None = None,
         user_profile: str = "",
+        relevant_facts: str = "",
     ) -> str | None:
         """スレッドセーフな非同期ラッパー。
 
@@ -205,6 +208,7 @@ class Sphene:
                 channel_context=channel_context,
                 channel_summary=channel_summary,
                 user_profile=user_profile,
+                relevant_facts=relevant_facts,
             )
 
 
@@ -261,6 +265,66 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
         return None
     except Exception as e:
         logger.error(f"相槌生成エラー: {e}", exc_info=True)
+        return None
+
+
+def generate_proactive_message(
+    fact_content: str, channel_context: str | None = None
+) -> str | None:
+    """過去のファクトをもとに自発的な話題振りメッセージを生成する。
+
+    Sphene の会話履歴には影響を与えない独立した API 呼び出し。
+
+    Args:
+        fact_content: 話題にするファクトの内容
+        channel_context: チャンネルの直近の会話コンテキスト
+
+    Returns:
+        生成されたメッセージ、またはエラー時 None
+    """
+    try:
+        client = _get_genai_client()
+        model_id = get_model_name()
+        system_prompt = load_system_prompt()
+
+        context_str = ""
+        if channel_context:
+            context_str = f"\n\n--- チャンネルの直近の会話 ---\n{channel_context}\n---"
+
+        instruction = (
+            f"{system_prompt}{context_str}\n\n"
+            "しばらく沈黙していたチャンネルが再活性化した。"
+            "以下の過去の記憶をもとに、自然に話題を振り始めてみて。"
+            "「そういえば...」や「ところで...」など自然な切り出し方で、1〜2文で。"
+        )
+
+        contents = [
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=f"過去の記憶: {fact_content}")],
+            )
+        ]
+
+        response = _generate_content_with_retry(
+            client=client,
+            model=model_id,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=instruction,
+                max_output_tokens=150,
+            ),
+        )
+
+        candidate = response.candidates[0] if response.candidates else None
+        if candidate and candidate.content and candidate.content.parts:
+            text_parts = [p.text for p in candidate.content.parts if p.text]
+            if text_parts:
+                result = "".join(text_parts)
+                logger.debug(f"自発会話メッセージ生成: {result}")
+                return result
+        return None
+    except Exception as e:
+        logger.error(f"自発会話メッセージ生成エラー: {e}", exc_info=True)
         return None
 
 

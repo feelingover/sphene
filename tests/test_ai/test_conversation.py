@@ -379,3 +379,37 @@ def test_generate_content_retry_on_genai_apierror() -> None:
         
     assert result == "Success"
     assert mock_client.models.generate_content.call_count == 2
+
+
+# --- relevant_facts パラメータのテスト ---
+
+
+def test_input_message_with_relevant_facts() -> None:
+    """relevant_facts が context_section に含まれること"""
+    sphene = Sphene(system_setting="テストプロンプト")
+
+    with patch("ai.conversation._call_genai_with_tools") as mock_call:
+        mock_call.return_value = (True, "テスト応答", [MagicMock()])
+        sphene.input_message(
+            "こんにちは",
+            relevant_facts="【関連する過去の記憶】\n- AさんはRustを始めた",
+        )
+
+        mock_call.assert_called_once()
+        call_kwargs = mock_call.call_args
+        system_instruction = call_kwargs[1]["system_instruction"]
+        assert "【関連する過去の記憶】" in system_instruction
+        assert "AさんはRustを始めた" in system_instruction
+
+
+def test_input_message_empty_relevant_facts_not_injected() -> None:
+    """relevant_facts が空の場合、context_section に余分なテキストが入らないこと"""
+    sphene = Sphene(system_setting="テストプロンプト")
+
+    with patch("ai.conversation._call_genai_with_tools") as mock_call:
+        mock_call.return_value = (True, "テスト応答", [MagicMock()])
+        sphene.input_message("こんにちは", relevant_facts="")
+
+        call_kwargs = mock_call.call_args
+        system_instruction = call_kwargs[1]["system_instruction"]
+        assert "【関連する過去の記憶】" not in system_instruction

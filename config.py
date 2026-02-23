@@ -44,6 +44,7 @@ def get_collection_name(base_name: str) -> str:
 FIRESTORE_COLLECTION_CHANNEL_CONFIGS: str = get_collection_name("channel_configs")
 FIRESTORE_COLLECTION_USER_PROFILES: str = get_collection_name("user_profiles")
 FIRESTORE_COLLECTION_CHANNEL_CONTEXTS: str = get_collection_name("channel_contexts")
+FIRESTORE_COLLECTION_FACTS: str = get_collection_name("facts")
 
 # === AI会話設定 ===
 MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "5"))
@@ -95,6 +96,31 @@ FAMILIARITY_THRESHOLD_ACQUAINTANCE: int = int(os.getenv("FAMILIARITY_THRESHOLD_A
 FAMILIARITY_THRESHOLD_REGULAR: int = int(os.getenv("FAMILIARITY_THRESHOLD_REGULAR", "31"))
 FAMILIARITY_THRESHOLD_CLOSE: int = int(os.getenv("FAMILIARITY_THRESHOLD_CLOSE", "101"))
 
+# === ファクトストア設定 (Phase 3A) ===
+FACT_STORE_MAX_FACTS_PER_CHANNEL: int = int(os.getenv("FACT_STORE_MAX_FACTS_PER_CHANNEL", "100"))
+FACT_DECAY_HALF_LIFE_DAYS: int = int(os.getenv("FACT_DECAY_HALF_LIFE_DAYS", "30"))
+# ユーザーIDが一致するファクトのスコアブースト倍率
+FACT_USER_BOOST_FACTOR: float = float(os.getenv("FACT_USER_BOOST_FACTOR", "1.5"))
+
+# === 反省会エンジン設定 (Phase 3A) ===
+REFLECTION_ENABLED: bool = os.getenv("REFLECTION_ENABLED", "false").lower() == "true"
+REFLECTION_LULL_MINUTES: int = int(os.getenv("REFLECTION_LULL_MINUTES", "10"))
+REFLECTION_MIN_MESSAGES: int = int(os.getenv("REFLECTION_MIN_MESSAGES", "10"))
+# バッファ量ベースの反省会トリガー閾値。
+# CHANNEL_BUFFER_SIZE 以下の値を設定すること（それを超えると絶対に発動しない）。
+REFLECTION_MAX_BUFFER_MESSAGES: int = int(os.getenv("REFLECTION_MAX_BUFFER_MESSAGES", "30"))
+REFLECTION_MODEL: str = os.getenv("REFLECTION_MODEL", "")
+
+# === 自発的会話設定 (Phase 3A) ===
+PROACTIVE_CONVERSATION_ENABLED: bool = (
+    os.getenv("PROACTIVE_CONVERSATION_ENABLED", "false").lower() == "true"
+)
+# 自発的会話をトリガーする沈黙時間（分）。REFLECTION_LULL_MINUTES と独立して設定可能。
+PROACTIVE_SILENCE_MINUTES: int = int(os.getenv("PROACTIVE_SILENCE_MINUTES", "10"))
+
 # フィーチャーフラグの依存関係チェック（起動時バリデーション）
 if LLM_JUDGE_ENABLED and not AUTONOMOUS_RESPONSE_ENABLED:
     raise ValueError("LLM_JUDGE_ENABLED requires AUTONOMOUS_RESPONSE_ENABLED=True")
+
+if PROACTIVE_CONVERSATION_ENABLED and not REFLECTION_ENABLED:
+    raise ValueError("PROACTIVE_CONVERSATION_ENABLED requires REFLECTION_ENABLED=True")

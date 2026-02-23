@@ -8,6 +8,13 @@ import config
 from log_utils.logger import logger
 
 
+def _to_utc(ts: datetime) -> datetime:
+    """aware/naive datetime を UTC aware に変換する"""
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
 @dataclass
 class ChannelMessage:
     """チャンネルメッセージのデータクラス"""
@@ -29,6 +36,7 @@ class ChannelMessageBuffer:
         self._max_size = max_size
         self._ttl_minutes = ttl_minutes
         self._buffers: dict[int, deque[ChannelMessage]] = {}
+        self._last_reflected: dict[int, datetime] = {}
 
     def add_message(self, msg: ChannelMessage) -> None:
         """メッセージをチャンネルバッファに追加する"""
@@ -52,7 +60,7 @@ class ChannelMessageBuffer:
         messages = [
             msg
             for msg in self._buffers[channel_id]
-            if msg.timestamp.replace(tzinfo=timezone.utc) > cutoff
+            if _to_utc(msg.timestamp) > cutoff
         ]
         return messages[-limit:]
 
@@ -77,7 +85,7 @@ class ChannelMessageBuffer:
         for channel_id, buf in self._buffers.items():
             before = len(buf)
             # dequeなので左側（古い方）から期限切れを削除
-            while buf and buf[0].timestamp.replace(tzinfo=timezone.utc) <= cutoff:
+            while buf and _to_utc(buf[0].timestamp) <= cutoff:
                 buf.popleft()
                 total_removed += 1
             if not buf:
@@ -88,6 +96,35 @@ class ChannelMessageBuffer:
             del self._buffers[channel_id]
 
         return total_removed
+
+    def get_active_channel_ids(self) -> list[int]:
+        """バッファが存在するチャンネルIDのリストを返す"""
+        return list(self._buffers.keys())
+
+    def get_last_message_time(self, channel_id: int) -> datetime | None:
+        """最新メッセージのタイムスタンプをUTCで返す（バッファが空なら None）"""
+        buf = self._buffers.get(channel_id)
+        if not buf:
+            return None
+        return _to_utc(buf[-1].timestamp)
+
+    def count_messages_since_reflection(self, channel_id: int) -> int:
+        """最後の反省会以降のメッセージ数を返す"""
+        buf = self._buffers.get(channel_id)
+        if not buf:
+            return 0
+        last_reflected = self._last_reflected.get(channel_id)
+        if last_reflected is None:
+            return len(buf)
+        count = 0
+        for msg in buf:
+            if _to_utc(msg.timestamp) > last_reflected:
+                count += 1
+        return count
+
+    def mark_reflected(self, channel_id: int) -> None:
+        """反省会実行後に呼ぶ。現在時刻をチェックポイントとして記録する"""
+        self._last_reflected[channel_id] = datetime.now(timezone.utc)
 
     @property
     def channel_count(self) -> int:

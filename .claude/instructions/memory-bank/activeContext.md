@@ -5,16 +5,94 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
-- 全テスト通過（458件）、カバレッジ 88%、mypy 61ファイル no issues
+- 記憶システム「リビングメモリー (Living Memory)」の仕様を `docs/living-memory.md` に集約。
+- 全テスト通過（546件）、カバレッジ 87%、mypy 66ファイル no issues
+- 記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）実装済み。
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
 - 環境変数を `GEMINI_MODEL` 形式に統一、`OPENAI_API_KEY` を完全削除。
 - Google検索Grounding機能のサポート開始（`ENABLE_GOOGLE_SEARCH_GROUNDING`）。
 - Discord heartbeat blocking修正済み（`asyncio.to_thread()`）。
-- 記憶機能（Phase 1 + Phase 2 + Phase 2A + Phase 2B）実装済み。
+- 記憶機能（Phase 1 + Phase 2 + Phase 2A + Phase 2B + Phase 3A）実装済み。
 - ツール呼び出しループの改善済み（上限の環境変数化 + ツールなし最終コール）。
 - コードレビュー Medium/Low 全課題対応完了（Group A〜E）。
 
 ## Recent Changes
+
+### 2026/2: 記憶システムのブランド化「リビングメモリー」
+
+ボットの多層的な記憶システムを「リビングメモリー (Living Memory)」と命名し、仕様を `docs/living-memory.md` にまとめた。短期・中期・長期の3層構造で、ボットが「チャンネルの参加者の一人」として振る舞うための基盤となる。
+
+### 2026/2: Phase 3A - 反省会 + ファクトストア + 自発的会話
+
+会話の長期記憶をキーワードベースで実現。チャンネルが沈黙後に再活性化した際、過去に抽出した事実を自発的に話題にする。
+
+#### 新規ファイル
+- **`memory/fact_store.py`**: `Fact` dataclass + `FactStore`
+  - `Fact`: `fact_id`, `channel_id`, `content`, `keywords`, `source_user_ids`, `created_at`, `shareable`
+  - `decay_factor(half_life_days)`: 指数減衰係数（半減期でスコア0.5）
+  - `FactStore.add_fact()`: 追加 + 上限超過時は decay 最小のものを削除
+  - `FactStore.search(keywords, user_ids, limit)`: Jaccard類似度 × decay_factor × user_idブースト(`FACT_USER_BOOST_FACTOR`倍、デフォルト1.5)でランキング
+  - `FactStore.get_shareable_facts()`: shareable=True のみ decay 降順
+  - `FactStore.persist_all()`: クリーンアップタスクから呼ばれる全チャンネル永続化
+  - 遅延ロード（初回アクセス時のみ）、ローカル(`storage/facts.{channel_id}.json`) / Firestore対応
+  - `_jaccard_similarity(set_a, set_b)` / `extract_keywords(text)`: キーワード抽出ヘルパー（公開API）
+  - シングルトン: `get_fact_store()`
+
+- **`memory/reflection.py`**: `ReflectionEngine`（反省会エンジン）
+  - `maybe_reflect(channel_id, recent_messages)`: トリガー判定 + fire-and-forget非同期実行（`ensure_future`）
+  - `_call_reflection_llm(messages)`: Gemini呼び出し（JSON配列を返す）
+  - `_apply_facts(channel_id, raw_facts, messages)`: LLM結果を `Fact` に変換し `FactStore` に保存、`mark_reflected()` を呼ぶ
+  - `_running: set[int]` で二重実行を防止
+  - `Summarizer` と同一パターン（`summarizer.py` の設計を踏襲）
+  - シングルトン: `get_reflection_engine()`
+
+#### 既存ファイルの変更
+- **`config.py`**:
+  - `FIRESTORE_COLLECTION_FACTS`: ネームスペース対応のコレクション名
+  - `FACT_STORE_MAX_FACTS_PER_CHANNEL`（デフォルト100）, `FACT_DECAY_HALF_LIFE_DAYS`（デフォルト30）
+  - `REFLECTION_ENABLED`, `REFLECTION_LULL_MINUTES`（10）, `REFLECTION_MIN_MESSAGES`（10）, `REFLECTION_MAX_BUFFER_MESSAGES`（100）, `REFLECTION_MODEL`
+  - `PROACTIVE_CONVERSATION_ENABLED`: `REFLECTION_ENABLED=True` が必要（起動時バリデーション追加）
+  - `FACT_USER_BOOST_FACTOR`（デフォルト1.5）: ユーザーIDが一致するファクトのスコアブースト倍率
+  - `PROACTIVE_SILENCE_MINUTES`（デフォルト10）: 自発会話トリガーの沈黙閾値（`REFLECTION_LULL_MINUTES` と独立）
+
+- **`memory/short_term.py`**: `ChannelMessageBuffer` に4メソッド追加
+  - `_last_reflected: dict[int, datetime]` フィールド追加
+  - `get_active_channel_ids()`: バッファが存在するチャンネルIDリスト
+  - `get_last_message_time(channel_id)`: 最新メッセージのUTCタイムスタンプ
+  - `count_messages_since_reflection(channel_id)`: 最後の `mark_reflected` 以降のメッセージ数
+  - `mark_reflected(channel_id)`: 反省会チェックポイントを現在時刻で記録
+
+- **`ai/conversation.py`**: `input_message()` / `async_input_message()` に `relevant_facts: str = ""` パラメータ追加
+  - `user_profile` の後に `context_section` へ注入
+
+- **`bot/events.py`**:
+  - `_collect_ai_context()`: 戻り値を5タプルに拡張 `(channel_context, channel_summary, topic_keywords, user_profile_str, relevant_facts_str)`。`REFLECTION_ENABLED` 時にファクト検索・注入。
+  - `_handle_message()`: バッファ追加前に `pre_add_last_time` 取得、バッファ量ベース反省会トリガー、自発会話チェック追加
+  - `_try_proactive_conversation(bot, message, pre_add_last_time)`: 沈黙時間チェック → クールダウンチェック → shareable ファクト取得 → `_dispatch_proactive_message()`
+  - `_dispatch_proactive_message(bot, message, fact)`: ファクトをもとにプロンプト生成・Gemini呼び出し・送信
+
+- **`bot/discord_bot.py`**: `_cleanup_task` に沈黙ベース反省会チェック + ファクトストア `persist_all()` 追加
+
+#### 有効化設定
+```
+REFLECTION_ENABLED=true
+REFLECTION_MIN_MESSAGES=10      # 反省会実行最低メッセージ数
+REFLECTION_LULL_MINUTES=10      # 沈黙検知時間（分）
+# 自発会話も使う場合:
+PROACTIVE_CONVERSATION_ENABLED=true
+```
+
+### 2026/2: Phase 3A コードレビュー対応（7件）
+
+PR #76 のコードレビュー指摘を解消。
+
+- **`extract_keywords` 公開化**: `_extract_keywords` → `extract_keywords`（`bot/events.py` からのプライベート関数クロスモジュールインポートを解消）
+- **`FACT_USER_BOOST_FACTOR` 環境変数化**: ハードコードの `1.5` を `config.py` で管理
+- **`PROACTIVE_SILENCE_MINUTES` 追加**: 自発会話の沈黙閾値を `REFLECTION_LULL_MINUTES` から独立化
+- **`_load_channel` コメント修正**: DCL の説明を実装（2段階ロック）に合わせて修正
+- **`_dispatch_proactive_message` 型修正**: `fact: Any` → `fact: "Fact"` + `TYPE_CHECKING` インポート
+- **冗長インポート削除**: `_try_proactive_conversation` 内の `from datetime import timezone` ローカルインポートを削除（モジュールレベルで定義済み）
+- **`_cleanup_task` ブロック統合**: `if config.REFLECTION_ENABLED:` 2ブロック → 1ブロックに集約
 
 ### 2026/2: コードレビュー Medium/Low 課題の一括対応（Group A〜E）
 
@@ -229,5 +307,4 @@ requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini 
 1. **API制限**: 高負荷時のレート制限対応（基本リトライは実装済み）
 2. **コスト最適化**: モデル選択、プロンプト最適化、キャッシング
 3. **AsyncOpenAI移行**: フルasync化（中期候補）
-4. **記憶機能 Phase 3A**: 反省会 + ファクトストア + 自発的会話（キーワードベース長期記憶）
-5. **記憶機能 Phase 3B**: ベクトル検索 + リッチプロファイル（タグ・性格メモ・LLM抽出）
+4. **記憶機能 Phase 3B**: ベクトル検索（Vertex AI Embeddings）+ リッチプロファイル（LLMタグ抽出）

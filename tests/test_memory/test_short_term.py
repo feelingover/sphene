@@ -175,3 +175,80 @@ class TestChannelMessageBuffer:
 
         buf.add_message(_make_message(channel_id=200, message_id=2))
         assert buf.channel_count == 2
+
+    def test_get_active_channel_ids_empty(self):
+        """チャンネルなしの場合、空リストが返ること"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        assert buf.get_active_channel_ids() == []
+
+    def test_get_active_channel_ids_multiple(self):
+        """複数チャンネルのIDがリストで返ること"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        buf.add_message(_make_message(channel_id=100, message_id=1))
+        buf.add_message(_make_message(channel_id=200, message_id=2))
+        ids = buf.get_active_channel_ids()
+        assert set(ids) == {100, 200}
+
+    def test_get_last_message_time_none_for_empty(self):
+        """バッファが空のチャンネルは None を返すこと"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        assert buf.get_last_message_time(999) is None
+
+    def test_get_last_message_time_returns_latest(self):
+        """最新メッセージのタイムスタンプが返ること"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        buf.add_message(_make_message(minutes_ago=10, message_id=1))
+        buf.add_message(_make_message(minutes_ago=2, message_id=2))
+        last = buf.get_last_message_time(100)
+        assert last is not None
+        # 直近のメッセージが約2分前であることを確認
+        from datetime import datetime, timedelta, timezone
+        diff = datetime.now(timezone.utc) - last
+        assert diff < timedelta(minutes=3)
+
+    def test_get_last_message_time_timezone_aware(self):
+        """返り値がタイムゾーン付きであること"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        buf.add_message(_make_message(message_id=1))
+        last = buf.get_last_message_time(100)
+        assert last is not None
+        assert last.tzinfo is not None
+
+    def test_count_messages_since_reflection_all_when_not_marked(self):
+        """mark_reflected が呼ばれていない場合、全件数を返すこと"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        for i in range(5):
+            buf.add_message(_make_message(message_id=i))
+        assert buf.count_messages_since_reflection(100) == 5
+
+    def test_count_messages_since_reflection_after_mark(self):
+        """mark_reflected 後のメッセージのみがカウントされること"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        for i in range(3):
+            buf.add_message(_make_message(message_id=i, minutes_ago=5))
+        buf.mark_reflected(100)
+        # mark_reflected 後に新しいメッセージを追加
+        buf.add_message(_make_message(message_id=10, minutes_ago=0))
+        count = buf.count_messages_since_reflection(100)
+        assert count == 1
+
+    def test_count_messages_since_reflection_empty(self):
+        """バッファが空の場合 0 を返すこと"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        assert buf.count_messages_since_reflection(999) == 0
+
+    def test_mark_reflected_sets_checkpoint(self):
+        """mark_reflected が現在時刻をチェックポイントとして記録すること"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        buf.mark_reflected(100)
+        assert 100 in buf._last_reflected
+
+    def test_mark_reflected_multiple_times(self):
+        """mark_reflected を複数回呼んでも正常に動作すること"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        buf.add_message(_make_message(message_id=1, minutes_ago=2))
+        buf.mark_reflected(100)
+        buf.add_message(_make_message(message_id=2, minutes_ago=0))
+        buf.mark_reflected(100)
+        # 2回目の mark_reflected 後は新規メッセージなし
+        assert buf.count_messages_since_reflection(100) == 0

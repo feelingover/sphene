@@ -5,6 +5,17 @@ applyTo: "**"
 
 ## Completed Features
 
+- **記憶システム「リビングメモリー (Living Memory)」**:
+  - `docs/living-memory.md`: 記憶の3層構造（短期・中期・長期）とライフサイクルを定義。
+- **記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）**:
+  - `memory/fact_store.py`: `Fact` dataclass + `FactStore`（Jaccard類似度 × 指数減衰スコアリング、local/Firestore永続化）
+  - `memory/reflection.py`: `ReflectionEngine`（LLMによるファクト抽出、fire-and-forget非同期実行）
+  - `memory/short_term.py`: `get_active_channel_ids`, `get_last_message_time`, `count_messages_since_reflection`, `mark_reflected` 追加
+  - `ai/conversation.py`: `relevant_facts` パラメータ追加（user_profile の後に context_section へ注入）
+  - `bot/events.py`: ファクト検索・注入、沈黙後自発会話（`_try_proactive_conversation`, `_dispatch_proactive_message`）、バッファ量ベース反省会トリガー
+  - `bot/discord_bot.py`: 沈黙ベース反省会チェック + ファクトストア永続化
+  - 新規環境変数11個: `REFLECTION_ENABLED/LULL_MINUTES/MIN_MESSAGES/MAX_BUFFER_MESSAGES/MODEL`, `FACT_STORE_MAX_FACTS_PER_CHANNEL`, `FACT_DECAY_HALF_LIFE_DAYS`, `FACT_USER_BOOST_FACTOR`, `PROACTIVE_CONVERSATION_ENABLED`, `PROACTIVE_SILENCE_MINUTES`, `FIRESTORE_COLLECTION_FACTS`
+- **Phase 3A コードレビュー対応**: `extract_keywords` 公開化、ブースト係数環境変数化、型アノテーション修正、冗長インポート削除、`_cleanup_task` ブロック統合
 - **コードレビュー Medium/Low 課題の一括対応**:
   - `utils/file_utils.py` 新規作成（`atomic_write_json` 共通化）
   - `ai/api.py` 新規作成（API レイヤーを `ai/conversation.py` から分離）
@@ -42,7 +53,6 @@ applyTo: "**"
 - 統合テストのSDK対応
 
 ### Mid-term
-- 記憶機能 Phase 3A: 反省会 + ファクトストア（Jaccard類似度キーワード検索）+ 自発的会話開始
 - 記憶機能 Phase 3B: ベクトル検索（Vertex AI Embeddings）+ リッチプロファイル（LLMタグ抽出）
 - チャンネル固有プロンプト
 - 使用統計・モニタリング
