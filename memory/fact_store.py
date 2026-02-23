@@ -187,6 +187,19 @@ class FactStore:
         shareable.sort(key=lambda f: f.decay_factor(half_life), reverse=True)
         return shareable
 
+    def persist_channel(self, channel_id: int) -> None:
+        """特定のチャンネルを永続化する"""
+        with self._lock:
+            if channel_id not in self._facts:
+                return
+            facts = list(self._facts[channel_id])
+
+        storage_type = config.STORAGE_TYPE
+        if storage_type == "local":
+            self._save_to_local(channel_id, facts)
+        elif storage_type == "firestore":
+            self._save_to_firestore(channel_id, facts)
+
     def persist_all(self) -> None:
         """全チャンネルを永続化する（クリーンアップタスクから呼ばれる）"""
         with self._lock:
