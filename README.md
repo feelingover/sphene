@@ -20,6 +20,8 @@ SpheneはGoogle Gen AI SDK（Vertex AI経由のGemini）を活用した会話機
 - チャンネルコンテキスト（ローリング要約による場の空気把握）
 - 応答多様性（リアクション / 相槌 / フル応答の3段階で自然な会話参加）
 - **ユーザープロファイル**: 交流回数・関係性レベル（stranger/acquaintance/regular/close）・直近の話題を記録し、初見と常連で自然に接し方を変える
+- **長期記憶（反省会 + ファクトストア）**: 会話が沈静化した後にLLMで事実を抽出・保存し、次の会話に活用（`REFLECTION_ENABLED`）
+- **自発的会話**: 沈黙後チャンネルが再活性化した際、過去の記憶をもとに自然に話題を振る（`PROACTIVE_CONVERSATION_ENABLED`）
 
 ## セットアップ方法
 
@@ -93,6 +95,20 @@ AUTONOMOUS_RESPONSE_ENABLED=false
 # FAMILIARITY_THRESHOLD_ACQUAINTANCE=6    # 0-5回: stranger / 6回以上: acquaintance
 # FAMILIARITY_THRESHOLD_REGULAR=31        # 6-30回: acquaintance / 31回以上: regular
 # FAMILIARITY_THRESHOLD_CLOSE=101         # 31-100回: regular / 101回以上: close
+
+# 長期記憶: 反省会エンジン（会話からファクト抽出）
+# REFLECTION_ENABLED=false
+# REFLECTION_LULL_MINUTES=10              # 沈黙N分で反省会トリガー
+# REFLECTION_MIN_MESSAGES=10             # 最低メッセージ数（これ未満はスキップ）
+# REFLECTION_MAX_BUFFER_MESSAGES=100     # バッファ蓄積量での強制トリガー件数
+# REFLECTION_MODEL=                      # 空の場合はGEMINI_MODELを使用
+
+# 長期記憶: ファクトストア
+# FACT_STORE_MAX_FACTS_PER_CHANNEL=100   # チャンネルあたりの最大ファクト件数
+# FACT_DECAY_HALF_LIFE_DAYS=30           # ファクト減衰の半減期（日数）
+
+# 自発的会話（REFLECTION_ENABLED=true が必要）
+# PROACTIVE_CONVERSATION_ENABLED=false
 ```
 
 ### システムプロンプトの用意
@@ -222,8 +238,10 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 ├── memory/                 # 記憶・自律応答機能
 │   ├── __init__.py
 │   ├── channel_context.py  # チャンネルコンテキスト（ローリング要約）
+│   ├── fact_store.py       # ファクトストア（長期記憶・Jaccard検索・指数減衰）
 │   ├── judge.py            # ルールベース自律応答判定
 │   ├── llm_judge.py        # LLMによる二次判定
+│   ├── reflection.py       # 反省会エンジン（LLMによるファクト抽出）
 │   ├── short_term.py       # チャンネルメッセージバッファ（短期記憶）
 │   ├── summarizer.py       # ローリング要約エンジン
 │   └── user_profile.py     # ユーザープロファイル（関係性・直近話題）
@@ -309,6 +327,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - 応答多様性（リアクション / 相槌 / フル応答の3段階）
 - 会話フロー分析（2人会話検出、高頻度検出、沈黙後検出、会話減衰検出）
 - ユーザープロファイル（交流回数・関係性レベル・直近話題の記録、15分ごとの定期永続化）
+- 長期記憶 Phase 3A: 反省会エンジン（ファクト抽出）、ファクトストア（Jaccard×減衰スコア）、自発的会話開始
 
 **翻訳機能**
 

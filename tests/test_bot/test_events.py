@@ -113,6 +113,8 @@ class TestEventHandling:
         mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
         mock_config.CHANNEL_CONTEXT_ENABLED = False
         mock_config.USER_PROFILE_ENABLED = False
+        mock_config.REFLECTION_ENABLED = False
+        mock_config.PROACTIVE_CONVERSATION_ENABLED = False
         # channel_configの代わりにconfig_managerを使用
         mock_channel_config = MagicMock()
         mock_channel_config.can_bot_speak.return_value = True
@@ -367,3 +369,274 @@ class TestProcessShortAck:
 
         message.channel.send.assert_called_once_with("なるほどー")
         mock_judge.record_response.assert_called_once_with(100)
+
+
+class TestCollectAiContextFacts:
+    """_collect_ai_context のファクト検索テスト"""
+
+    @pytest.mark.asyncio
+    @patch("config.REFLECTION_ENABLED", True)
+    @patch("config.CHANNEL_CONTEXT_ENABLED", False)
+    @patch("config.USER_PROFILE_ENABLED", False)
+    async def test_collect_ai_context_injects_facts(self):
+        """REFLECTION_ENABLED=True のとき relevant_facts_str にファクトが含まれること"""
+        from memory.fact_store import Fact
+        from datetime import timezone
+        import uuid
+
+        mock_fact = Fact(
+            fact_id=str(uuid.uuid4()),
+            channel_id=12345,
+            content="Aさんは先週Rustを始めた",
+            keywords=["Rust", "Aさん"],
+            source_user_ids=[67890],
+            created_at=datetime.now(timezone.utc),
+            shareable=True,
+        )
+
+        message = MagicMock()
+        message.channel.id = 12345
+        message.author.id = 67890
+        message.content = "Rustについて"
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_context_string.return_value = ""
+        mock_store = MagicMock()
+        mock_store.search.return_value = [mock_fact]
+
+        with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+            with patch("memory.fact_store.get_fact_store", return_value=mock_store):
+                with patch("memory.fact_store._extract_keywords", return_value=["Rust"]):
+                    from bot.events import _collect_ai_context
+                    _, _, _, _, relevant_facts_str = await _collect_ai_context(message)
+
+        assert "関連する過去の記憶" in relevant_facts_str
+        assert "Aさんは先週Rustを始めた" in relevant_facts_str
+
+    @pytest.mark.asyncio
+    @patch("config.REFLECTION_ENABLED", False)
+    @patch("config.CHANNEL_CONTEXT_ENABLED", False)
+    @patch("config.USER_PROFILE_ENABLED", False)
+    async def test_collect_ai_context_no_facts_when_disabled(self):
+        """REFLECTION_ENABLED=False のとき relevant_facts_str が空であること"""
+        message = MagicMock()
+        message.channel.id = 12345
+        message.author.id = 67890
+        message.content = "テスト"
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_context_string.return_value = ""
+
+        with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+            from bot.events import _collect_ai_context
+            _, _, _, _, relevant_facts_str = await _collect_ai_context(message)
+
+        assert relevant_facts_str == ""
+
+
+class TestHandleMessageReflectionTrigger:
+    """_handle_message の反省会トリガーテスト"""
+
+    @pytest.mark.asyncio
+    @patch("bot.events.config")
+    @patch("bot.events.is_bot_mentioned")
+    @patch("bot.events.config_manager")
+    async def test_reflection_triggered_on_buffer_full(
+        self, mock_config_manager, mock_is_bot_mentioned, mock_config
+    ):
+        """バッファが上限に達したとき反省会エンジンが呼ばれること"""
+        mock_config.REFLECTION_ENABLED = True
+        mock_config.REFLECTION_MAX_BUFFER_MESSAGES = 5
+        mock_config.CHANNEL_CONTEXT_ENABLED = False
+        mock_config.USER_PROFILE_ENABLED = False
+        mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
+        mock_config.PROACTIVE_CONVERSATION_ENABLED = False
+
+        mock_channel_config = MagicMock()
+        mock_channel_config.can_bot_speak.return_value = True
+        mock_config_manager.get_config.return_value = mock_channel_config
+        mock_is_bot_mentioned.return_value = (False, "", False)
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_last_message_time.return_value = None
+        mock_buffer.count_messages_since_reflection.return_value = 5  # 上限到達
+        mock_buffer.get_recent_messages.return_value = []
+
+        mock_engine = MagicMock()
+
+        message = MagicMock()
+        message.author.bot = False
+        message.channel.id = 12345
+        message.content = "テスト"
+        message.author.id = 67890
+        message.attachments = []
+        message.created_at = datetime.now(timezone.utc)
+        message.guild = MagicMock()
+        message.guild.id = 54321
+
+        bot = MagicMock()
+        bot.user = MagicMock()
+
+        with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+            with patch("memory.reflection.get_reflection_engine", return_value=mock_engine):
+                await _handle_message(bot, message)
+
+        mock_engine.maybe_reflect.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("bot.events.config")
+    @patch("bot.events.is_bot_mentioned")
+    @patch("bot.events.config_manager")
+    async def test_reflection_not_triggered_when_disabled(
+        self, mock_config_manager, mock_is_bot_mentioned, mock_config
+    ):
+        """REFLECTION_ENABLED=False のとき反省会エンジンが呼ばれないこと"""
+        mock_config.REFLECTION_ENABLED = False
+        mock_config.CHANNEL_CONTEXT_ENABLED = False
+        mock_config.USER_PROFILE_ENABLED = False
+        mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
+        mock_config.PROACTIVE_CONVERSATION_ENABLED = False
+
+        mock_channel_config = MagicMock()
+        mock_channel_config.can_bot_speak.return_value = True
+        mock_config_manager.get_config.return_value = mock_channel_config
+        mock_is_bot_mentioned.return_value = (False, "", False)
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_last_message_time.return_value = None
+
+        mock_engine = MagicMock()
+
+        message = MagicMock()
+        message.author.bot = False
+        message.channel.id = 12345
+        message.content = "テスト"
+        message.author.id = 67890
+        message.attachments = []
+        message.created_at = datetime.now(timezone.utc)
+        message.guild = MagicMock()
+        message.guild.id = 54321
+
+        bot = MagicMock()
+        bot.user = MagicMock()
+
+        with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+            with patch("memory.reflection.get_reflection_engine", return_value=mock_engine):
+                await _handle_message(bot, message)
+
+        mock_engine.maybe_reflect.assert_not_called()
+
+
+class TestTryProactiveConversation:
+    """_try_proactive_conversation のテスト"""
+
+    @pytest.mark.asyncio
+    async def test_skips_when_silence_too_short(self):
+        """沈黙時間が設定未満の場合スキップされること"""
+        from datetime import timedelta, timezone
+        from bot.events import _try_proactive_conversation
+
+        now = datetime.now(timezone.utc)
+        pre_add_last_time = now - timedelta(minutes=2)  # 2分前
+
+        message = MagicMock()
+        message.created_at = now
+        message.channel.id = 12345
+
+        bot = MagicMock()
+
+        with patch("config.REFLECTION_LULL_MINUTES", 10):
+            with patch("memory.fact_store.get_fact_store") as mock_store_fn:
+                await _try_proactive_conversation(bot, message, pre_add_last_time)
+                mock_store_fn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_in_cooldown(self):
+        """クールダウン中の場合スキップされること"""
+        from datetime import timedelta, timezone
+        from bot.events import _try_proactive_conversation
+
+        now = datetime.now(timezone.utc)
+        pre_add_last_time = now - timedelta(minutes=30)  # 十分な沈黙
+
+        message = MagicMock()
+        message.created_at = now
+        message.channel.id = 12345
+
+        bot = MagicMock()
+
+        mock_judge = MagicMock()
+        mock_judge._is_in_cooldown.return_value = True
+
+        with patch("config.REFLECTION_LULL_MINUTES", 10):
+            with patch("memory.judge.get_judge", return_value=mock_judge):
+                with patch("memory.fact_store.get_fact_store") as mock_store_fn:
+                    await _try_proactive_conversation(bot, message, pre_add_last_time)
+                    mock_store_fn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_shareable_facts(self):
+        """shareable ファクトがない場合スキップされること"""
+        from datetime import timedelta, timezone
+        from bot.events import _try_proactive_conversation
+
+        now = datetime.now(timezone.utc)
+        pre_add_last_time = now - timedelta(minutes=30)
+
+        message = MagicMock()
+        message.created_at = now
+        message.channel.id = 12345
+
+        bot = MagicMock()
+
+        mock_judge = MagicMock()
+        mock_judge._is_in_cooldown.return_value = False
+
+        mock_store = MagicMock()
+        mock_store.get_shareable_facts.return_value = []
+
+        with patch("config.REFLECTION_LULL_MINUTES", 10):
+            with patch("memory.judge.get_judge", return_value=mock_judge):
+                with patch("memory.fact_store.get_fact_store", return_value=mock_store):
+                    with patch("bot.events._dispatch_proactive_message") as mock_dispatch:
+                        await _try_proactive_conversation(bot, message, pre_add_last_time)
+                        mock_dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dispatches_when_conditions_met(self):
+        """条件が揃ったとき _dispatch_proactive_message が呼ばれること"""
+        from datetime import timedelta, timezone
+        from memory.fact_store import Fact
+        import uuid
+        from bot.events import _try_proactive_conversation
+
+        now = datetime.now(timezone.utc)
+        pre_add_last_time = now - timedelta(minutes=30)
+
+        message = MagicMock()
+        message.created_at = now
+        message.channel.id = 12345
+
+        bot = MagicMock()
+
+        mock_fact = Fact(
+            fact_id=str(uuid.uuid4()),
+            channel_id=12345,
+            content="Aさんがゲームを始めた",
+            keywords=["ゲーム"],
+            source_user_ids=[1],
+            created_at=now,
+            shareable=True,
+        )
+
+        mock_judge = MagicMock()
+        mock_judge._is_in_cooldown.return_value = False
+        mock_store = MagicMock()
+        mock_store.get_shareable_facts.return_value = [mock_fact]
+
+        with patch("config.REFLECTION_LULL_MINUTES", 10):
+            with patch("memory.judge.get_judge", return_value=mock_judge):
+                with patch("memory.fact_store.get_fact_store", return_value=mock_store):
+                    with patch("bot.events._dispatch_proactive_message", new_callable=AsyncMock) as mock_dispatch:
+                        await _try_proactive_conversation(bot, message, pre_add_last_time)
+                        mock_dispatch.assert_called_once_with(bot, message, mock_fact)

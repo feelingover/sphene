@@ -29,6 +29,7 @@ class ChannelMessageBuffer:
         self._max_size = max_size
         self._ttl_minutes = ttl_minutes
         self._buffers: dict[int, deque[ChannelMessage]] = {}
+        self._last_reflected: dict[int, datetime] = {}
 
     def add_message(self, msg: ChannelMessage) -> None:
         """メッセージをチャンネルバッファに追加する"""
@@ -88,6 +89,42 @@ class ChannelMessageBuffer:
             del self._buffers[channel_id]
 
         return total_removed
+
+    def get_active_channel_ids(self) -> list[int]:
+        """バッファが存在するチャンネルIDのリストを返す"""
+        return list(self._buffers.keys())
+
+    def get_last_message_time(self, channel_id: int) -> datetime | None:
+        """最新メッセージのタイムスタンプをUTCで返す（バッファが空なら None）"""
+        buf = self._buffers.get(channel_id)
+        if not buf:
+            return None
+        last = buf[-1]
+        ts = last.timestamp
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts
+
+    def count_messages_since_reflection(self, channel_id: int) -> int:
+        """最後の反省会以降のメッセージ数を返す"""
+        buf = self._buffers.get(channel_id)
+        if not buf:
+            return 0
+        last_reflected = self._last_reflected.get(channel_id)
+        if last_reflected is None:
+            return len(buf)
+        count = 0
+        for msg in buf:
+            ts = msg.timestamp
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts > last_reflected:
+                count += 1
+        return count
+
+    def mark_reflected(self, channel_id: int) -> None:
+        """反省会実行後に呼ぶ。現在時刻をチェックポイントとして記録する"""
+        self._last_reflected[channel_id] = datetime.now(timezone.utc)
 
     @property
     def channel_count(self) -> int:

@@ -108,6 +108,41 @@ class SpheneBot:
                     exc_info=True,
                 )
 
+        # 沈黙ベースの反省会チェック
+        if config.REFLECTION_ENABLED:
+            try:
+                from datetime import datetime, timezone
+
+                from memory.reflection import get_reflection_engine
+                from memory.short_term import get_channel_buffer
+
+                buffer = get_channel_buffer()
+                engine = get_reflection_engine()
+                for channel_id in buffer.get_active_channel_ids():
+                    last_time = buffer.get_last_message_time(channel_id)
+                    if last_time is None:
+                        continue
+                    silence_minutes = (
+                        datetime.now(timezone.utc) - last_time
+                    ).total_seconds() / 60
+                    if silence_minutes >= config.REFLECTION_LULL_MINUTES:
+                        recent = buffer.get_recent_messages(channel_id, limit=100)
+                        engine.maybe_reflect(channel_id, recent)
+            except Exception as e:
+                logger.error(
+                    f"沈黙ベース反省会チェックでエラー: {str(e)}", exc_info=True
+                )
+
+        # ファクトストアの永続化
+        if config.REFLECTION_ENABLED:
+            try:
+                from memory.fact_store import get_fact_store
+
+                get_fact_store().persist_all()
+                logger.debug("ファクトストアを永続化しました")
+            except Exception as e:
+                logger.error(f"ファクトストア永続化エラー: {str(e)}", exc_info=True)
+
     def run(self) -> None:
         """ボットを起動する"""
         logger.info("Discordボットの起動を開始")

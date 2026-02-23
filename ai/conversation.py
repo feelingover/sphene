@@ -95,6 +95,7 @@ class Sphene:
         channel_context: str | None = None,
         channel_summary: str | None = None,
         user_profile: str = "",
+        relevant_facts: str = "",
     ) -> str | None:
         if not isinstance(input_text, str) or not input_text.strip():
             return None
@@ -162,6 +163,8 @@ class Sphene:
                 context_section += f"\n\n{channel_summary}"
             if user_profile:
                 context_section += f"\n\n{user_profile}"
+            if relevant_facts:
+                context_section += f"\n\n{relevant_facts}"
 
             # ツール使用を促す指示とコンテキストを統合
             instruction = f"{self.system_prompt}{context_section}\n\n{TOOL_USAGE_INSTRUCTION}"
@@ -181,7 +184,6 @@ class Sphene:
         except Exception as e:
             logger.critical(f"input_messageエラー: {e}", exc_info=True)
             return "予期せぬエラーが発生しちゃった...😢"
-
     async def async_input_message(
         self,
         input_text: str | None,
@@ -190,6 +192,7 @@ class Sphene:
         channel_context: str | None = None,
         channel_summary: str | None = None,
         user_profile: str = "",
+        relevant_facts: str = "",
     ) -> str | None:
         """スレッドセーフな非同期ラッパー。
 
@@ -205,6 +208,7 @@ class Sphene:
                 channel_context=channel_context,
                 channel_summary=channel_summary,
                 user_profile=user_profile,
+                relevant_facts=relevant_facts,
             )
 
 
