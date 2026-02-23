@@ -383,24 +383,12 @@ class TestUserProfileStoreLocalStorage:
             last_topic=["local", "test"],
         )
 
-        file_path = tmp_path / "user_profile.555.json"
-        with patch("memory.user_profile.os.path.exists", return_value=True), \
-             patch("memory.user_profile.os.makedirs"), \
-             patch("memory.user_profile.os.replace"), \
-             patch("memory.user_profile.tempfile.NamedTemporaryFile") as mock_tf:
-            # NamedTemporaryFileのモック設定
-            mock_file = MagicMock()
-            mock_file.__enter__ = MagicMock(return_value=mock_file)
-            mock_file.__exit__ = MagicMock(return_value=False)
-            mock_file.name = str(tmp_path / "temp.json")
-            mock_tf.return_value = mock_file
-
-            # 実際に書き込んでテスト
-            with patch("builtins.open", mock_open := MagicMock()):
-                import io
-                buf = io.StringIO()
-                mock_open.return_value.__enter__.return_value = buf
-                store._save_to_local(profile)
+        with patch("utils.file_utils.atomic_write_json") as mock_write:
+            store._save_to_local(profile)
+            mock_write.assert_called_once()
+            call_args = mock_write.call_args
+            assert "user_profile.555" in call_args[0][0]
+            assert call_args[0][1]["user_id"] == 555
 
     def test_load_from_local_file_not_exists(self):
         """ファイルが存在しない場合はNoneを返す"""

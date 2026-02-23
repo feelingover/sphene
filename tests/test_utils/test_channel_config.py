@@ -232,15 +232,9 @@ class TestChannelConfig:
                 pass  # 期待通りの例外
             conf.debug_mode = True
 
-    @patch("os.makedirs")
-    @patch("os.replace")
-    @patch("utils.channel_config.tempfile.NamedTemporaryFile")
-    def test_save_to_local(self, mock_tempfile, mock_replace, mock_makedirs):
+    @patch("utils.file_utils.atomic_write_json")
+    def test_save_to_local(self, mock_write):
         """ローカルへの保存テスト"""
-        mock_file = MagicMock()
-        mock_tempfile.return_value.__enter__.return_value = mock_file
-        mock_file.name = "temp_file_path"
-
         # テスト用のインスタンス作成
         conf = ChannelConfig(guild_id="12345", debug_mode=True)
 
@@ -254,23 +248,16 @@ class TestChannelConfig:
         # 一時的にdebug_modeを無効化
         conf.debug_mode = False
 
-        # makedirs呼び出しカウントをリセット
-        mock_makedirs.reset_mock()
-
         result = conf._save_to_local()
 
         # テスト後に元に戻す
         conf.debug_mode = True
 
         assert result is True
-        assert mock_makedirs.called
-        assert mock_tempfile.called
-        assert mock_replace.called
-
+        mock_write.assert_called_once()
         # ファイルパスが正しく生成されているか確認
-        mock_replace.assert_called_with(
-            "temp_file_path", f"storage/channel_list.{conf.guild_id}.json"
-        )
+        call_file_path = mock_write.call_args[0][0]
+        assert f"channel_list.{conf.guild_id}" in call_file_path
 
     @patch("utils.channel_config.get_firestore_client")
     def test_save_to_firestore(self, mock_get_firestore_client):

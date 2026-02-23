@@ -5,7 +5,7 @@ import asyncio
 
 import config
 from ai.client import _get_genai_client, get_model_name
-from ai.conversation import _generate_content_with_retry
+from ai.api import generate_content_with_retry as _generate_content_with_retry
 from google.genai import types
 from log_utils.logger import logger
 

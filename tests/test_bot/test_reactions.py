@@ -8,6 +8,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 from bot.events import (
@@ -49,10 +50,10 @@ class TestMessageTypeDetection:
 
     def test_get_message_type_thread(self):
         """スレッドメッセージのタイプ判定テスト"""
-        # スレッド内メッセージのモック
+        # スレッド内メッセージのモック（channel が discord.Thread であることで判定）
         message = MagicMock()
         message.reference = None
-        message.thread = MagicMock()  # スレッドがある
+        message.channel = MagicMock(spec=discord.Thread)
 
         # 関数実行
         result = get_message_type(message)
@@ -85,18 +86,18 @@ class TestTranslationResponse:
     @pytest.mark.asyncio
     async def test_send_translation_response_thread(self):
         """スレッド内メッセージへの翻訳返信テスト"""
-        # スレッド内メッセージのモック
+        # スレッド内メッセージ: message.channel が Thread オブジェクト
         message = MagicMock()
         message.reference = None
-        message.thread = MagicMock()
-        message.thread.send = AsyncMock()
+        message.channel = MagicMock(spec=discord.Thread)
+        message.channel.send = AsyncMock()
 
         # 関数実行
         await send_translation_response(message, "Translated text", "🇺🇸")
 
-        # アサーション
-        message.thread.send.assert_called_once()
-        args, kwargs = message.thread.send.call_args
+        # アサーション: message.channel（Thread）に送信される
+        message.channel.send.assert_called_once()
+        args, kwargs = message.channel.send.call_args
         assert "🇺🇸 Translated text" == args[0]
         assert kwargs["reference"] == message
 

@@ -1,36 +1,25 @@
-import base64
-import json
-import logging
-import time
-import traceback
+import asyncio
 import urllib.parse
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 import requests
-from google.genai import types, errors as genai_errors
-from google.api_core import exceptions as google_exceptions
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-    retry_if_exception,
-    before_sleep_log,
-)
+from google.genai import types
 
 from ai.client import _get_genai_client, get_model_name
+from ai.api import (
+    generate_content_with_retry as _generate_content_with_retry,
+    call_genai_with_tools as _call_genai_with_tools,
+    _execute_tool_calls,
+    _handle_api_error,
+)
 from config import (
-    GEMINI_MODEL,
-    MAX_TOOL_CALL_ROUNDS,
     SYSTEM_PROMPT_FILENAME,
     SYSTEM_PROMPT_PATH,
-    ENABLE_GOOGLE_SEARCH_GROUNDING,
 )
-from ai.tools import get_tools, TOOL_FUNCTIONS
 from log_utils.logger import logger
+from utils.text_utils import truncate_text
 
 # 定数の定義
 MAX_CONVERSATION_AGE_MINUTES = 30
@@ -42,12 +31,6 @@ ALLOWED_IMAGE_DOMAINS = {"cdn.discordapp.com", "media.discordapp.net"}
 TOOL_USAGE_INSTRUCTION = (
     "自然に会話に参加してね。もし知らないことや最新の情報が必要なら、積極的にツールを使って調べてね！"
 )
-
-def truncate_text(text: str, max_length: int = 30) -> str:
-    """テキストを切り詰める"""
-    if not text:
-        return ""
-    return text[:max_length] + "..." if len(text) > max_length else text
 
 # プロンプトのキャッシュ
 _prompt_cache: dict[str, str] = {}
@@ -65,45 +48,6 @@ def _load_prompt_from_local(fail_on_error: bool = False) -> str | None:
 def _get_default_prompt() -> str:
     return "あなたは役立つAIアシスタントです。"
 
-def _should_retry_api_error(exception: BaseException) -> bool:
-    """リトライすべきエラーかどうかを判定する"""
-    if isinstance(exception, genai_errors.APIError):
-        # 429: Too Many Requests, 500: Internal Server Error, 503: Service Unavailable, 504: Gateway Timeout
-        # また、ResourceExhausted (通常429) なども含める
-        return exception.code in (429, 500, 503, 504)
-    
-    # google.api_core.exceptions も念のためハンドル
-    if isinstance(exception, (
-        google_exceptions.TooManyRequests,
-        google_exceptions.ResourceExhausted,
-        google_exceptions.ServiceUnavailable,
-        google_exceptions.InternalServerError,
-        google_exceptions.DeadlineExceeded,
-    )):
-        return True
-    
-    # エラーメッセージに 429 が含まれている場合もリトライを検討（SDKがラップしていないケース用）
-    error_str = str(exception)
-    if "429" in error_str or "503" in error_str or "500" in error_str:
-        return True
-        
-    return False
-
-@retry(
-    reraise=True,
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=60),
-    retry=retry_if_exception(_should_retry_api_error),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
-)
-def _generate_content_with_retry(client: Any, model: str, contents: list[types.Content], config: types.GenerateContentConfig) -> Any:
-    """Vertex AI API呼び出しをリトライ付きで実行する"""
-    return client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=config,
-    )
-
 def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) -> str:
     if SYSTEM_PROMPT_FILENAME in _prompt_cache and not force_reload:
         return _prompt_cache[SYSTEM_PROMPT_FILENAME]
@@ -113,144 +57,6 @@ def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) 
     _prompt_cache[SYSTEM_PROMPT_FILENAME] = prompt_content
     return prompt_content
 
-def _execute_tool_calls(tool_calls: list[types.FunctionCall]) -> list[types.Part]:
-    """共通のツール実行ロジック"""
-    results: list[types.Part] = []
-    for call in tool_calls:
-        function_name = call.name
-        if function_name is None:
-            logger.warning("名前のないツール呼び出しをスキップ")
-            continue
-        logger.info(f"ツール呼び出し: {function_name}")
-        func = TOOL_FUNCTIONS.get(function_name)
-        result_content: dict[str, object] | str
-        if func is None:
-            result_content = {"error": f"未知の関数: {function_name}"}
-        else:
-            try:
-                arguments = call.args or {}
-                result_content = func(**arguments)
-            except Exception as e:
-                logger.error(f"ツール実行エラー: {function_name}: {e}", exc_info=True)
-                result_content = {"error": "ツールの実行中にエラーが発生しました"}
-
-        if isinstance(result_content, str):
-            try:
-                result_dict = json.loads(result_content)
-            except:
-                result_dict = {"content": result_content}
-        else:
-            result_dict = result_content
-
-        results.append(
-            types.Part.from_function_response(
-                name=function_name,
-                response=result_dict,
-            )
-        )
-    return results
-
-def _handle_api_error(error: Exception) -> str:
-    if "404" in str(error):
-        return f"ごめんね、指定されたAIモデル「{GEMINI_MODEL}」が見つからないか、このリージョンでは使えないみたい…😢"
-    if "429" in str(error):
-        return "ごめんね、今ちょっとAIが混み合ってるみたい…💦 少し時間を置いてからもう一度話しかけてみてね！"
-    logger.error(f"APIエラー: {error}", exc_info=True)
-    return "ごめん！AIとの通信中にエラーが発生しちゃった...😢"
-
-def _call_genai_with_tools(
-    contents: list[types.Content],
-    system_instruction: str,
-) -> tuple[bool, str, list[types.Content]]:
-    """ツール呼び出しループを含むGenAI呼び出し (共通ロジック)"""
-    client = _get_genai_client()
-    model_id = get_model_name()
-    
-    # ツール設定
-    tools = get_tools()
-    if ENABLE_GOOGLE_SEARCH_GROUNDING:
-        tools.append(types.Tool(google_search=types.GoogleSearch()))
-
-    # contentsリストをコピーして操作する
-    local_history = list(contents)
-
-    for round_num in range(MAX_TOOL_CALL_ROUNDS + 1):
-        logger.info(f"GenAIリクエスト送信 (ラウンド {round_num + 1}, モデル: {model_id})")
-        
-        try:
-            response = _generate_content_with_retry(
-                client=client,
-                model=model_id,
-                contents=local_history,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    tools=tools,  # type: ignore[arg-type]
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True), # 手動ループ
-                ),
-            )
-        except Exception as e:
-            return False, _handle_api_error(e), local_history
-
-        if not response.candidates:
-            return False, "AIからの応答が空だったよ…🤔", local_history
-
-        candidate = response.candidates[0]
-        resp_content = candidate.content
-
-        # Grounding情報のログ出力
-        if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
-            logger.info(f"Groundingメタデータを検出: {candidate.grounding_metadata}")
-
-        if resp_content is None or resp_content.parts is None:
-            return False, "応答を読み取れなかったよ…😢", local_history
-
-        local_history.append(resp_content)
-
-        # ツール呼び出しがあるか確認
-        function_calls = [p.function_call for p in resp_content.parts if p.function_call]
-        
-        if function_calls:
-            logger.info(f"ツール呼び出し検出: {len(function_calls)}件")
-            tool_results = _execute_tool_calls(function_calls)
-            local_history.append(types.Content(role="user", parts=tool_results))
-            continue
-
-        # テキスト応答を抽出
-        text_parts = [p.text for p in resp_content.parts if p.text]
-        if text_parts:
-            final_text = "".join(text_parts)
-            logger.debug(f"GenAI応答受信: {truncate_text(final_text)}")
-            return True, final_text, local_history
-        
-        return False, "応答を読み取れなかったよ…😢", local_history
-
-    # ループ上限到達: ツールなしで最終応答を取得（集めた情報を活かす）
-    logger.info("ツール呼び出しラウンド上限到達 - ツールなしで最終応答を取得")
-    try:
-        response = _generate_content_with_retry(
-            client=client,
-            model=model_id,
-            contents=local_history,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-            ),
-        )
-    except Exception as e:
-        return False, _handle_api_error(e), local_history
-
-    if response.candidates:
-        candidate = response.candidates[0]
-        resp_content = candidate.content
-        if resp_content and resp_content.parts:
-            local_history.append(resp_content)
-            text_parts = [p.text for p in resp_content.parts if p.text]
-            if text_parts:
-                final_text = "".join(text_parts)
-                logger.debug(f"最終応答受信: {truncate_text(final_text)}")
-                return True, final_text, local_history
-
-    return False, "処理が複雑すぎて諦めちゃった…😢", local_history
-
 class Sphene:
     """AIチャットボットの会話管理クラス (google-genai版)"""
 
@@ -258,6 +64,7 @@ class Sphene:
         self.system_prompt = system_setting
         self.history: list[types.Content] = []
         self.last_interaction: datetime | None = datetime.now()
+        self._lock = asyncio.Lock()
         logger.info("Spheneインスタンスを初期化 (Google Gen AI SDK)")
 
     def is_expired(self) -> bool:
@@ -375,41 +182,31 @@ class Sphene:
             logger.critical(f"input_messageエラー: {e}", exc_info=True)
             return "予期せぬエラーが発生しちゃった...😢"
 
+    async def async_input_message(
+        self,
+        input_text: str | None,
+        author_name: str = "User",
+        image_urls: list[str] | None = None,
+        channel_context: str | None = None,
+        channel_summary: str | None = None,
+        user_profile: str = "",
+    ) -> str | None:
+        """スレッドセーフな非同期ラッパー。
 
-def generate_contextual_response(
-    channel_context: str,
-    trigger_message: str,
-    system_prompt: str | None = None,
-    channel_summary: str = "",
-) -> str | None:
-    try:
-        if system_prompt is None:
-            system_prompt = load_system_prompt()
+        同一チャンネルへの並行呼び出しを Lock で直列化してから
+        asyncio.to_thread に渡す。これにより self.history の競合書き込みを防ぐ。
+        """
+        async with self._lock:
+            return await asyncio.to_thread(
+                self.input_message,
+                input_text=input_text,
+                author_name=author_name,
+                image_urls=image_urls,
+                channel_context=channel_context,
+                channel_summary=channel_summary,
+                user_profile=user_profile,
+            )
 
-        # チャンネル要約がある場合は注入
-        summary_section = f"\n\n{channel_summary}" if channel_summary else ""
-
-        # ツールを積極的に使うように指示を追加！
-        instruction = (
-            f"{system_prompt}"
-            f"{summary_section}\n\n"
-            f"--- チャンネルの直近の会話 ---\n{channel_context}\n---\n"
-            f"{TOOL_USAGE_INSTRUCTION}"
-        )
-        
-        # 1-shot のコンテンツを作成
-        contents = [types.Content(role="user", parts=[types.Part.from_text(text=trigger_message)])]
-        
-        # 共通ロジックで呼び出し（ツールも使えるようになる！）
-        success, response, _ = _call_genai_with_tools(
-            contents=contents,
-            system_instruction=instruction
-        )
-        
-        return response if success else None
-    except Exception as e:
-        logger.error(f"コンテキスト応答生成エラー: {e}", exc_info=True)
-        return None
 
 def generate_short_ack(channel_context: str, trigger_message: str) -> str | None:
     """軽量な相槌を生成する

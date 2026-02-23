@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.genai import errors as genai_errors
+from google.api_core import exceptions as google_exceptions
 
 from ai.conversation import (
     MAX_CONVERSATION_AGE_MINUTES,
@@ -111,13 +113,29 @@ def test_input_message_invalid_input() -> None:
 
 def test_handle_api_error_404() -> None:
     """404エラー時のメッセージをテスト"""
-    msg = _handle_api_error(Exception("404 Not Found"))
+    error = genai_errors.APIError(code=404, response_json={"error": "not found"})
+    msg = _handle_api_error(error)
+    assert "指定されたAIモデル" in msg
+
+
+def test_handle_api_error_404_google_exception() -> None:
+    """google.api_core.exceptions.NotFoundの場合のメッセージをテスト"""
+    error = google_exceptions.NotFound("Model not found")
+    msg = _handle_api_error(error)
     assert "指定されたAIモデル" in msg
 
 
 def test_handle_api_error_429() -> None:
     """429エラー（レート制限）時のメッセージをテスト"""
-    msg = _handle_api_error(Exception("429 Too Many Requests"))
+    error = genai_errors.APIError(code=429, response_json={"error": "rate limited"})
+    msg = _handle_api_error(error)
+    assert "混み合ってる" in msg
+
+
+def test_handle_api_error_429_google_exception() -> None:
+    """google.api_core.exceptions.TooManyRequestsの場合のメッセージをテスト"""
+    error = google_exceptions.TooManyRequests("Rate limited")
+    msg = _handle_api_error(error)
     assert "混み合ってる" in msg
 
 
@@ -264,39 +282,6 @@ def test_input_message_with_non_string_input() -> None:
 
     for invalid in invalid_inputs:
         assert sphene.input_message(invalid) is None  # type: ignore
-
-
-def test_generate_contextual_response_with_channel_summary() -> None:
-    """generate_contextual_response にchannel_summaryを渡した場合"""
-    with patch("ai.conversation._call_genai_with_tools") as mock_call:
-        mock_call.return_value = (True, "テスト応答", [])
-
-        from ai.conversation import generate_contextual_response
-        result = generate_contextual_response(
-            channel_context="User1: hello\nUser2: hi",
-            trigger_message="テスト",
-            channel_summary="【チャンネルの状況】\nゲームの話をしている",
-        )
-
-        assert result == "テスト応答"
-        # system_instruction にchannel_summaryが含まれていることを確認
-        call_args = mock_call.call_args
-        instruction = call_args[1]["system_instruction"] if "system_instruction" in call_args[1] else call_args[0][1]
-        assert "チャンネルの状況" in instruction
-
-
-def test_generate_contextual_response_without_channel_summary() -> None:
-    """generate_contextual_response にchannel_summaryなしの場合"""
-    with patch("ai.conversation._call_genai_with_tools") as mock_call:
-        mock_call.return_value = (True, "テスト応答", [])
-
-        from ai.conversation import generate_contextual_response
-        result = generate_contextual_response(
-            channel_context="User1: hello",
-            trigger_message="テスト",
-        )
-
-        assert result == "テスト応答"
 
 
 def test_generate_short_ack_success() -> None:

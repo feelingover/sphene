@@ -5,6 +5,13 @@ applyTo: "**"
 
 ## Completed Features
 
+- **コードレビュー Medium/Low 課題の一括対応**:
+  - `utils/file_utils.py` 新規作成（`atomic_write_json` 共通化）
+  - `ai/api.py` 新規作成（API レイヤーを `ai/conversation.py` から分離）
+  - `judge.evaluate()` から常時 False パラメータ3個削除
+  - `process_conversation` / `_process_autonomous_response` の共通ロジックを4ヘルパーに抽出
+  - フィーチャーフラグ依存チェックを `config.py` 起動時バリデーションに追加
+  - デッドコード削除（`generate_contextual_response`, ローカル `truncate_text`）
 - **ストレージタイプ設定の統合**: `CHANNEL_CONFIG_STORAGE_TYPE`・`CHANNEL_CONTEXT_STORAGE_TYPE`・`USER_PROFILE_STORAGE_TYPE` を `STORAGE_TYPE` 1変数に統合。`memory` オプション廃止。
 - **Vertex AI Native SDK (`google-genai`) 移行**: OpenAI互換APIを廃止し、最新SDKへ完全移行（Gemini 3/2.5対応、Grounding対応）
 - **記憶機能 Phase 1**: 短期記憶バッファ（ChannelMessageBuffer、dequeリングバッファ）
@@ -32,7 +39,6 @@ applyTo: "**"
 ## TODO
 
 ### Short-term
-- 旧OpenAIコードの残骸（テストコード等）の完全クリーンアップ
 - 統合テストのSDK対応
 
 ### Mid-term

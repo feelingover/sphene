@@ -87,18 +87,10 @@ class TestChannelConfigExtensive:
         config.set_translation_enabled(False)
         assert config.get_translation_enabled() is False
 
-    @patch("tempfile.NamedTemporaryFile")
-    @patch("os.replace")
-    def test_atomic_save_failure(self, mock_replace, mock_temp):
+    def test_atomic_save_failure(self):
         """アトミック保存の失敗ケーステスト"""
         config = ChannelConfig(guild_id="test", storage_type="local", debug_mode=False)
-        
-        # os.replace で失敗
-        mock_replace.side_effect = Exception("Disk Full")
-        
-        with patch("os.makedirs"):
-            with patch("os.path.exists", return_value=True):
-                with patch("os.remove") as mock_remove:
-                    result = config._save_to_local()
-                    assert result is False
-                    mock_remove.assert_called_once()
+
+        with patch("utils.file_utils.atomic_write_json", side_effect=Exception("Disk Full")):
+            result = config._save_to_local()
+            assert result is False

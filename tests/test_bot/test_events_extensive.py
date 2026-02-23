@@ -83,7 +83,7 @@ class TestEventsExtensive:
     async def test_process_conversation_chunking(self, mock_split, mock_conversations):
         """会話のチャンク分割送信テスト"""
         mock_api = MagicMock()
-        mock_api.input_message.return_value = "Long message"
+        mock_api.async_input_message = AsyncMock(return_value="Long message")
         mock_conversations.__getitem__.return_value = mock_api
         mock_split.return_value = ["Chunk 1", "Chunk 2"]
 
@@ -173,7 +173,7 @@ class TestEventsExtensive:
 
         mock_api = MagicMock()
         mock_api.is_expired.return_value = False
-        mock_api.input_message.return_value = "Autonomous Answer"
+        mock_api.async_input_message = AsyncMock(return_value="Autonomous Answer")
         mock_conversations.__getitem__.return_value = mock_api
 
         mock_split.return_value = ["Autonomous Answer"]

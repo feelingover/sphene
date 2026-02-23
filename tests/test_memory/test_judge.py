@@ -49,78 +49,6 @@ class TestRuleBasedJudge:
     """RuleBasedJudgeのテスト"""
 
     @patch("memory.judge.config")
-    def test_mention_returns_100(self, mock_config):
-        """@メンションで即スコア100"""
-        mock_config.JUDGE_KEYWORDS = ""
-        mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 20
-        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
-        mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
-        mock_config.BOT_NAME = "テストボット"
-
-        judge = RuleBasedJudge()
-        msg = _make_message()
-        result = judge.evaluate(
-            message=msg,
-            recent_messages=[],
-            is_mentioned=True,
-            is_name_called=False,
-            is_reply_to_bot=False,
-        )
-        assert result.score == 100
-        assert result.should_respond is True
-        assert "メンション" in result.reason
-
-    @patch("memory.judge.config")
-    def test_reply_to_bot_returns_100(self, mock_config):
-        """ボットへのリプライで即スコア100"""
-        mock_config.JUDGE_KEYWORDS = ""
-        mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 20
-        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
-        mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
-        mock_config.BOT_NAME = "テストボット"
-
-        judge = RuleBasedJudge()
-        msg = _make_message()
-        result = judge.evaluate(
-            message=msg,
-            recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=True,
-        )
-        assert result.score == 100
-        assert result.should_respond is True
-        assert "リプライ" in result.reason
-
-    @patch("memory.judge.config")
-    def test_name_called_returns_80(self, mock_config):
-        """名前呼びでスコア80"""
-        mock_config.JUDGE_KEYWORDS = ""
-        mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 20
-        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
-        mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
-        mock_config.BOT_NAME = "テストボット"
-
-        judge = RuleBasedJudge()
-        msg = _make_message()
-        result = judge.evaluate(
-            message=msg,
-            recent_messages=[],
-            is_mentioned=False,
-            is_name_called=True,
-            is_reply_to_bot=False,
-        )
-        assert result.score == 80
-        assert result.should_respond is True
-        assert "名前呼び" in result.reason
-
-    @patch("memory.judge.config")
     def test_question_mark_adds_20(self, mock_config):
         """疑問符で+20"""
         mock_config.JUDGE_KEYWORDS = ""
@@ -136,9 +64,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert result.score == 20
         assert "疑問文" in result.reason
@@ -159,9 +84,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert result.score == 20
 
@@ -181,9 +103,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert result.score == 15
         assert "キーワード" in result.reason
@@ -204,9 +123,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert result.score == 35  # 20 + 15
 
@@ -231,9 +147,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         # エンゲージメント(+40) + 疑問符(+20) - クールダウン(-50) = 10
         assert result.score == 10
@@ -261,9 +174,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert result.score == 20  # 疑問符のみ、クールダウンもエンゲージメントもなし
 
@@ -283,9 +193,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert result.score == 0
         assert result.should_respond is False
@@ -310,9 +217,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert result.score == 0
 
@@ -331,9 +235,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert result.score == 35
         assert result.should_respond is True
@@ -391,9 +292,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         # エンゲージメント(+40) + 疑問符(+20) = 60
         assert result.score == 60
@@ -420,9 +318,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         # エンゲージメント(+40) + 疑問符(+20) - クールダウン(-50) = 10
         assert result.score == 10
@@ -452,9 +347,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         # 疑問符(+20)のみ
         assert result.score == 20
@@ -479,9 +371,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         # 疑問符(+20)のみ
         assert result.score == 20
@@ -509,9 +398,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         # 疑問符(+20)のみ、エンゲージメントなし
         assert result.score == 20
@@ -540,9 +426,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=recent,
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert "2人会話" in result.reason
 
@@ -565,9 +448,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=recent,
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert "ボット言及なし" in result.reason
 
@@ -593,9 +473,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=recent,
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert "ボット言及なし" not in result.reason
 
@@ -625,9 +502,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=recent,
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert "沈黙後" in result.reason
 
@@ -647,31 +521,6 @@ class TestRuleBasedJudge:
         result = judge.evaluate(
             message=msg,
             recent_messages=[],
-            is_mentioned=False,
-            is_name_called=False,
-            is_reply_to_bot=False,
-        )
-        assert result.response_type == "full_response"
-
-    @patch("memory.judge.config")
-    def test_response_type_mention_always_full(self, mock_config):
-        """メンション時は常にfull_response"""
-        mock_config.JUDGE_KEYWORDS = ""
-        mock_config.COOLDOWN_SECONDS = 120
-        mock_config.JUDGE_SCORE_THRESHOLD = 20
-        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
-        mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = True
-        mock_config.BOT_NAME = "テストボット"
-
-        judge = RuleBasedJudge()
-        msg = _make_message()
-        result = judge.evaluate(
-            message=msg,
-            recent_messages=[],
-            is_mentioned=True,
-            is_name_called=False,
-            is_reply_to_bot=False,
         )
         assert result.response_type == "full_response"
 
