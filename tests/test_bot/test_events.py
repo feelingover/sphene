@@ -566,7 +566,7 @@ class TestTryProactiveConversation:
         bot = MagicMock()
 
         mock_judge = MagicMock()
-        mock_judge._is_in_cooldown.return_value = True
+        mock_judge.is_in_cooldown.return_value = True
 
         with patch("config.REFLECTION_LULL_MINUTES", 10):
             with patch("memory.judge.get_judge", return_value=mock_judge):
@@ -590,7 +590,7 @@ class TestTryProactiveConversation:
         bot = MagicMock()
 
         mock_judge = MagicMock()
-        mock_judge._is_in_cooldown.return_value = False
+        mock_judge.is_in_cooldown.return_value = False
 
         mock_store = MagicMock()
         mock_store.get_shareable_facts.return_value = []
@@ -630,7 +630,7 @@ class TestTryProactiveConversation:
         )
 
         mock_judge = MagicMock()
-        mock_judge._is_in_cooldown.return_value = False
+        mock_judge.is_in_cooldown.return_value = False
         mock_store = MagicMock()
         mock_store.get_shareable_facts.return_value = [mock_fact]
 

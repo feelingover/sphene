@@ -1,8 +1,5 @@
 """反省会エンジンのテスト"""
 
-# type: ignore
-# mypy: ignore-errors
-
 import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -41,10 +38,11 @@ class TestReflectionEngineMaybeReflect:
         engine = ReflectionEngine()
         messages = [_make_message() for _ in range(3)]
 
+        loop = asyncio.get_running_loop()
         with patch("config.REFLECTION_MIN_MESSAGES", 10):
-            with patch("asyncio.ensure_future") as mock_future:
+            with patch.object(loop, "create_task") as mock_create_task:
                 engine.maybe_reflect(100, messages)
-                mock_future.assert_not_called()
+                mock_create_task.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skips_when_already_running(self):
@@ -53,35 +51,41 @@ class TestReflectionEngineMaybeReflect:
         engine._running.add(100)
         messages = [_make_message() for _ in range(15)]
 
+        loop = asyncio.get_running_loop()
         with patch("config.REFLECTION_MIN_MESSAGES", 10):
-            with patch("asyncio.ensure_future") as mock_future:
+            with patch.object(loop, "create_task") as mock_create_task:
                 engine.maybe_reflect(100, messages)
-                mock_future.assert_not_called()
+                mock_create_task.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_triggers_when_sufficient_messages(self):
-        """十分なメッセージ数のとき ensure_future が呼ばれること"""
+        """十分なメッセージ数のとき create_task が呼ばれること"""
         engine = ReflectionEngine()
         messages = [_make_message() for _ in range(15)]
 
+        loop = asyncio.get_running_loop()
         with patch("config.REFLECTION_MIN_MESSAGES", 10):
-            with patch("asyncio.ensure_future") as mock_future:
+            with patch.object(loop, "create_task") as mock_create_task:
+                mock_create_task.return_value = MagicMock()
                 engine.maybe_reflect(100, messages)
-                mock_future.assert_called_once()
+                mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_adds_to_running_before_future(self):
-        """ensure_future 呼び出し前に _running に追加されること（二重スケジュール防止）"""
+        """create_task 呼び出し前に _running に追加されること（二重スケジュール防止）"""
         engine = ReflectionEngine()
         messages = [_make_message() for _ in range(15)]
         captured_running = []
 
+        loop = asyncio.get_running_loop()
+
         def capture_running(coro):
             captured_running.append(100 in engine._running)
             coro.close()
+            return MagicMock()
 
         with patch("config.REFLECTION_MIN_MESSAGES", 10):
-            with patch("asyncio.ensure_future", side_effect=capture_running):
+            with patch.object(loop, "create_task", side_effect=capture_running):
                 engine.maybe_reflect(100, messages)
 
         assert captured_running[0] is True
@@ -98,7 +102,7 @@ class TestCallReflectionLlm:
         mock_response = MagicMock()
         mock_response.text = '[{"content": "テストファクト", "keywords": ["テスト"], "source_user_ids": [12345], "shareable": true}]'
 
-        with patch("memory.reflection._get_genai_client"):
+        with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
                 with patch("config.REFLECTION_MODEL", ""):
                     with patch("memory.reflection.get_model_name", return_value="test-model"):
@@ -116,7 +120,7 @@ class TestCallReflectionLlm:
         mock_response = MagicMock()
         mock_response.text = "[]"
 
-        with patch("memory.reflection._get_genai_client"):
+        with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
                 with patch("config.REFLECTION_MODEL", ""):
                     with patch("memory.reflection.get_model_name", return_value="test-model"):
@@ -132,7 +136,7 @@ class TestCallReflectionLlm:
         mock_response = MagicMock()
         mock_response.text = "not valid json"
 
-        with patch("memory.reflection._get_genai_client"):
+        with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
                 with patch("config.REFLECTION_MODEL", ""):
                     with patch("memory.reflection.get_model_name", return_value="test-model"):
@@ -148,7 +152,7 @@ class TestCallReflectionLlm:
         mock_response = MagicMock()
         mock_response.text = '{"key": "value"}'
 
-        with patch("memory.reflection._get_genai_client"):
+        with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
                 with patch("config.REFLECTION_MODEL", ""):
                     with patch("memory.reflection.get_model_name", return_value="test-model"):
@@ -161,7 +165,7 @@ class TestCallReflectionLlm:
         engine = ReflectionEngine()
         messages = [_make_message()]
 
-        with patch("memory.reflection._get_genai_client"):
+        with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", side_effect=Exception("API エラー")):
                 with patch("config.REFLECTION_MODEL", ""):
                     with patch("memory.reflection.get_model_name", return_value="test-model"):
@@ -173,7 +177,7 @@ class TestCallReflectionLlm:
         """メッセージが空の場合 None を返すこと"""
         engine = ReflectionEngine()
 
-        with patch("memory.reflection._get_genai_client"):
+        with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry") as mock_api:
                 result = engine._call_reflection_llm([])
 

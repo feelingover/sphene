@@ -8,6 +8,13 @@ import config
 from log_utils.logger import logger
 
 
+def _to_utc(ts: datetime) -> datetime:
+    """aware/naive datetime を UTC aware に変換する"""
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
 @dataclass
 class ChannelMessage:
     """チャンネルメッセージのデータクラス"""
@@ -53,7 +60,7 @@ class ChannelMessageBuffer:
         messages = [
             msg
             for msg in self._buffers[channel_id]
-            if msg.timestamp.replace(tzinfo=timezone.utc) > cutoff
+            if _to_utc(msg.timestamp) > cutoff
         ]
         return messages[-limit:]
 
@@ -78,7 +85,7 @@ class ChannelMessageBuffer:
         for channel_id, buf in self._buffers.items():
             before = len(buf)
             # dequeなので左側（古い方）から期限切れを削除
-            while buf and buf[0].timestamp.replace(tzinfo=timezone.utc) <= cutoff:
+            while buf and _to_utc(buf[0].timestamp) <= cutoff:
                 buf.popleft()
                 total_removed += 1
             if not buf:
@@ -99,11 +106,7 @@ class ChannelMessageBuffer:
         buf = self._buffers.get(channel_id)
         if not buf:
             return None
-        last = buf[-1]
-        ts = last.timestamp
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        return ts
+        return _to_utc(buf[-1].timestamp)
 
     def count_messages_since_reflection(self, channel_id: int) -> int:
         """最後の反省会以降のメッセージ数を返す"""
@@ -115,10 +118,7 @@ class ChannelMessageBuffer:
             return len(buf)
         count = 0
         for msg in buf:
-            ts = msg.timestamp
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            if ts > last_reflected:
+            if _to_utc(msg.timestamp) > last_reflected:
                 count += 1
         return count
 

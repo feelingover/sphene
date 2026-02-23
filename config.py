@@ -104,7 +104,9 @@ FACT_DECAY_HALF_LIFE_DAYS: int = int(os.getenv("FACT_DECAY_HALF_LIFE_DAYS", "30"
 REFLECTION_ENABLED: bool = os.getenv("REFLECTION_ENABLED", "false").lower() == "true"
 REFLECTION_LULL_MINUTES: int = int(os.getenv("REFLECTION_LULL_MINUTES", "10"))
 REFLECTION_MIN_MESSAGES: int = int(os.getenv("REFLECTION_MIN_MESSAGES", "10"))
-REFLECTION_MAX_BUFFER_MESSAGES: int = int(os.getenv("REFLECTION_MAX_BUFFER_MESSAGES", "100"))
+# バッファ量ベースの反省会トリガー閾値。
+# CHANNEL_BUFFER_SIZE 以下の値を設定すること（それを超えると絶対に発動しない）。
+REFLECTION_MAX_BUFFER_MESSAGES: int = int(os.getenv("REFLECTION_MAX_BUFFER_MESSAGES", "30"))
 REFLECTION_MODEL: str = os.getenv("REFLECTION_MODEL", "")
 
 # === 自発的会話設定 (Phase 3A) ===

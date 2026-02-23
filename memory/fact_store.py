@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -17,7 +18,7 @@ _HIRAGANA_STOPWORDS: frozenset[str] = frozenset({
     "は", "が", "を", "に", "で", "と", "の", "も", "か", "な",
     "て", "た", "し", "い", "う", "え", "お", "ん", "ね", "よ",
     "れ", "ら", "り", "る", "す", "く", "き", "け", "こ", "さ",
-    "あ", "わ", "や", "ゆ", "も", "し", "じ", "だ", "で", "ど",
+    "あ", "わ", "や", "ゆ", "じ", "だ", "ど",
     "から", "まで", "より", "ので", "ても", "けど", "けれど",
     "という", "って", "ってる", "している", "した", "します",
     "この", "その", "あの", "どの", "これ", "それ", "あれ",
@@ -112,22 +113,24 @@ class FactStore:
     def __init__(self) -> None:
         self._facts: dict[int, list[Fact]] = {}
         self._loaded_channels: set[int] = set()
+        self._lock = threading.Lock()
 
     def add_fact(self, fact: Fact) -> None:
         """ファクトを追加する。上限超過時はdecay_factor最小のものを削除"""
         self._load_channel(fact.channel_id)
-        facts = self._facts.setdefault(fact.channel_id, [])
-        facts.append(fact)
+        with self._lock:
+            facts = self._facts.setdefault(fact.channel_id, [])
+            facts.append(fact)
 
-        max_facts = config.FACT_STORE_MAX_FACTS_PER_CHANNEL
-        if len(facts) > max_facts:
-            # decay_factor 最小のものを削除
-            half_life = config.FACT_DECAY_HALF_LIFE_DAYS
-            facts.sort(key=lambda f: f.decay_factor(half_life))
-            self._facts[fact.channel_id] = facts[len(facts) - max_facts:]
-            logger.debug(
-                f"ファクト上限超過により古いファクトを削除: channel_id={fact.channel_id}"
-            )
+            max_facts = config.FACT_STORE_MAX_FACTS_PER_CHANNEL
+            if len(facts) > max_facts:
+                # decay_factor 最小のものを削除
+                half_life = config.FACT_DECAY_HALF_LIFE_DAYS
+                facts.sort(key=lambda f: f.decay_factor(half_life))
+                self._facts[fact.channel_id] = facts[len(facts) - max_facts:]
+                logger.debug(
+                    f"ファクト上限超過により古いファクトを削除: channel_id={fact.channel_id}"
+                )
 
     def search(
         self,
@@ -193,9 +196,10 @@ class FactStore:
 
     def _load_channel(self, channel_id: int) -> None:
         """初回アクセス時に永続化先からファクトを遅延ロードする"""
-        if channel_id in self._loaded_channels:
-            return
-        self._loaded_channels.add(channel_id)
+        with self._lock:
+            if channel_id in self._loaded_channels:
+                return
+            self._loaded_channels.add(channel_id)
 
         storage_type = config.STORAGE_TYPE
         facts: list[Fact] | None = None
@@ -206,7 +210,8 @@ class FactStore:
             facts = self._load_from_firestore(channel_id)
 
         if facts is not None:
-            self._facts[channel_id] = facts
+            with self._lock:
+                self._facts[channel_id] = facts
 
     def _save_to_local(self, channel_id: int, facts: list[Fact]) -> None:
         """ローカルファイルにアトミック書き込み"""

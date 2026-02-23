@@ -1,8 +1,5 @@
 """ファクトストアのテスト"""
 
-# type: ignore
-# mypy: ignore-errors
-
 import json
 import math
 from datetime import datetime, timedelta, timezone
@@ -297,25 +294,22 @@ class TestFactStoreEviction:
     """上限超過時の削除テスト"""
 
     def test_evicts_oldest_on_overflow(self):
-        """上限超過で decay_factor 最小が削除されること"""
+        """上限超過で decay_factor 最小（最古）が削除されること"""
         store = FactStore()
-        # 最大2件に設定
+        f_new = _make_fact(fact_id="new", days_ago=1)
+        f_mid = _make_fact(fact_id="mid", days_ago=15)
+        f_old = _make_fact(fact_id="old", days_ago=60)
+
+        store._loaded_channels.add(100)
+        # 上限2件: new と mid をセットした後、old を追加 → old は decay 最小なので即削除される
+        store._facts[100] = [f_new, f_mid]
         with patch("config.FACT_STORE_MAX_FACTS_PER_CHANNEL", 2):
             with patch("config.FACT_DECAY_HALF_LIFE_DAYS", 30):
-                f_new = _make_fact(fact_id="new", days_ago=1)
-                f_mid = _make_fact(fact_id="mid", days_ago=15)
-                f_old = _make_fact(fact_id="old", days_ago=60)
+                store.add_fact(f_old)
 
-                store._loaded_channels.add(100)
-                # 3件追加して1件が削除されることを確認
-                store._facts[100] = [f_new, f_mid]
-                with patch("config.FACT_STORE_MAX_FACTS_PER_CHANNEL", 2):
-                    store.add_fact(f_old)
-
-                ids = [f.fact_id for f in store._facts[100]]
-                # 最も decay の小さい f_old は加算後に削除対象
-                # ただし add_fact での削除は len > max の場合に発生
-                assert len(ids) <= 2
+        ids = [f.fact_id for f in store._facts[100]]
+        assert len(ids) == 2
+        assert "old" not in ids
 
 
 class TestFactStoreLocalStorage:

@@ -143,8 +143,12 @@ class RuleBasedJudge:
         elapsed = (now - last_time).total_seconds()
         return elapsed < config.ENGAGEMENT_DURATION_SECONDS
 
-    def _is_in_cooldown(self, channel_id: int) -> bool:
+    def is_in_cooldown(self, channel_id: int) -> bool:
         """チャンネルがクールダウン中かどうかを判定する"""
+        return self._is_in_cooldown(channel_id)
+
+    def _is_in_cooldown(self, channel_id: int) -> bool:
+        """チャンネルがクールダウン中かどうかを判定する（内部実装）"""
         if channel_id not in self._last_response_times:
             return False
         last_time = self._last_response_times[channel_id]

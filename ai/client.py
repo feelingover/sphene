@@ -48,6 +48,11 @@ def get_model_name() -> str:
     return model_name
 
 
+def get_genai_client() -> genai.Client:
+    """Google Gen AI SDK クライアントのパブリックアクセサ"""
+    return _get_genai_client()
+
+
 def reset_client() -> None:
     """クライアントの状態をリセットする（テスト用）"""
     global _client

@@ -2,13 +2,15 @@
 
 import asyncio
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
+from html import escape
 
 from google.genai import types
 
 import config
-from ai.client import _get_genai_client, get_model_name
+from ai.client import get_genai_client, get_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
 from memory.short_term import ChannelMessage
@@ -29,11 +31,17 @@ shareable=true にする基準: 後でチャンネルが再活性化した時に
 
 
 def _format_messages_for_reflection(messages: list[ChannelMessage]) -> str:
-    """メッセージを反省会プロンプト用にフォーマットする"""
+    """メッセージを反省会プロンプト用にフォーマットする（XMLタグでプロンプトインジェクション対策）"""
     lines = []
     for msg in messages:
-        role = "[BOT]" if msg.is_bot else ""
-        lines.append(f"{msg.author_name}{role} (ID:{msg.author_id}): {msg.content}")
+        role = " bot=\"true\"" if msg.is_bot else ""
+        # ユーザー入力を XML タグで囲み、属性値をエスケープ
+        safe_name = escape(msg.author_name, quote=True)
+        lines.append(
+            f"<message user=\"{safe_name}\" id=\"{msg.author_id}\"{role}>"
+            f"{escape(msg.content)}"
+            f"</message>"
+        )
     return "\n".join(lines)
 
 
@@ -42,6 +50,7 @@ class ReflectionEngine:
 
     def __init__(self) -> None:
         self._running: set[int] = set()
+        self._lock = threading.Lock()
 
     def maybe_reflect(
         self, channel_id: int, recent_messages: list[ChannelMessage]
@@ -59,15 +68,22 @@ class ReflectionEngine:
             )
             return
 
-        if channel_id in self._running:
-            logger.debug(f"反省会が既に実行中: channel_id={channel_id}")
-            return
+        with self._lock:
+            if channel_id in self._running:
+                logger.debug(f"反省会が既に実行中: channel_id={channel_id}")
+                return
+            self._running.add(channel_id)
 
         logger.info(
             f"反省会トリガー: channel_id={channel_id}, count={len(recent_messages)}"
         )
-        self._running.add(channel_id)
-        asyncio.ensure_future(self._run_reflect(channel_id, recent_messages))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._run_reflect(channel_id, recent_messages))
+        except RuntimeError:
+            logger.warning(f"反省会: 実行中のevent loopがありません channel_id={channel_id}")
+            with self._lock:
+                self._running.discard(channel_id)
 
     async def _run_reflect(
         self, channel_id: int, messages: list[ChannelMessage]
@@ -88,13 +104,14 @@ class ReflectionEngine:
                 f"反省会実行エラー: channel_id={channel_id}: {e}", exc_info=True
             )
         finally:
-            self._running.discard(channel_id)
+            with self._lock:
+                self._running.discard(channel_id)
 
     def _call_reflection_llm(
         self, messages: list[ChannelMessage]
     ) -> list[dict] | None:
         """Gemini を同期呼び出し。JSON配列を返す。失敗時は None"""
-        client = _get_genai_client()
+        client = get_genai_client()
         model_name = config.REFLECTION_MODEL or get_model_name()
 
         messages_text = _format_messages_for_reflection(messages)
@@ -141,12 +158,13 @@ class ReflectionEngine:
         messages: list[ChannelMessage],
     ) -> None:
         """LLM結果をFactオブジェクトに変換しFactStore.add_fact()で保存。
-        最後にbuffer.mark_reflected(channel_id)を呼ぶ"""
+        ファクト保存が成功した場合のみ buffer.mark_reflected(channel_id) を呼ぶ"""
         from memory.fact_store import Fact, get_fact_store
         from memory.short_term import get_channel_buffer
 
         store = get_fact_store()
         now = datetime.now(timezone.utc)
+        saved_count = 0
 
         for item in raw_facts:
             if not isinstance(item, dict):
@@ -168,8 +186,11 @@ class ReflectionEngine:
                 shareable=bool(item.get("shareable", False)),
             )
             store.add_fact(fact)
+            saved_count += 1
 
-        get_channel_buffer().mark_reflected(channel_id)
+        # ファクトが1件以上保存されたか、処理対象リストが空でなければ反省済みとしてマーク
+        if saved_count > 0 or len(raw_facts) == 0:
+            get_channel_buffer().mark_reflected(channel_id)
 
 
 # シングルトン

@@ -1,6 +1,6 @@
 import asyncio
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import discord
@@ -207,7 +207,7 @@ def _post_response_update(
                 author_id=bot_user.id,
                 author_name=bot_user.display_name,
                 content=answer,
-                timestamp=message.created_at,
+                timestamp=datetime.now(timezone.utc),
                 is_bot=True,
             )
         )
@@ -408,7 +408,7 @@ async def _process_short_ack(
                     author_id=bot.user.id,
                     author_name=bot.user.display_name,
                     content=answer,
-                    timestamp=message.created_at,
+                    timestamp=datetime.now(timezone.utc),
                     is_bot=True,
                 )
             )
@@ -624,7 +624,7 @@ async def _try_proactive_conversation(
         return
 
     # クールダウンチェック
-    if get_judge()._is_in_cooldown(message.channel.id):
+    if get_judge().is_in_cooldown(message.channel.id):
         return
 
     # shareable ファクト取得
@@ -650,9 +650,12 @@ async def _dispatch_proactive_message(
         fact: 話題にするファクト
     """
     from memory.judge import get_judge
+    from memory.short_term import get_channel_buffer
 
     channel_id_str = str(message.channel.id)
     api = _get_or_reset_conversation(channel_id_str)
+
+    channel_context = get_channel_buffer().get_context_string(message.channel.id, limit=10) or None
 
     proactive_prompt = (
         f"そういえば、前にこんなことがあったね: {fact.content}\n"
@@ -663,7 +666,7 @@ async def _dispatch_proactive_message(
     answer = await api.async_input_message(
         input_text=proactive_prompt,
         author_name="システム",
-        channel_context=None,
+        channel_context=channel_context,
     )
 
     if answer:
@@ -673,6 +676,7 @@ async def _dispatch_proactive_message(
             f"fact={fact.content[:50]}"
         )
         get_judge().record_response(message.channel.id)
+
 
 async def _handle_on_ready(
     bot: commands.Bot, command_group: app_commands.Group
