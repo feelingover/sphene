@@ -2,7 +2,6 @@
 
 import json
 import os
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -143,21 +142,11 @@ class ChannelContextStore:
 
     def _save_to_local(self, context: ChannelContext) -> None:
         """ローカルファイルにアトミック書き込み"""
+        from utils.file_utils import atomic_write_json
+
         file_path = f"storage/channel_context.{context.channel_id}.json"
         try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            temp_dir = os.path.dirname(file_path)
-            with tempfile.NamedTemporaryFile(
-                "w", dir=temp_dir, delete=False, encoding="utf-8", suffix=".tmp"
-            ) as tf:
-                json.dump(context.to_dict(), tf, ensure_ascii=False, indent=2)
-                temp_name = tf.name
-            try:
-                os.replace(temp_name, file_path)
-            except Exception:
-                if os.path.exists(temp_name):
-                    os.remove(temp_name)
-                raise
+            atomic_write_json(file_path, context.to_dict())
         except Exception as e:
             logger.error(
                 f"チャンネルコンテキストのローカル保存エラー: {e}", exc_info=True

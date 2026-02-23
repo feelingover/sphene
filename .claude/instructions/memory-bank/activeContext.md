@@ -5,15 +5,52 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
-- 全テスト通過（464件）
+- 全テスト通過（458件）、カバレッジ 88%、mypy 61ファイル no issues
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
 - 環境変数を `GEMINI_MODEL` 形式に統一、`OPENAI_API_KEY` を完全削除。
 - Google検索Grounding機能のサポート開始（`ENABLE_GOOGLE_SEARCH_GROUNDING`）。
 - Discord heartbeat blocking修正済み（`asyncio.to_thread()`）。
 - 記憶機能（Phase 1 + Phase 2 + Phase 2A + Phase 2B）実装済み。
 - ツール呼び出しループの改善済み（上限の環境変数化 + ツールなし最終コール）。
+- コードレビュー Medium/Low 全課題対応完了（Group A〜E）。
 
 ## Recent Changes
+
+### 2026/2: コードレビュー Medium/Low 課題の一括対応（Group A〜E）
+
+コードレビューで指摘された 10件の Medium + 4件の Low を 5グループに分けて解消。
+
+#### Group A: スモールフィックス
+- 空 Cog (`discord.ext.commands.Cog(name="Management")`) を削除（`bot/events.py`）
+- `error_message` 重複変数を1箇所に集約（`translate_and_reply`）
+- 裸の `except:` → `except (ValueError, json.JSONDecodeError):`
+- `_handle_api_error` をタイプベースチェックに統一（文字列マッチ廃止）
+- フィーチャーフラグの依存関係を `config.py` 末尾で起動時バリデーション
+
+#### Group B: デッドコード削除
+- `generate_contextual_response()` 関数を削除（5テストも削除）
+- `ai/conversation.py` のローカル `truncate_text` 定義を削除 → `utils.text_utils` を直接インポート
+
+#### Group C: 冗長ロジック整理
+- `can_bot_speak()` で `get_channels()` 二重呼び出しを解消
+- `_handle_message()` の `behavior` / `in_list` デバッグ変数を削除
+- `utils/file_utils.py` を新規作成し `atomic_write_json()` を3ファイルから抽出・共通化
+  - 適用先: `utils/channel_config.py`, `memory/channel_context.py`, `memory/user_profile.py`
+- `judge.evaluate()` の常時 False パラメータ3個 (`is_mentioned`, `is_name_called`, `is_reply_to_bot`) を削除
+
+#### Group D: 大規模リファクタ（`bot/events.py`）
+`process_conversation` と `_process_autonomous_response` の共通ロジックを4ヘルパーに抽出:
+- `_collect_ai_context(message)` → `(channel_context, channel_summary, topic_keywords, user_profile_str)`
+- `_get_or_reset_conversation(channel_id)` → Spheneインスタンス取得/リセット
+- `_send_chunks(message, chunks, is_reply)` → チャンク分割送信
+- `_post_response_update(message, answer, topic_keywords, bot_user)` → プロファイル更新 + バッファ追加
+
+#### Group E: アーキテクチャ
+- **E-1: `ai/api.py` 新規作成** — API レイヤーを `ai/conversation.py` から分離
+  - `generate_content_with_retry`, `call_genai_with_tools`, `_execute_tool_calls`, `_handle_api_error` を移管
+  - `memory/summarizer.py`, `memory/llm_judge.py` のインポート先を `ai.api` に更新
+  - `ai/conversation.py` は会話ステート層（`Sphene`, `channel_conversations`, `load_system_prompt` 等）のみに
+- **E-2: `config.py` 依存コメント追加** — 各フラグに依存関係を明記
 
 ### 2026/2: Firestoreコレクション名のネームスペース化
 

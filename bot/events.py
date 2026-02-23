@@ -80,6 +80,123 @@ async def is_bot_mentioned(
     return False, "", False
 
 
+async def _collect_ai_context(
+    message: discord.Message,
+) -> tuple[str, str, list[str], str]:
+    """AIへの入力コンテキスト情報を収集する
+
+    Args:
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        tuple: (channel_context, channel_summary, topic_keywords, user_profile_str)
+    """
+    from memory.short_term import get_channel_buffer
+
+    channel_context = ""
+    channel_summary = ""
+    topic_keywords: list[str] = []
+    user_profile_str = ""
+
+    if config.MEMORY_ENABLED:
+        buffer = get_channel_buffer()
+        channel_context = buffer.get_context_string(message.channel.id, limit=10)
+
+        if config.CHANNEL_CONTEXT_ENABLED:
+            from memory.channel_context import get_channel_context_store
+
+            ctx = get_channel_context_store().get_context(message.channel.id)
+            channel_summary = ctx.format_for_injection()
+            topic_keywords = ctx.topic_keywords
+
+    if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
+        from memory.user_profile import get_user_profile_store
+
+        profile = get_user_profile_store().get_profile(
+            message.author.id, message.author.display_name
+        )
+        user_profile_str = profile.format_for_injection()
+
+    return channel_context, channel_summary, topic_keywords, user_profile_str
+
+
+def _get_or_reset_conversation(channel_id: str) -> "Sphene":
+    """チャンネルの会話インスタンスを取得し、期限切れなら新規作成する
+
+    Args:
+        channel_id: チャンネルID（文字列）
+
+    Returns:
+        Sphene: 会話インスタンス
+    """
+    if channel_conversations[channel_id].is_expired():
+        logger.info(f"チャンネルID {channel_id} の会話が期限切れのためリセット")
+        channel_conversations[channel_id] = Sphene(system_setting=load_system_prompt())
+    return channel_conversations[channel_id]
+
+
+async def _send_chunks(
+    message: discord.Message,
+    chunks: list[str],
+    is_reply: bool = False,
+) -> None:
+    """チャンク分割されたメッセージを送信する
+
+    Args:
+        message: 元のDiscordメッセージ
+        chunks: 送信するテキストチャンクのリスト
+        is_reply: True の場合、最初のチャンクをリプライとして送信する
+    """
+    channel_id = str(message.channel.id)
+    for i, chunk in enumerate(chunks):
+        if is_reply and i == 0:
+            logger.info(
+                f"リプライとして応答送信(chunk {i+1}/{len(chunks)}): チャンネルID {channel_id}, 応答: {truncate_text(chunk)}"
+            )
+            await message.channel.send(chunk, reference=message)
+        else:
+            label = "リプライ" if is_reply else "通常"
+            logger.info(
+                f"{label}応答送信(chunk {i+1}/{len(chunks)}): チャンネルID {channel_id}, 応答: {truncate_text(chunk)}"
+            )
+            await message.channel.send(chunk)
+
+
+def _post_response_update(
+    message: discord.Message,
+    answer: str,
+    topic_keywords: list[str],
+    bot_user: discord.Member | discord.ClientUser | None,
+) -> None:
+    """応答送信後のプロファイル更新とバッファへの追加を行う
+
+    Args:
+        message: 元のDiscordメッセージ
+        answer: 送信した応答テキスト
+        topic_keywords: 話題キーワードリスト
+        bot_user: ボットのユーザー/メンバーオブジェクト（None の場合バッファ追加をスキップ）
+    """
+    from memory.short_term import ChannelMessage, get_channel_buffer
+
+    if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED and topic_keywords:
+        from memory.user_profile import get_user_profile_store
+
+        get_user_profile_store().update_last_topic(message.author.id, topic_keywords)
+
+    if config.MEMORY_ENABLED and bot_user is not None:
+        get_channel_buffer().add_message(
+            ChannelMessage(
+                message_id=0,
+                channel_id=message.channel.id,
+                author_id=bot_user.id,
+                author_name=bot_user.display_name,
+                content=answer,
+                timestamp=message.created_at,
+                is_bot=True,
+            )
+        )
+
+
 async def process_conversation(
     message: discord.Message,
     question: str,
@@ -94,53 +211,16 @@ async def process_conversation(
         is_reply: リプライによるメッセージかどうか
         images: 添付された画像のURLリスト
     """
-    from memory.judge import get_judge
-    from memory.short_term import ChannelMessage, get_channel_buffer
-
     channel_id = str(message.channel.id)
     author_name = message.author.display_name
 
-    # 期限切れなら会話をリセット
-    if channel_conversations[channel_id].is_expired():
-        logger.info(f"チャンネルID {channel_id} の会話が期限切れのためリセット")
-        # 新しい Sphene インスタンスを作成してリセット
-        channel_conversations[channel_id] = Sphene(system_setting=load_system_prompt())
+    channel_context, channel_summary, topic_keywords, user_profile_str = (
+        await _collect_ai_context(message)
+    )
+    api = _get_or_reset_conversation(channel_id)
 
-    # チャンネルバッファからコンテキストを取得
-    channel_context = ""
-    channel_summary = ""
-    buffer = get_channel_buffer()
-    if config.MEMORY_ENABLED:
-        channel_context = buffer.get_context_string(message.channel.id, limit=10)
-
-        if config.CHANNEL_CONTEXT_ENABLED:
-            from memory.channel_context import get_channel_context_store
-
-            ctx = get_channel_context_store().get_context(message.channel.id)
-            channel_summary = ctx.format_for_injection()
-
-    # ユーザープロファイルの取得
-    user_profile_str = ""
-    topic_keywords: list[str] = []
-    if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
-        from memory.user_profile import get_user_profile_store
-
-        profile = get_user_profile_store().get_profile(
-            message.author.id, message.author.display_name
-        )
-        user_profile_str = profile.format_for_injection()
-        if config.CHANNEL_CONTEXT_ENABLED:
-            from memory.channel_context import get_channel_context_store
-
-            topic_ctx = get_channel_context_store().get_context(message.channel.id)
-            topic_keywords = topic_ctx.topic_keywords
-
-    # チャンネルの会話インスタンスを取得
-    api = channel_conversations[channel_id]
-
-    # 会話履歴とコンテキストを使用して応答生成
-    answer = await asyncio.to_thread(
-        api.input_message,
+    # 会話履歴とコンテキストを使用して応答生成（Lock で直列化）
+    answer = await api.async_input_message(
         input_text=question,
         author_name=author_name,
         image_urls=images,
@@ -150,45 +230,9 @@ async def process_conversation(
     )
 
     if answer:
-        chunks = split_message(answer)
-        for i, chunk in enumerate(chunks):
-            if is_reply:
-                if i == 0:
-                    logger.info(
-                        f"リプライとして応答送信(chunk {i+1}/{len(chunks)}): チャンネルID {channel_id}, 応答: {truncate_text(chunk)}"
-                    )
-                    await message.channel.send(chunk, reference=message)
-                else:
-                    await message.channel.send(chunk)
-            else:
-                logger.info(
-                    f"通常応答送信(chunk {i+1}/{len(chunks)}): チャンネルID {channel_id}, 応答: {truncate_text(chunk)}"
-                )
-                await message.channel.send(chunk)
-
-        # 自律応答用のエンゲージメント記録
-        if config.AUTONOMOUS_RESPONSE_ENABLED and config.MEMORY_ENABLED:
-            get_judge().record_response(message.channel.id)
-
-        # ユーザープロファイル: 直近の話題を更新
-        if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED and topic_keywords:
-            from memory.user_profile import get_user_profile_store
-
-            get_user_profile_store().update_last_topic(message.author.id, topic_keywords)
-
-        # ボット自身の応答もバッファに追加
-        if config.MEMORY_ENABLED and message.guild and message.guild.me:
-            buffer.add_message(
-                ChannelMessage(
-                    message_id=0,
-                    channel_id=message.channel.id,
-                    author_id=message.guild.me.id,
-                    author_name=message.guild.me.display_name,
-                    content=answer,
-                    timestamp=message.created_at,
-                    is_bot=True,
-                )
-            )
+        await _send_chunks(message, split_message(answer), is_reply=is_reply)
+        bot_user = message.guild.me if message.guild else None
+        _post_response_update(message, answer, topic_keywords, bot_user)
     else:
         error_msg = "ごめん！応答の生成中にエラーが発生しちゃった...😢 もう一度試してみてね！"
         if is_reply:
@@ -233,9 +277,6 @@ async def _try_autonomous_response(
     result = judge.evaluate(
         message=channel_msg,
         recent_messages=recent_messages,
-        is_mentioned=False,
-        is_name_called=False,
-        is_reply_to_bot=False,
     )
 
     if result.score >= config.JUDGE_LLM_THRESHOLD_HIGH:
@@ -369,93 +410,37 @@ async def _process_autonomous_response(
         images: 添付画像URLリスト
     """
     from memory.judge import get_judge
-    from memory.short_term import ChannelMessage, get_channel_buffer
 
     channel_id_str = str(message.channel.id)
-    author_name = message.author.display_name
-    buffer = get_channel_buffer()
 
-    # チャンネルコンテキストを取得
-    channel_context = buffer.get_context_string(message.channel.id, limit=10)
+    channel_context, channel_summary, topic_keywords, user_profile_str = (
+        await _collect_ai_context(message)
+    )
+
     if not channel_context:
         logger.debug("コンテキストが空のため自律応答をスキップ")
         return
 
-    # チャンネル要約を取得（有効な場合）
-    channel_summary = ""
-    auto_topic_keywords: list[str] = []
-    if config.CHANNEL_CONTEXT_ENABLED and config.MEMORY_ENABLED:
-        from memory.channel_context import get_channel_context_store
+    api = _get_or_reset_conversation(channel_id_str)
 
-        ctx = get_channel_context_store().get_context(message.channel.id)
-        channel_summary = ctx.format_for_injection()
-        auto_topic_keywords = ctx.topic_keywords
-
-    # ユーザープロファイルの取得
-    auto_user_profile_str = ""
-    if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED:
-        from memory.user_profile import get_user_profile_store
-
-        auto_profile = get_user_profile_store().get_profile(
-            message.author.id, message.author.display_name
-        )
-        auto_user_profile_str = auto_profile.format_for_injection()
-
-    # 期限切れなら会話をリセット
-    if channel_conversations[channel_id_str].is_expired():
-        channel_conversations[channel_id_str] = Sphene(
-            system_setting=load_system_prompt()
-        )
-
-    api = channel_conversations[channel_id_str]
-
-    # 会話履歴を使用した応答生成 (1-shotからマルチターンに変更)
-    answer = await asyncio.to_thread(
-        api.input_message,
+    # 会話履歴を使用した応答生成（Lock で直列化）
+    answer = await api.async_input_message(
         input_text=message.content or "",
-        author_name=author_name,
+        author_name=message.author.display_name,
         image_urls=images,
         channel_context=channel_context,
         channel_summary=channel_summary,
-        user_profile=auto_user_profile_str,
+        user_profile=user_profile_str,
     )
 
     if answer:
-        # 通常メッセージとして送信（リプライではない = 会話に自然に参加）
-        chunks = split_message(answer)
-        for chunk in chunks:
-            await message.channel.send(chunk)
-
+        await _send_chunks(message, split_message(answer), is_reply=False)
         logger.info(
             f"自律応答送信: チャンネル={message.channel.id}, "
             f"応答={truncate_text(answer)}"
         )
-
-        # クールダウン記録
-        judge = get_judge()
-        judge.record_response(message.channel.id)
-
-        # ユーザープロファイル: 直近の話題を更新
-        if config.USER_PROFILE_ENABLED and config.MEMORY_ENABLED and auto_topic_keywords:
-            from memory.user_profile import get_user_profile_store
-
-            get_user_profile_store().update_last_topic(
-                message.author.id, auto_topic_keywords
-            )
-
-        # ボット自身の応答もバッファに追加
-        if bot.user:
-            buffer.add_message(
-                ChannelMessage(
-                    message_id=0,  # 送信済みメッセージのIDは取得困難なので0
-                    channel_id=message.channel.id,
-                    author_id=bot.user.id,
-                    author_name=bot.user.display_name,
-                    content=answer,
-                    timestamp=message.created_at,  # おおよそ同時刻
-                    is_bot=True,
-                )
-            )
+        get_judge().record_response(message.channel.id)
+        _post_response_update(message, answer, topic_keywords, bot.user)
     else:
         logger.debug("自律応答の生成に失敗、またはNoneが返りました")
 
@@ -492,16 +477,12 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
 
         # チャンネル設定に基づいて発言可能かどうかをチェック
         channel_id = message.channel.id
-        behavior = channel_config.get_behavior()
-        in_list = channel_config.is_channel_in_list(channel_id)
         can_speak = channel_config.can_bot_speak(channel_id)
 
         # デバッグ用の詳細なログ出力
         logger.debug(
             f"チャンネル評価: ギルドID={guild_id}, チャンネルID={channel_id}, "
-            f"リスト含まれる={in_list}, "
-            f"評価モード={behavior}({channel_config.get_mode_display_name()}), "
-            f"発言可能={can_speak}"
+            f"発言可能={can_speak}, モード={channel_config.get_mode_display_name()}"
         )
 
         if not can_speak:
@@ -589,7 +570,6 @@ async def _handle_on_ready(
         bot: Discordクライアント
         command_group: コマンドグループ
     """
-    await bot.add_cog(discord.ext.commands.Cog(name="Management"))
     # コマンドグループを追加
     bot.tree.add_command(command_group)
     await bot.tree.sync()
@@ -651,7 +631,7 @@ def get_message_type(message: discord.Message) -> str:
     """
     if message.reference:  # リプライメッセージ
         return "reply"
-    elif hasattr(message, "thread") and message.thread:  # スレッド内メッセージ
+    elif isinstance(message.channel, discord.Thread):  # スレッド内メッセージ
         return "thread"
     else:
         return "normal"
@@ -662,30 +642,22 @@ async def send_translation_response(
 ) -> None:
     """メッセージタイプに応じた適切な方法で翻訳結果を送信する
 
+    スレッド内メッセージの場合は message.channel が Thread オブジェクトそのものなので、
+    常に message.channel.send() で正しい送信先に届く。
+
     Args:
         message: 元のDiscordメッセージ
         translated_text: 翻訳されたテキスト、またはエラーメッセージ
         language_flag: 言語を示す絵文字 (🇺🇸 または 🇯🇵)
     """
-    message_type = get_message_type(message)
-    
-    # フラグを含めた全体を作成してから分割
     full_text = f"{language_flag} {translated_text}"
     chunks = split_message(full_text)
 
     for i, chunk in enumerate(chunks):
-        if message_type == "thread" and message.thread:
-            # スレッド内のメッセージの場合は、そのスレッド内に返信
-            if i == 0:
-                await message.thread.send(chunk, reference=message)
-            else:
-                await message.thread.send(chunk)
+        if i == 0:
+            await message.channel.send(chunk, reference=message)
         else:
-            # 通常メッセージやリプライの場合は今までどおり
-            if i == 0:
-                await message.channel.send(chunk, reference=message)
-            else:
-                await message.channel.send(chunk)
+            await message.channel.send(chunk)
 
 
 async def translate_and_reply(
@@ -720,14 +692,13 @@ async def translate_and_reply(
     # 言語に応じて翻訳関数とフラグを選択
     from utils.text_utils import translate_to_english, translate_to_japanese
 
+    error_message = "翻訳中にエラーが発生しました 😢"
     if target_language == "japanese":
         translate_func = translate_to_japanese
         language_flag = "🇯🇵"
-        error_message = "翻訳中にエラーが発生しました 😢"
     else:  # デフォルトは英語
         translate_func = translate_to_english
         language_flag = "🇺🇸"
-        error_message = "翻訳中にエラーが発生しました 😢"
 
     # 翻訳実行
     translated_text = await translate_func(content)

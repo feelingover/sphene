@@ -35,45 +35,18 @@ class RuleBasedJudge:
         self,
         message: ChannelMessage,
         recent_messages: list[ChannelMessage],
-        is_mentioned: bool,
-        is_name_called: bool,
-        is_reply_to_bot: bool,
     ) -> JudgeResult:
         """メッセージを評価してスコアリングする
 
         Args:
             message: 評価対象メッセージ
             recent_messages: 直近のメッセージリスト
-            is_mentioned: @メンションされたか
-            is_name_called: BOT_NAMEで呼ばれたか
-            is_reply_to_bot: ボットへのリプライか
 
         Returns:
             JudgeResult: スコアと応答可否
         """
         score = 0
         reasons: list[str] = []
-
-        # @メンション -> 即応答
-        if is_mentioned:
-            return JudgeResult(
-                score=100, should_respond=True, reason="メンション",
-                response_type="full_response",
-            )
-
-        # ボットへのリプライ -> 即応答
-        if is_reply_to_bot:
-            return JudgeResult(
-                score=100, should_respond=True, reason="リプライ",
-                response_type="full_response",
-            )
-
-        # 名前呼び -> 即応答
-        if is_name_called:
-            return JudgeResult(
-                score=80, should_respond=True, reason="名前呼び",
-                response_type="full_response",
-            )
 
         # エンゲージメント中（クールダウンとは独立に加算）
         is_engaged = self._is_engaged(message.channel_id)

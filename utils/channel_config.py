@@ -6,7 +6,6 @@
 import json
 import os
 import re
-import tempfile
 from datetime import datetime
 from typing import Any, Optional
 
@@ -295,26 +294,12 @@ class ChannelConfig:
 
     def _save_to_local(self) -> bool:
         """ローカルファイルに設定を保存 (アトミック保存)"""
+        from utils.file_utils import atomic_write_json
+
         file_path = self._get_config_file_path()
         try:
-            # ディレクトリが存在しない場合は作成
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-            # アトミックに保存するために一時ファイルを使用
-            temp_dir = os.path.dirname(file_path)
-            with tempfile.NamedTemporaryFile(
-                "w", dir=temp_dir, delete=False, encoding="utf-8", suffix=".tmp"
-            ) as tf:
-                json.dump(self.config_data, tf, ensure_ascii=False, indent=2)
-                temp_name = tf.name
-
-            try:
-                os.replace(temp_name, file_path)
-                return True
-            except Exception:
-                if os.path.exists(temp_name):
-                    os.remove(temp_name)
-                raise
+            atomic_write_json(file_path, self.config_data)
+            return True
         except Exception as e:
             logger.error(f"ローカルファイルへのアトミック保存に失敗: {str(e)}", exc_info=True)
             return False
@@ -407,22 +392,24 @@ class ChannelConfig:
             >>> config.can_bot_speak(456)  # True
             >>> config.can_bot_speak(789)  # False
         """
+        channels = self.get_channels()
         behavior = self.get_behavior()
-        in_list = self.is_channel_in_list(channel_id)
+        str_channel_id = str(channel_id)
+        in_list = any(str(c.get("id")) == str_channel_id for c in channels)
         result = False
 
         # 詳細なログ記録
         logger.debug(
             f"can_bot_speak: ギルドID={self.guild_id}, チャンネルID={channel_id}, "
             f"behavior={behavior}, in_list={in_list}, "
-            f"チャンネル数={len(self.get_channels())}"
+            f"チャンネル数={len(channels)}"
         )
 
         # リスト内のすべてのチャンネルIDをログ出力
         channels_str = ", ".join(
             [
                 f"{str(c.get('id'))}({type(c.get('id')).__name__})"
-                for c in self.get_channels()
+                for c in channels
             ]
         )
         logger.debug(f"チャンネルリスト内のID: [{channels_str}]")

@@ -7,7 +7,7 @@ from google.genai import types
 
 import config
 from ai.client import _get_genai_client, get_model_name
-from ai.conversation import _generate_content_with_retry
+from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
 from memory.channel_context import ChannelContext, get_channel_context_store
 from memory.short_term import ChannelMessage
@@ -56,6 +56,9 @@ class Summarizer:
             f"要約トリガー: channel_id={channel_id}, "
             f"count={ctx.message_count_since_update}"
         )
+        # ensure_future の前に追加することで、次のイベントループ反復で
+        # maybe_summarize が再度呼ばれても二重スケジュールされない
+        self._running.add(channel_id)
         asyncio.ensure_future(self._run_summarize(channel_id, ctx, recent_messages))
 
     async def _run_summarize(
@@ -65,7 +68,6 @@ class Summarizer:
         messages: list[ChannelMessage],
     ) -> None:
         """要約の実行本体（非同期ラッパー）"""
-        self._running.add(channel_id)
         try:
             result = await asyncio.to_thread(
                 self._call_summarize_llm, context, messages

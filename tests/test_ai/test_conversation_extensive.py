@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.genai import types
+from google.genai import types, errors as genai_errors
+from google.api_core import exceptions as google_exceptions
 
 from ai.conversation import (
     Sphene,
@@ -17,7 +18,6 @@ from ai.conversation import (
     _execute_tool_calls,
     _handle_api_error,
     cleanup_expired_conversations,
-    generate_contextual_response,
     load_system_prompt,
     reload_system_prompt,
     channel_conversations,
@@ -94,8 +94,10 @@ class TestConversationExtensive:
     def test_handle_api_error_mapping(self):
         """APIエラーハンドリングのマッピングテスト"""
         errors = [
-            (Exception("404 Not Found"), "指定されたAIモデル"),
-            (Exception("429 Too Many Requests"), "混み合ってる"),
+            (genai_errors.APIError(code=404, response_json={}), "指定されたAIモデル"),
+            (google_exceptions.NotFound("not found"), "指定されたAIモデル"),
+            (genai_errors.APIError(code=429, response_json={}), "混み合ってる"),
+            (google_exceptions.TooManyRequests("rate limited"), "混み合ってる"),
             (Exception("General Error"), "通信中にエラー"),
         ]
 
@@ -103,7 +105,7 @@ class TestConversationExtensive:
             msg = _handle_api_error(err)
             assert expected_part in msg
 
-    @patch("ai.conversation.TOOL_FUNCTIONS")
+    @patch("ai.api.TOOL_FUNCTIONS")
     def test_execute_tool_calls_success(self, mock_tools):
         """ツール呼び出し実行の成功テスト"""
         mock_func = MagicMock(return_value={"result": "success"})
@@ -118,7 +120,7 @@ class TestConversationExtensive:
         assert len(results) == 1
         mock_func.assert_called_once_with(arg="val")
 
-    @patch("ai.conversation.TOOL_FUNCTIONS")
+    @patch("ai.api.TOOL_FUNCTIONS")
     def test_execute_tool_calls_unknown_function(self, mock_tools):
         """未知のツール関数の呼び出しテスト"""
         mock_tools.get.return_value = None
@@ -132,7 +134,7 @@ class TestConversationExtensive:
         assert len(results) == 1
         # エラーは発生せず、結果が返される
 
-    @patch("ai.conversation.TOOL_FUNCTIONS")
+    @patch("ai.api.TOOL_FUNCTIONS")
     def test_execute_tool_calls_function_error(self, mock_tools):
         """ツール関数がエラーを投げた場合のテスト"""
         mock_func = MagicMock(side_effect=Exception("ツール内部エラー"))
@@ -147,8 +149,8 @@ class TestConversationExtensive:
         assert len(results) == 1
         # エラーは捕捉されて結果が返される
 
-    @patch("ai.conversation.get_model_name")
-    @patch("ai.conversation._get_genai_client")
+    @patch("ai.api.get_model_name")
+    @patch("ai.api._get_genai_client")
     def test_call_genai_with_tools_max_rounds(
         self, mock_get_client, mock_model_name
     ):
@@ -178,7 +180,7 @@ class TestConversationExtensive:
             name="loop_tool", response={"result": "ok"}
         )
         with patch(
-            "ai.conversation._execute_tool_calls",
+            "ai.api._execute_tool_calls",
             return_value=[fn_response_part],
         ):
             success, msg, _ = _call_genai_with_tools([], "system")
@@ -186,9 +188,9 @@ class TestConversationExtensive:
         assert success is False
         assert "複雑すぎて" in msg
 
-    @patch("ai.conversation.MAX_TOOL_CALL_ROUNDS", 1)
-    @patch("ai.conversation.get_model_name")
-    @patch("ai.conversation._get_genai_client")
+    @patch("ai.api.MAX_TOOL_CALL_ROUNDS", 1)
+    @patch("ai.api.get_model_name")
+    @patch("ai.api._get_genai_client")
     def test_call_genai_with_tools_final_call_without_tools(
         self, mock_get_client, mock_model_name
     ):
@@ -233,7 +235,7 @@ class TestConversationExtensive:
             name="search_item", response={"result": "ok"}
         )
         with patch(
-            "ai.conversation._execute_tool_calls",
+            "ai.api._execute_tool_calls",
             return_value=[fn_response_part],
         ):
             success, msg, _ = _call_genai_with_tools([], "system")
@@ -242,9 +244,9 @@ class TestConversationExtensive:
         assert msg == "調べた結果をまとめるね！"
         assert mock_client.models.generate_content.call_count == 3
 
-    @patch("ai.conversation.MAX_TOOL_CALL_ROUNDS", 1)
-    @patch("ai.conversation.get_model_name")
-    @patch("ai.conversation._get_genai_client")
+    @patch("ai.api.MAX_TOOL_CALL_ROUNDS", 1)
+    @patch("ai.api.get_model_name")
+    @patch("ai.api._get_genai_client")
     def test_call_genai_with_tools_final_call_api_error(
         self, mock_get_client, mock_model_name
     ):
@@ -268,15 +270,16 @@ class TestConversationExtensive:
 
         # MAX_TOOL_CALL_ROUNDS=1 → ループ2回 + 最終コール(例外)
         # @retry(stop_after_attempt(5)) なので、最終コールで5回失敗させる
+        api_error = genai_errors.APIError(code=429, response_json={"error": "rate limited"})
         mock_client = mock_get_client.return_value
         mock_client.models.generate_content.side_effect = [
             mock_tool_response,  # ラウンド1: ツール呼び出し
             mock_tool_response,  # ラウンド2: ツール呼び出し（ループ上限）
-            Exception("429 Resource exhausted"),  # 最終コール：試行1
-            Exception("429 Resource exhausted"),  # 最終コール：試行2
-            Exception("429 Resource exhausted"),  # 最終コール：試行3
-            Exception("429 Resource exhausted"),  # 最終コール：試行4
-            Exception("429 Resource exhausted"),  # 最終コール：試行5（ここで終了）
+            api_error,  # 最終コール：試行1
+            api_error,  # 最終コール：試行2
+            api_error,  # 最終コール：試行3
+            api_error,  # 最終コール：試行4
+            api_error,  # 最終コール：試行5（ここで終了）
         ]
 
         # tenacityのsleepをスキップして高速化
@@ -285,29 +288,13 @@ class TestConversationExtensive:
                 name="search_item", response={"result": "ok"}
             )
             with patch(
-                "ai.conversation._execute_tool_calls",
+                "ai.api._execute_tool_calls",
                 return_value=[fn_response_part],
             ):
                 success, msg, _ = _call_genai_with_tools([], "system")
 
         assert success is False
         assert "混み合ってる" in msg
-
-    @patch("ai.conversation._call_genai_with_tools")
-    def test_generate_contextual_response_success(self, mock_call):
-        """コンテキスト付き応答生成の成功テスト"""
-        mock_call.return_value = (True, "Contextual Answer", [])
-
-        result = generate_contextual_response("Recent context", "Trigger")
-        assert result == "Contextual Answer"
-
-    @patch("ai.conversation._call_genai_with_tools")
-    def test_generate_contextual_response_failure(self, mock_call):
-        """コンテキスト付き応答生成の失敗テスト"""
-        mock_call.return_value = (False, "エラー", [])
-
-        result = generate_contextual_response("Recent context", "Trigger")
-        assert result is None
 
     def test_cleanup_expired_conversations(self):
         """期限切れ会話のクリーンアップテスト"""
@@ -325,8 +312,8 @@ class TestConversationExtensive:
         assert "u1" in channel_conversations
         assert "u2" not in channel_conversations
 
-    @patch("ai.conversation.get_model_name")
-    @patch("ai.conversation._get_genai_client")
+    @patch("ai.api.get_model_name")
+    @patch("ai.api._get_genai_client")
     def test_call_genai_with_tools_text_response(
         self, mock_get_client, mock_model_name
     ):
@@ -352,8 +339,8 @@ class TestConversationExtensive:
         assert success is True
         assert text == "Hello from GenAI"
 
-    @patch("ai.conversation.get_model_name")
-    @patch("ai.conversation._get_genai_client")
+    @patch("ai.api.get_model_name")
+    @patch("ai.api._get_genai_client")
     def test_call_genai_with_tools_empty_candidates(
         self, mock_get_client, mock_model_name
     ):
@@ -371,8 +358,8 @@ class TestConversationExtensive:
         assert success is False
         assert "空" in text
 
-    @patch("ai.conversation.get_model_name")
-    @patch("ai.conversation._get_genai_client")
+    @patch("ai.api.get_model_name")
+    @patch("ai.api._get_genai_client")
     def test_call_genai_with_grounding_config(
         self, mock_get_client, mock_model_name
     ):
@@ -385,7 +372,7 @@ class TestConversationExtensive:
         mock_response.candidates[0].content.parts = [types.Part.from_text(text="response")]
         mock_get_client.return_value.models.generate_content.return_value = mock_response
 
-        with patch("ai.conversation.ENABLE_GOOGLE_SEARCH_GROUNDING", True):
+        with patch("ai.api.ENABLE_GOOGLE_SEARCH_GROUNDING", True):
             _call_genai_with_tools([], "system_instruction")
             
             # generate_content の呼び出し引数を確認
@@ -411,21 +398,8 @@ class TestConversationExtensive:
         assert "Base Prompt" in instruction
         assert "積極的にツールを使って調べてね" in instruction
 
-    @patch("ai.conversation._call_genai_with_tools")
-    def test_generate_contextual_response_includes_tool_instruction(self, mock_call):
-        """自律応答生成時にツール使用指示が含まれているかテスト"""
-        mock_call.return_value = (True, "Answer", [])
-        
-        generate_contextual_response("Context", "Trigger", system_prompt="System Prompt")
-        
-        # _call_genai_with_tools の引数を確認
-        _, kwargs = mock_call.call_args
-        instruction = kwargs["system_instruction"]
-        assert "System Prompt" in instruction
-        assert "積極的にツールを使って調べてね" in instruction
-
-    @patch("ai.conversation.get_model_name")
-    @patch("ai.conversation._get_genai_client")
+    @patch("ai.api.get_model_name")
+    @patch("ai.api._get_genai_client")
     def test_call_genai_with_grounding_metadata(
         self, mock_get_client, mock_model_name
     ):
