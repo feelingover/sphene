@@ -148,7 +148,8 @@ class FactStore:
             limit: 返す最大件数
         """
         self._load_channel(channel_id)
-        facts = self._facts.get(channel_id, [])
+        with self._lock:
+            facts = list(self._facts.get(channel_id, []))
         if not facts:
             return []
 
@@ -179,7 +180,8 @@ class FactStore:
     def get_shareable_facts(self, channel_id: int) -> list[Fact]:
         """shareable=True のファクトを decay_factor 降順で返す"""
         self._load_channel(channel_id)
-        facts = self._facts.get(channel_id, [])
+        with self._lock:
+            facts = list(self._facts.get(channel_id, []))
         half_life = config.FACT_DECAY_HALF_LIFE_DAYS
         shareable = [f for f in facts if f.shareable]
         shareable.sort(key=lambda f: f.decay_factor(half_life), reverse=True)
@@ -187,19 +189,28 @@ class FactStore:
 
     def persist_all(self) -> None:
         """全チャンネルを永続化する（クリーンアップタスクから呼ばれる）"""
+        with self._lock:
+            snapshot = {cid: list(facts) for cid, facts in self._facts.items()}
         storage_type = config.STORAGE_TYPE
-        for channel_id, facts in self._facts.items():
+        for channel_id, facts in snapshot.items():
             if storage_type == "local":
                 self._save_to_local(channel_id, facts)
             elif storage_type == "firestore":
                 self._save_to_firestore(channel_id, facts)
 
     def _load_channel(self, channel_id: int) -> None:
-        """初回アクセス時に永続化先からファクトを遅延ロードする"""
+        """初回アクセス時に永続化先からファクトを遅延ロードする。
+
+        ダブルチェックロッキングパターンを使用する:
+        1. ロックなしで既ロード済みを確認（高速パス）
+        2. I/O をロック外で実行してパフォーマンスを維持
+        3. ロックを再取得して _loaded_channels と _facts を更新
+        複数スレッドが同時に未ロードのチャンネルに到達した場合、I/O が複数回
+        実行される可能性があるが、同一データの書き込みなので安全（べき等）。
+        """
         with self._lock:
             if channel_id in self._loaded_channels:
                 return
-            self._loaded_channels.add(channel_id)
 
         storage_type = config.STORAGE_TYPE
         facts: list[Fact] | None = None
@@ -209,9 +220,12 @@ class FactStore:
         elif storage_type == "firestore":
             facts = self._load_from_firestore(channel_id)
 
-        if facts is not None:
-            with self._lock:
-                self._facts[channel_id] = facts
+        with self._lock:
+            # 別スレッドが先にロードを完了していた場合はスキップ
+            if channel_id not in self._loaded_channels:
+                if facts is not None:
+                    self._facts[channel_id] = facts
+                self._loaded_channels.add(channel_id)
 
     def _save_to_local(self, channel_id: int, facts: list[Fact]) -> None:
         """ローカルファイルにアトミック書き込み"""

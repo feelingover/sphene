@@ -188,7 +188,10 @@ class ReflectionEngine:
             store.add_fact(fact)
             saved_count += 1
 
-        # ファクトが1件以上保存されたか、処理対象リストが空でなければ反省済みとしてマーク
+        # saved_count > 0: ファクトが1件以上保存された場合
+        # len(raw_facts) == 0: LLMが空配列を返した場合 = 抽出すべき事実がなかった正常終了
+        # どちらの場合もカウンタをリセットして次のサイクルを開始する
+        # （LLMが永続的に空を返す場合でも、ループせず次のトリガーまで待機できる）
         if saved_count > 0 or len(raw_facts) == 0:
             get_channel_buffer().mark_reflected(channel_id)
 

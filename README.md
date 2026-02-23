@@ -100,7 +100,7 @@ AUTONOMOUS_RESPONSE_ENABLED=false
 # REFLECTION_ENABLED=false
 # REFLECTION_LULL_MINUTES=10              # 沈黙N分で反省会トリガー
 # REFLECTION_MIN_MESSAGES=10             # 最低メッセージ数（これ未満はスキップ）
-# REFLECTION_MAX_BUFFER_MESSAGES=100     # バッファ蓄積量での強制トリガー件数
+# REFLECTION_MAX_BUFFER_MESSAGES=30      # バッファ蓄積量での強制トリガー件数
 # REFLECTION_MODEL=                      # 空の場合はGEMINI_MODELを使用
 
 # 長期記憶: ファクトストア

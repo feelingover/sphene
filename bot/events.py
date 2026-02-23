@@ -642,30 +642,24 @@ async def _dispatch_proactive_message(
     message: discord.Message,
     fact: Any,
 ) -> None:
-    """shareable ファクトをもとに自発会話メッセージを生成して送信する
+    """shareable ファクトをもとに自発会話メッセージを生成して送信する。
+
+    Sphene の会話履歴を汚染しないよう generate_proactive_message を使う。
 
     Args:
         bot: Discordクライアント
         message: トリガーとなったDiscordメッセージ
         fact: 話題にするファクト
     """
+    from ai.conversation import generate_proactive_message
     from memory.judge import get_judge
     from memory.short_term import get_channel_buffer
 
-    channel_id_str = str(message.channel.id)
-    api = _get_or_reset_conversation(channel_id_str)
-
     channel_context = get_channel_buffer().get_context_string(message.channel.id, limit=10) or None
 
-    proactive_prompt = (
-        f"そういえば、前にこんなことがあったね: {fact.content}\n"
-        "このことについて、自然に会話を振り始めてみて。"
-        "「そういえば...」や「ところで...」など自然な話の切り出し方で。"
-    )
-
-    answer = await api.async_input_message(
-        input_text=proactive_prompt,
-        author_name="システム",
+    answer = await asyncio.to_thread(
+        generate_proactive_message,
+        fact_content=fact.content,
         channel_context=channel_context,
     )
 
