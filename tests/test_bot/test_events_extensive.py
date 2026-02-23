@@ -229,27 +229,11 @@ class TestCollectAiContext:
 
     @pytest.mark.asyncio
     @patch("bot.events.config")
-    async def test_memory_disabled_returns_empty(self, mock_config: MagicMock) -> None:
-        """MEMORY_ENABLED=False のとき全て空を返す"""
-        mock_config.MEMORY_ENABLED = False
-        mock_config.USER_PROFILE_ENABLED = False
-
-        message = MagicMock()
-        ctx, summary, keywords, profile = await _collect_ai_context(message)
-
-        assert ctx == ""
-        assert summary == ""
-        assert keywords == []
-        assert profile == ""
-
-    @pytest.mark.asyncio
-    @patch("bot.events.config")
     @patch("memory.short_term.get_channel_buffer")
     async def test_memory_enabled_channel_context_disabled(
         self, mock_buffer_fn: MagicMock, mock_config: MagicMock
     ) -> None:
-        """MEMORY_ENABLED=True, CHANNEL_CONTEXT_ENABLED=False のとき channel_context のみ返す"""
-        mock_config.MEMORY_ENABLED = True
+        """CHANNEL_CONTEXT_ENABLED=False のとき channel_context のみ返す"""
         mock_config.CHANNEL_CONTEXT_ENABLED = False
         mock_config.USER_PROFILE_ENABLED = False
 
@@ -278,7 +262,6 @@ class TestCollectAiContext:
         mock_config: MagicMock,
     ) -> None:
         """CHANNEL_CONTEXT_ENABLED=True のとき summary と topic_keywords が返る"""
-        mock_config.MEMORY_ENABLED = True
         mock_config.CHANNEL_CONTEXT_ENABLED = True
         mock_config.USER_PROFILE_ENABLED = False
 
@@ -313,7 +296,6 @@ class TestCollectAiContext:
         mock_config: MagicMock,
     ) -> None:
         """USER_PROFILE_ENABLED=True のとき user_profile_str が返る"""
-        mock_config.MEMORY_ENABLED = True
         mock_config.CHANNEL_CONTEXT_ENABLED = False
         mock_config.USER_PROFILE_ENABLED = True
 
@@ -455,7 +437,6 @@ class TestPostResponseUpdate:
     def test_skips_profile_update_when_no_keywords(self, mock_config: MagicMock) -> None:
         """topic_keywords が空のとき update_last_topic は呼ばれない"""
         mock_config.USER_PROFILE_ENABLED = True
-        mock_config.MEMORY_ENABLED = True
 
         message = MagicMock()
         message.channel.id = 100
@@ -468,7 +449,6 @@ class TestPostResponseUpdate:
     def test_skips_buffer_when_bot_user_is_none(self, mock_config: MagicMock) -> None:
         """bot_user が None のとき add_message は呼ばれない"""
         mock_config.USER_PROFILE_ENABLED = False
-        mock_config.MEMORY_ENABLED = True
 
         message = MagicMock()
         message.channel.id = 100
@@ -481,7 +461,6 @@ class TestPostResponseUpdate:
     def test_updates_profile_and_buffer(self, mock_config: MagicMock) -> None:
         """keywords あり・bot_user あり の場合、両方更新される"""
         mock_config.USER_PROFILE_ENABLED = True
-        mock_config.MEMORY_ENABLED = True
 
         message = MagicMock()
         message.channel.id = 100

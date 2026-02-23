@@ -110,8 +110,9 @@ class TestEventHandling:
         mock_config,
     ):
         """ボットがメンションされていない場合のテスト"""
-        mock_config.MEMORY_ENABLED = False
         mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
+        mock_config.CHANNEL_CONTEXT_ENABLED = False
+        mock_config.USER_PROFILE_ENABLED = False
         # channel_configの代わりにconfig_managerを使用
         mock_channel_config = MagicMock()
         mock_channel_config.can_bot_speak.return_value = True
@@ -124,6 +125,7 @@ class TestEventHandling:
         message.channel.id = 12345
         message.content = "通常メッセージ"
         message.author.id = 67890
+        message.created_at = datetime.now(timezone.utc)
         # guildのモック
         message.guild = MagicMock()
         message.guild.id = 54321

@@ -84,7 +84,6 @@
 
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
-| `MEMORY_ENABLED` | `false` | 短期記憶（チャンネルバッファ）の有効化 |
 | `CHANNEL_BUFFER_SIZE` | `50` | チャンネルごとのバッファ保持メッセージ数 |
 | `CHANNEL_BUFFER_TTL_MINUTES` | `30` | バッファ内メッセージの有効期限（分） |
 
@@ -92,7 +91,7 @@
 
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
-| `AUTONOMOUS_RESPONSE_ENABLED` | `false` | 自律応答の有効化（MEMORY_ENABLED も必要） |
+| `AUTONOMOUS_RESPONSE_ENABLED` | `false` | 自律応答の有効化 |
 | `JUDGE_SCORE_THRESHOLD` | `20` | ルールベース判定の最小応答閾値 |
 | `JUDGE_SCORE_FULL_RESPONSE` | `60` | 通常応答（full）を返すスコア閾値 |
 | `JUDGE_SCORE_SHORT_ACK` | `30` | 相槌（short）を返すスコア閾値 |

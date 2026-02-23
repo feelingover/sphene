@@ -51,8 +51,6 @@ MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "5"))
 # === 記憶機能設定 ===
 
 # 短期記憶（チャンネルメッセージバッファ）
-# 依存: CHANNEL_CONTEXT_ENABLED, USER_PROFILE_ENABLED はこのフラグが True のときのみ有効
-MEMORY_ENABLED: bool = os.getenv("MEMORY_ENABLED", "false").lower() == "true"
 CHANNEL_BUFFER_SIZE: int = int(os.getenv("CHANNEL_BUFFER_SIZE", "50"))
 CHANNEL_BUFFER_TTL_MINUTES: int = int(os.getenv("CHANNEL_BUFFER_TTL_MINUTES", "30"))
 
@@ -79,7 +77,6 @@ JUDGE_LLM_THRESHOLD_LOW: int = int(os.getenv("JUDGE_LLM_THRESHOLD_LOW", "20"))
 JUDGE_LLM_THRESHOLD_HIGH: int = int(os.getenv("JUDGE_LLM_THRESHOLD_HIGH", "60"))
 
 # === チャンネルコンテキスト設定 ===
-# 依存: MEMORY_ENABLED=True が必要
 CHANNEL_CONTEXT_ENABLED: bool = (
     os.getenv("CHANNEL_CONTEXT_ENABLED", "false").lower() == "true"
 )
@@ -93,16 +90,11 @@ RESPONSE_DIVERSITY_ENABLED: bool = (
 )
 
 # === ユーザープロファイル設定 (Phase 2B) ===
-# 依存: MEMORY_ENABLED=True が必要
 USER_PROFILE_ENABLED: bool = os.getenv("USER_PROFILE_ENABLED", "false").lower() == "true"
 FAMILIARITY_THRESHOLD_ACQUAINTANCE: int = int(os.getenv("FAMILIARITY_THRESHOLD_ACQUAINTANCE", "6"))
 FAMILIARITY_THRESHOLD_REGULAR: int = int(os.getenv("FAMILIARITY_THRESHOLD_REGULAR", "31"))
 FAMILIARITY_THRESHOLD_CLOSE: int = int(os.getenv("FAMILIARITY_THRESHOLD_CLOSE", "101"))
 
 # フィーチャーフラグの依存関係チェック（起動時バリデーション）
-if CHANNEL_CONTEXT_ENABLED and not MEMORY_ENABLED:
-    raise ValueError("CHANNEL_CONTEXT_ENABLED requires MEMORY_ENABLED=True")
-if USER_PROFILE_ENABLED and not MEMORY_ENABLED:
-    raise ValueError("USER_PROFILE_ENABLED requires MEMORY_ENABLED=True")
 if LLM_JUDGE_ENABLED and not AUTONOMOUS_RESPONSE_ENABLED:
     raise ValueError("LLM_JUDGE_ENABLED requires AUTONOMOUS_RESPONSE_ENABLED=True")
