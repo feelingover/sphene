@@ -67,7 +67,7 @@ class ChannelConfigManager:
         guild_id = str(guild_id)  # 文字列に変換
 
         if guild_id not in self.guild_configs:
-            logger.info(f"ギルドID {guild_id} の設定を新規作成")
+            logger.info(f"ギルドID {guild_id} の設定インスタンスをメモリ上に作成")
             self.guild_configs[guild_id] = ChannelConfig(
                 guild_id=guild_id, debug_mode=self.debug_mode
             )

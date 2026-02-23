@@ -599,8 +599,8 @@ async def _handle_on_ready(
     else:
         logger.error("Discordボットのユーザー情報を取得できませんでした")
 
-    # 各ギルドの設定ファイルを初期化
-    logger.info("ギルドごとのチャンネル設定ファイルを初期化")
+    # 各ギルドのチャンネル設定を初期化
+    logger.info("ギルドごとのチャンネル設定を初期化")
     for guild in bot.guilds:
         logger.info(f"ギルド {guild.name} (ID: {guild.id}) の設定をチェック")
         try:
