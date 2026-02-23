@@ -93,6 +93,10 @@ class ChannelContextStore:
     def __init__(self) -> None:
         self._contexts: dict[int, ChannelContext] = {}
 
+    def get_all_contexts(self) -> dict[int, ChannelContext]:
+        """全コンテキストのコピーを返す（スレッドセーフ）"""
+        return dict(self._contexts)
+
     def get_context(self, channel_id: int) -> ChannelContext:
         """チャンネルコンテキストを取得する（なければ新規作成）"""
         if channel_id in self._contexts:

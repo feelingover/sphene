@@ -99,7 +99,7 @@ class SpheneBot:
                 store = get_channel_context_store()
                 buffer = get_channel_buffer()
                 summarizer = get_summarizer()
-                for channel_id, ctx in store._contexts.items():
+                for channel_id, ctx in store.get_all_contexts().items():
                     if ctx.should_summarize_by_time():
                         recent = buffer.get_recent_messages(channel_id, limit=20)
                         summarizer.maybe_summarize(channel_id, recent)
