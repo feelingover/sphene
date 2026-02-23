@@ -1,7 +1,10 @@
 import asyncio
 import random
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from memory.fact_store import Fact
 
 import discord
 from discord import app_commands
@@ -120,9 +123,9 @@ async def _collect_ai_context(
         user_profile_str = profile.format_for_injection()
 
     if config.REFLECTION_ENABLED:
-        from memory.fact_store import _extract_keywords, get_fact_store
+        from memory.fact_store import extract_keywords, get_fact_store
 
-        keywords = _extract_keywords(message.content or "")
+        keywords = extract_keywords(message.content or "")
         facts = get_fact_store().search(
             channel_id=message.channel.id,
             keywords=keywords,
@@ -610,8 +613,6 @@ async def _try_proactive_conversation(
         message: トリガーとなったDiscordメッセージ
         pre_add_last_time: バッファ追加前の最終メッセージ時刻（UTC）
     """
-    from datetime import timezone
-
     from memory.fact_store import get_fact_store
     from memory.judge import get_judge
 
@@ -620,7 +621,7 @@ async def _try_proactive_conversation(
     if msg_time.tzinfo is None:
         msg_time = msg_time.replace(tzinfo=timezone.utc)
     silence_minutes = (msg_time - pre_add_last_time).total_seconds() / 60
-    if silence_minutes < config.REFLECTION_LULL_MINUTES:
+    if silence_minutes < config.PROACTIVE_SILENCE_MINUTES:
         return
 
     # クールダウンチェック
@@ -640,7 +641,7 @@ async def _try_proactive_conversation(
 async def _dispatch_proactive_message(
     bot: commands.Bot,
     message: discord.Message,
-    fact: Any,
+    fact: "Fact",
 ) -> None:
     """shareable ファクトをもとに自発会話メッセージを生成して送信する。
 

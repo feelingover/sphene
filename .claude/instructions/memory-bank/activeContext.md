@@ -5,7 +5,7 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
-- 全テスト通過（546件）、カバレッジ 88%、mypy 66ファイル no issues
+- 全テスト通過（546件）、カバレッジ 87%、mypy 66ファイル no issues
 - 記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）実装済み。
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
 - 環境変数を `GEMINI_MODEL` 形式に統一、`OPENAI_API_KEY` を完全削除。
@@ -26,11 +26,11 @@ applyTo: "**"
   - `Fact`: `fact_id`, `channel_id`, `content`, `keywords`, `source_user_ids`, `created_at`, `shareable`
   - `decay_factor(half_life_days)`: 指数減衰係数（半減期でスコア0.5）
   - `FactStore.add_fact()`: 追加 + 上限超過時は decay 最小のものを削除
-  - `FactStore.search(keywords, user_ids, limit)`: Jaccard類似度 × decay_factor × user_idブースト(1.5倍)でランキング
+  - `FactStore.search(keywords, user_ids, limit)`: Jaccard類似度 × decay_factor × user_idブースト(`FACT_USER_BOOST_FACTOR`倍、デフォルト1.5)でランキング
   - `FactStore.get_shareable_facts()`: shareable=True のみ decay 降順
   - `FactStore.persist_all()`: クリーンアップタスクから呼ばれる全チャンネル永続化
   - 遅延ロード（初回アクセス時のみ）、ローカル(`storage/facts.{channel_id}.json`) / Firestore対応
-  - `_jaccard_similarity(set_a, set_b)` / `_extract_keywords(text)`: キーワード抽出ヘルパー
+  - `_jaccard_similarity(set_a, set_b)` / `extract_keywords(text)`: キーワード抽出ヘルパー（公開API）
   - シングルトン: `get_fact_store()`
 
 - **`memory/reflection.py`**: `ReflectionEngine`（反省会エンジン）
@@ -47,6 +47,8 @@ applyTo: "**"
   - `FACT_STORE_MAX_FACTS_PER_CHANNEL`（デフォルト100）, `FACT_DECAY_HALF_LIFE_DAYS`（デフォルト30）
   - `REFLECTION_ENABLED`, `REFLECTION_LULL_MINUTES`（10）, `REFLECTION_MIN_MESSAGES`（10）, `REFLECTION_MAX_BUFFER_MESSAGES`（100）, `REFLECTION_MODEL`
   - `PROACTIVE_CONVERSATION_ENABLED`: `REFLECTION_ENABLED=True` が必要（起動時バリデーション追加）
+  - `FACT_USER_BOOST_FACTOR`（デフォルト1.5）: ユーザーIDが一致するファクトのスコアブースト倍率
+  - `PROACTIVE_SILENCE_MINUTES`（デフォルト10）: 自発会話トリガーの沈黙閾値（`REFLECTION_LULL_MINUTES` と独立）
 
 - **`memory/short_term.py`**: `ChannelMessageBuffer` に4メソッド追加
   - `_last_reflected: dict[int, datetime]` フィールド追加
@@ -74,6 +76,18 @@ REFLECTION_LULL_MINUTES=10      # 沈黙検知時間（分）
 # 自発会話も使う場合:
 PROACTIVE_CONVERSATION_ENABLED=true
 ```
+
+### 2026/2: Phase 3A コードレビュー対応（7件）
+
+PR #76 のコードレビュー指摘を解消。
+
+- **`extract_keywords` 公開化**: `_extract_keywords` → `extract_keywords`（`bot/events.py` からのプライベート関数クロスモジュールインポートを解消）
+- **`FACT_USER_BOOST_FACTOR` 環境変数化**: ハードコードの `1.5` を `config.py` で管理
+- **`PROACTIVE_SILENCE_MINUTES` 追加**: 自発会話の沈黙閾値を `REFLECTION_LULL_MINUTES` から独立化
+- **`_load_channel` コメント修正**: DCL の説明を実装（2段階ロック）に合わせて修正
+- **`_dispatch_proactive_message` 型修正**: `fact: Any` → `fact: "Fact"` + `TYPE_CHECKING` インポート
+- **冗長インポート削除**: `_try_proactive_conversation` 内の `from datetime import timezone` ローカルインポートを削除（モジュールレベルで定義済み）
+- **`_cleanup_task` ブロック統合**: `if config.REFLECTION_ENABLED:` 2ブロック → 1ブロックに集約
 
 ### 2026/2: コードレビュー Medium/Low 課題の一括対応（Group A〜E）
 

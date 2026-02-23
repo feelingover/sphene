@@ -10,7 +10,7 @@ import pytest
 from memory.fact_store import (
     Fact,
     FactStore,
-    _extract_keywords,
+    extract_keywords,
     _jaccard_similarity,
     get_fact_store,
 )
@@ -145,11 +145,11 @@ class TestJaccardSimilarity:
 
 
 class TestExtractKeywords:
-    """_extract_keywords のテスト"""
+    """extract_keywords のテスト"""
 
     def test_splits_on_space(self):
         """スペース区切りでトークン化されること"""
-        result = _extract_keywords("Rust Python Go C")
+        result = extract_keywords("Rust Python Go C")
         assert "Rust" in result
         assert "Python" in result
         assert "Go" in result  # 2文字は残る
@@ -157,27 +157,27 @@ class TestExtractKeywords:
 
     def test_removes_single_char_tokens(self):
         """1文字以下のトークンが除去されること"""
-        result = _extract_keywords("a bb ccc")
+        result = extract_keywords("a bb ccc")
         assert "a" not in result
         assert "bb" in result
         assert "ccc" in result
 
     def test_removes_stopwords(self):
         """ひらがなストップワードが除去されること"""
-        result = _extract_keywords("これ は テスト")
+        result = extract_keywords("これ は テスト")
         # "は" はストップワード
         assert "は" not in result
 
     def test_splits_on_punctuation(self):
         """句読点で分割されること"""
-        result = _extract_keywords("テスト、機能確認。完了")
+        result = extract_keywords("テスト、機能確認。完了")
         assert "テスト" in result
         assert "機能確認" in result
         assert "完了" in result
 
     def test_empty_string(self):
         """空文字列で空リストを返すこと"""
-        result = _extract_keywords("")
+        result = extract_keywords("")
         assert result == []
 
 

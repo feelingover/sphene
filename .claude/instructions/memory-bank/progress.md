@@ -12,7 +12,8 @@ applyTo: "**"
   - `ai/conversation.py`: `relevant_facts` パラメータ追加（user_profile の後に context_section へ注入）
   - `bot/events.py`: ファクト検索・注入、沈黙後自発会話（`_try_proactive_conversation`, `_dispatch_proactive_message`）、バッファ量ベース反省会トリガー
   - `bot/discord_bot.py`: 沈黙ベース反省会チェック + ファクトストア永続化
-  - 新規環境変数9個: `REFLECTION_ENABLED/LULL_MINUTES/MIN_MESSAGES/MAX_BUFFER_MESSAGES/MODEL`, `FACT_STORE_MAX_FACTS_PER_CHANNEL`, `FACT_DECAY_HALF_LIFE_DAYS`, `PROACTIVE_CONVERSATION_ENABLED`, `FIRESTORE_COLLECTION_FACTS`
+  - 新規環境変数11個: `REFLECTION_ENABLED/LULL_MINUTES/MIN_MESSAGES/MAX_BUFFER_MESSAGES/MODEL`, `FACT_STORE_MAX_FACTS_PER_CHANNEL`, `FACT_DECAY_HALF_LIFE_DAYS`, `FACT_USER_BOOST_FACTOR`, `PROACTIVE_CONVERSATION_ENABLED`, `PROACTIVE_SILENCE_MINUTES`, `FIRESTORE_COLLECTION_FACTS`
+- **Phase 3A コードレビュー対応**: `extract_keywords` 公開化、ブースト係数環境変数化、型アノテーション修正、冗長インポート削除、`_cleanup_task` ブロック統合
 - **コードレビュー Medium/Low 課題の一括対応**:
   - `utils/file_utils.py` 新規作成（`atomic_write_json` 共通化）
   - `ai/api.py` 新規作成（API レイヤーを `ai/conversation.py` から分離）

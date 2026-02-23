@@ -108,11 +108,12 @@ class SpheneBot:
                     exc_info=True,
                 )
 
-        # 沈黙ベースの反省会チェック
+        # 沈黙ベースの反省会チェック + ファクトストアの永続化
         if config.REFLECTION_ENABLED:
             try:
                 from datetime import datetime, timezone
 
+                from memory.fact_store import get_fact_store
                 from memory.reflection import get_reflection_engine
                 from memory.short_term import get_channel_buffer
 
@@ -128,20 +129,13 @@ class SpheneBot:
                     if silence_minutes >= config.REFLECTION_LULL_MINUTES:
                         recent = buffer.get_recent_messages(channel_id, limit=100)
                         engine.maybe_reflect(channel_id, recent)
-            except Exception as e:
-                logger.error(
-                    f"沈黙ベース反省会チェックでエラー: {str(e)}", exc_info=True
-                )
-
-        # ファクトストアの永続化
-        if config.REFLECTION_ENABLED:
-            try:
-                from memory.fact_store import get_fact_store
 
                 get_fact_store().persist_all()
                 logger.debug("ファクトストアを永続化しました")
             except Exception as e:
-                logger.error(f"ファクトストア永続化エラー: {str(e)}", exc_info=True)
+                logger.error(
+                    f"反省会チェック/ファクトストア永続化でエラー: {str(e)}", exc_info=True
+                )
 
     def run(self) -> None:
         """ボットを起動する"""

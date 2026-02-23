@@ -406,7 +406,7 @@ class TestCollectAiContextFacts:
 
         with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
             with patch("memory.fact_store.get_fact_store", return_value=mock_store):
-                with patch("memory.fact_store._extract_keywords", return_value=["Rust"]):
+                with patch("memory.fact_store.extract_keywords", return_value=["Rust"]):
                     from bot.events import _collect_ai_context
                     _, _, _, _, relevant_facts_str = await _collect_ai_context(message)
 

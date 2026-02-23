@@ -90,7 +90,7 @@ def _jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:
     return intersection / union
 
 
-def _extract_keywords(text: str) -> list[str]:
+def extract_keywords(text: str) -> list[str]:
     """テキストからキーワードを抽出する（スペース/句読点区切り + 短文字除去 + ストップワード除去）"""
     # スペース・句読点・括弧などで分割
     tokens = re.split(r'[\s、。！？!?・「」『』【】（）(),.]+', text)
@@ -169,7 +169,7 @@ class FactStore:
 
             # user_id ブースト
             if user_ids and any(uid in fact.source_user_ids for uid in user_ids):
-                score *= 1.5
+                score *= config.FACT_USER_BOOST_FACTOR
 
             if score > 0:
                 scored.append((score, fact))
@@ -201,12 +201,14 @@ class FactStore:
     def _load_channel(self, channel_id: int) -> None:
         """初回アクセス時に永続化先からファクトを遅延ロードする。
 
-        ダブルチェックロッキングパターンを使用する:
-        1. ロックなしで既ロード済みを確認（高速パス）
-        2. I/O をロック外で実行してパフォーマンスを維持
+        2段階ロックパターンを使用する:
+        1. ロック取得 → 既ロード済みなら即リターン（高速パス）
+        2. ロック解放後に I/O を実行してロック保持時間を最小化
         3. ロックを再取得して _loaded_channels と _facts を更新
         複数スレッドが同時に未ロードのチャンネルに到達した場合、I/O が複数回
         実行される可能性があるが、同一データの書き込みなので安全（べき等）。
+        ロック取得済みのスレッドが先に完了した場合、後発スレッドは最終チェックで
+        スキップするため、途中で追加されたファクトが上書きされることはない。
         """
         with self._lock:
             if channel_id in self._loaded_channels:

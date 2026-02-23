@@ -99,6 +99,8 @@ FAMILIARITY_THRESHOLD_CLOSE: int = int(os.getenv("FAMILIARITY_THRESHOLD_CLOSE", 
 # === ファクトストア設定 (Phase 3A) ===
 FACT_STORE_MAX_FACTS_PER_CHANNEL: int = int(os.getenv("FACT_STORE_MAX_FACTS_PER_CHANNEL", "100"))
 FACT_DECAY_HALF_LIFE_DAYS: int = int(os.getenv("FACT_DECAY_HALF_LIFE_DAYS", "30"))
+# ユーザーIDが一致するファクトのスコアブースト倍率
+FACT_USER_BOOST_FACTOR: float = float(os.getenv("FACT_USER_BOOST_FACTOR", "1.5"))
 
 # === 反省会エンジン設定 (Phase 3A) ===
 REFLECTION_ENABLED: bool = os.getenv("REFLECTION_ENABLED", "false").lower() == "true"
@@ -113,6 +115,8 @@ REFLECTION_MODEL: str = os.getenv("REFLECTION_MODEL", "")
 PROACTIVE_CONVERSATION_ENABLED: bool = (
     os.getenv("PROACTIVE_CONVERSATION_ENABLED", "false").lower() == "true"
 )
+# 自発的会話をトリガーする沈黙時間（分）。REFLECTION_LULL_MINUTES と独立して設定可能。
+PROACTIVE_SILENCE_MINUTES: int = int(os.getenv("PROACTIVE_SILENCE_MINUTES", "10"))
 
 # フィーチャーフラグの依存関係チェック（起動時バリデーション）
 if LLM_JUDGE_ENABLED and not AUTONOMOUS_RESPONSE_ENABLED:
