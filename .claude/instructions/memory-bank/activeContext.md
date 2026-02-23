@@ -5,6 +5,7 @@ applyTo: "**"
 
 ## Current State (2026/2)
 
+- 記憶システム「リビングメモリー (Living Memory)」の仕様を `docs/living-memory.md` に集約。
 - 全テスト通過（546件）、カバレッジ 87%、mypy 66ファイル no issues
 - 記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）実装済み。
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
@@ -16,6 +17,10 @@ applyTo: "**"
 - コードレビュー Medium/Low 全課題対応完了（Group A〜E）。
 
 ## Recent Changes
+
+### 2026/2: 記憶システムのブランド化「リビングメモリー」
+
+ボットの多層的な記憶システムを「リビングメモリー (Living Memory)」と命名し、仕様を `docs/living-memory.md` にまとめた。短期・中期・長期の3層構造で、ボットが「チャンネルの参加者の一人」として振る舞うための基盤となる。
 
 ### 2026/2: Phase 3A - 反省会 + ファクトストア + 自発的会話
 

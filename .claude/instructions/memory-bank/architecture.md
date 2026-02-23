@@ -37,17 +37,20 @@ GenAI API 呼び出しロジックを集約。`generate_content_with_retry`（te
 ### XIVAPI (`xivapi/client.py`)
 XIVAPI v2ゲームデータ検索。アイテム、アクション、レシピ、クエスト等の多種多様なコンテンツに対応。
 
-### Memory Layer (`memory/`)
-| ファイル | 役割 |
-|---------|------|
-| `short_term.py` | チャンネルバッファ（dequeリングバッファ, TTL管理, 反省会チェックポイント） |
-| `channel_context.py` | チャンネルコンテキスト（ローリング要約, mood, topic_keywords） |
-| `user_profile.py` | ユーザープロファイル（interaction_count, familiarity_level, last_topic） |
-| `fact_store.py` | ファクトストア（Fact dataclass, Jaccard×decay検索, local/Firestore永続化） |
-| `reflection.py` | 反省会エンジン（LLMによるファクト抽出, fire-and-forget非同期） |
-| `judge.py` | RuleBasedJudge（スコアリング + response_type決定） |
-| `llm_judge.py` | LLMJudge（中間スコアの二次判定） |
-| `summarizer.py` | ローリング要約エンジン（非同期, fire-and-forget） |
+### Memory Layer (`memory/`) - 「リビングメモリー (Living Memory)」
+
+多層的な記憶システム。詳細は `docs/living-memory.md` を参照。
+
+| レイヤー | ファイル | 役割 |
+|---------|---------|------|
+| **短期** | `short_term.py` | チャンネルバッファ（dequeリングバッファ, TTL管理, 反省会チェックポイント） |
+| **中期** | `channel_context.py` | チャンネルコンテキスト（mood, topic_keywords） |
+| **中期** | `summarizer.py` | ローリング要約エンジン（非同期, fire-and-forget） |
+| **長期** | `user_profile.py` | ユーザープロファイル（interaction_count, familiarity_level, last_topic） |
+| **長期** | `fact_store.py` | ファクトストア（Fact dataclass, Jaccard×decay検索, local/Firestore永続化） |
+| **思考** | `reflection.py` | 反省会エンジン（LLMによるファクト抽出, fire-and-forget非同期） |
+| **判定** | `judge.py` | RuleBasedJudge（スコアリング + response_type決定） |
+| **判定** | `llm_judge.py` | LLMJudge（中間スコアの二次判定） |
 
 ## Design Patterns
 

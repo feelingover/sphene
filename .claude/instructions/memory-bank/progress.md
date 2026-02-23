@@ -5,6 +5,8 @@ applyTo: "**"
 
 ## Completed Features
 
+- **記憶システム「リビングメモリー (Living Memory)」**:
+  - `docs/living-memory.md`: 記憶の3層構造（短期・中期・長期）とライフサイクルを定義。
 - **記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）**:
   - `memory/fact_store.py`: `Fact` dataclass + `FactStore`（Jaccard類似度 × 指数減衰スコアリング、local/Firestore永続化）
   - `memory/reflection.py`: `ReflectionEngine`（LLMによるファクト抽出、fire-and-forget非同期実行）
