@@ -155,10 +155,10 @@ async def _send_chunks(
             )
             await message.channel.send(chunk, reference=message)
         else:
-            if not is_reply:
-                logger.info(
-                    f"通常応答送信(chunk {i+1}/{len(chunks)}): チャンネルID {channel_id}, 応答: {truncate_text(chunk)}"
-                )
+            label = "リプライ" if is_reply else "通常"
+            logger.info(
+                f"{label}応答送信(chunk {i+1}/{len(chunks)}): チャンネルID {channel_id}, 応答: {truncate_text(chunk)}"
+            )
             await message.channel.send(chunk)
 
 

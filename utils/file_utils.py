@@ -3,9 +3,10 @@
 import json
 import os
 import tempfile
+from typing import Any
 
 
-def atomic_write_json(file_path: str, data: dict, *, ensure_ascii: bool = False) -> None:
+def atomic_write_json(file_path: str, data: dict[str, Any], *, ensure_ascii: bool = False) -> None:
     """JSON をアトミックに書き込む（NamedTemporaryFile + os.replace）
 
     Args:
@@ -16,8 +17,9 @@ def atomic_write_json(file_path: str, data: dict, *, ensure_ascii: bool = False)
     Raises:
         Exception: 書き込みまたは置換に失敗した場合
     """
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    temp_dir = os.path.dirname(file_path)
+    parent = os.path.dirname(file_path) or "."
+    os.makedirs(parent, exist_ok=True)
+    temp_dir = parent
     with tempfile.NamedTemporaryFile(
         "w", dir=temp_dir, delete=False, encoding="utf-8", suffix=".tmp"
     ) as tf:
