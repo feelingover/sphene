@@ -70,6 +70,6 @@
 
 ## 5. 今後の拡張 (Roadmap)
 
-- **ベクトル検索 (Phase 3B):** Vertex AI Embeddings を利用し、「あの時、こんな話してたよね」といった曖昧な文脈からの想起を実現。
-- **忘却機能:** 関連性の低い古いファクトを自然に減衰・削除する仕組みの実装。
-- **リッチプロファイル:** LLMによるユーザー性格のタグ付け、特別な呼び名の記憶。
+- **ベクトル検索 (Phase 3B):** Vertex AI Embeddings を利用し、「あの時、こんな話してたよね」といった曖昧な文脈からの想起を実現。 ([#77](https://github.com/feelingover/sphene/issues/77), [#78](https://github.com/feelingover/sphene/issues/78))
+- **忘却機能:** 関連性の低い古いファクトを自然に減衰・削除する仕組みの実装。 ([#80](https://github.com/feelingover/sphene/issues/80))
+- **リッチプロファイル:** LLMによるユーザー性格のタグ付け、特別な呼び名の記憶。 ([#79](https://github.com/feelingover/sphene/issues/79))
