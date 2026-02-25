@@ -70,4 +70,4 @@ def setup_logger(name: str = "sphene") -> logging.Logger:
 
 
 # デフォルトのロガーインスタンスを作成
-logger = setup_logger()
+logger = setup_logger(config.INSTANCE_NAME)

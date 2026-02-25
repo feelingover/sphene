@@ -9,6 +9,11 @@ LOG_LEVEL: str = str(os.getenv("LOG_LEVEL", "INFO"))
 # ログフォーマット設定（"json" または "text"）
 LOG_FORMAT: str = str(os.getenv("LOG_FORMAT", "json"))
 
+# インスタンス識別子（マルチテナント識別のため必須）
+INSTANCE_NAME: str = os.getenv("INSTANCE_NAME", "")
+if not INSTANCE_NAME:
+    raise ValueError("INSTANCE_NAME is required")
+
 GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "google/gemini-2.5-flash")
 
 # Vertex AI設定
@@ -21,7 +26,7 @@ ENABLE_GOOGLE_SEARCH_GROUNDING: bool = (
 
 DISCORD_TOKEN: str = str(os.getenv("DISCORD_TOKEN"))
 BOT_NAME: str = str(os.getenv("BOT_NAME", "アサヒ"))
-COMMAND_GROUP_NAME: str = str(os.getenv("COMMAND_GROUP_NAME", "asahi"))
+COMMAND_GROUP_NAME: str = str(os.getenv("COMMAND_GROUP_NAME", INSTANCE_NAME))
 SYSTEM_PROMPT_FILENAME: str = str(os.getenv("SYSTEM_PROMPT_FILENAME", "system.txt"))
 
 # ストレージタイプ（local または firestore）
@@ -30,8 +35,8 @@ STORAGE_TYPE: str = str(os.getenv("STORAGE_TYPE", "local"))
 # システムプロンプトのファイルパス
 SYSTEM_PROMPT_PATH: str = str(os.getenv("SYSTEM_PROMPT_PATH", "storage/system.txt"))
 
-# Firestoreネームスペース（マルチテナント対応、空=プレフィックスなし）
-FIRESTORE_NAMESPACE: str = os.getenv("FIRESTORE_NAMESPACE", "")
+# Firestoreネームスペース（マルチテナント対応）
+FIRESTORE_NAMESPACE: str = os.getenv("FIRESTORE_NAMESPACE", INSTANCE_NAME)
 
 
 def get_collection_name(base_name: str) -> str:
