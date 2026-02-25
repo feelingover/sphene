@@ -93,6 +93,7 @@ class TestEventsExtensive:
         mock_split.return_value = ["Chunk 1", "Chunk 2"]
 
         message = MagicMock()
+        message.content = ""
         message.channel.send = AsyncMock()
 
         await process_conversation(message, "question", is_reply=True)
