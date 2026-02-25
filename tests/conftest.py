@@ -1,5 +1,9 @@
 """pytestの共通設定と共通fixturesの定義"""
 
+import os
+
+os.environ.setdefault("INSTANCE_NAME", "test-bot")
+
 from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,6 +19,7 @@ def mock_env_vars(monkeypatch: MonkeyPatch) -> dict[str, str]:
         "OPENAI_API_KEY": "test-api-key",
         "DISCORD_TOKEN": "test-discord-token",
         "BOT_NAME": "テストボット",
+        "INSTANCE_NAME": "test-bot",
         "COMMAND_GROUP_NAME": "test",
         "DENIED_CHANNEL_IDS": "123456789,987654321",  # 禁止リストとして扱うチャンネルID
         "LOG_LEVEL": "DEBUG",  # テスト時はDEBUGレベルで詳細に確認
