@@ -16,7 +16,6 @@ from bot.commands import (
     ClearConfirmView,
     cmd_list_channels,
     cmd_remove_channel,
-    cmd_reload_prompt,
     handle_command_error,
     _format_channel_info,
 )
@@ -134,24 +133,6 @@ class TestCommandsExtensive:
         
         interaction.response.send_message.assert_called_once()
         assert "削除に失敗しました" in interaction.response.send_message.call_args[0][0]
-
-    @pytest.mark.asyncio
-    @patch("bot.commands.reload_system_prompt")
-    async def test_cmd_reload_prompt_success_failure(self, mock_reload):
-        """プロンプト再読み込みコマンドのテスト"""
-        interaction = AsyncMock()
-        
-        # 成功ケース
-        mock_reload.return_value = True
-        await cmd_reload_prompt(interaction)
-        args, _ = interaction.followup.send.call_args
-        assert "再読み込みしました" in args[0]
-        
-        # 失敗ケース
-        mock_reload.return_value = False
-        await cmd_reload_prompt(interaction)
-        args, _ = interaction.followup.send.call_args
-        assert "失敗しました" in args[0]
 
     def test_format_channel_info_edge_cases(self):
         """チャンネル情報の整形エッジケーステスト"""

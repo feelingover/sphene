@@ -8,7 +8,6 @@ from discord import app_commands
 import config
 from bot.commands import (
     cmd_list_channels,
-    cmd_reset_conversation,
     handle_command_error,
     setup_commands,
 )
@@ -92,53 +91,6 @@ async def test_cmd_list_channels_no_restrictions(
         assert "全てのチャンネルで発言可能" in args
 
 
-@pytest.mark.asyncio
-async def test_cmd_reset_conversation(mock_discord_interaction: MagicMock) -> None:
-    """会話履歴リセットコマンドのテスト"""
-    # チャンネルIDを設定
-    channel_id = str(mock_discord_interaction.channel_id)
-
-    # channel_conversationsのモック
-    mock_conversations = {channel_id: MagicMock()}
-    with patch("bot.commands.channel_conversations", mock_conversations), patch(
-        "bot.commands.load_system_prompt"
-    ) as mock_load_prompt, patch("bot.commands.Sphene") as mock_sphene_cls:
-        mock_load_prompt.return_value = "テストシステムプロンプト"
-        mock_sphene = MagicMock()
-        mock_sphene_cls.return_value = mock_sphene
-
-        # コマンド実行 - 既存の会話がある場合
-        await cmd_reset_conversation(mock_discord_interaction)
-
-        # 新しいSpheneインスタンスが作成されたか
-        mock_sphene_cls.assert_called_once_with(
-            system_setting=mock_load_prompt.return_value
-        )
-
-        # 会話がリセットされたか
-        assert mock_conversations[channel_id] == mock_sphene
-
-        # レスポンスが送信されたか
-        mock_discord_interaction.response.send_message.assert_called_once()
-        args = mock_discord_interaction.response.send_message.call_args[0][0]
-        assert "会話履歴をリセットしたよ" in args
-
-
-@pytest.mark.asyncio
-async def test_cmd_reset_conversation_no_history(
-    mock_discord_interaction: MagicMock,
-) -> None:
-    """履歴がない場合の会話リセットテスト"""
-    # 空の会話辞書でモック
-    with patch("bot.commands.channel_conversations", {}):
-        # コマンド実行 - 既存の会話がない場合
-        await cmd_reset_conversation(mock_discord_interaction)
-
-        # 適切なレスポンスが送信されたか
-        mock_discord_interaction.response.send_message.assert_called_once()
-        args = mock_discord_interaction.response.send_message.call_args[0][0]
-        assert "まだ話したことがないみたいだね" in args
-
 
 @pytest.mark.asyncio
 async def test_handle_command_error_missing_permissions(
@@ -188,4 +140,6 @@ def test_setup_commands() -> None:
     # コマンドが追加されたか
     command_names = [cmd.name for cmd in command_group.commands]
     assert "channels" in command_names
-    assert "reset" in command_names
+    assert "reset" not in command_names
+    assert "reload_prompt" not in command_names
+    assert "updatelist" not in command_names
