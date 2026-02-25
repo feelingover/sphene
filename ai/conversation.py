@@ -328,17 +328,6 @@ def generate_proactive_message(
         return None
 
 
-def reload_system_prompt(fail_on_error: bool = False) -> bool:
-    """システムプロンプトを強制的に再読み込みする"""
-    try:
-        load_system_prompt(force_reload=True, fail_on_error=fail_on_error)
-        return True
-    except Exception as e:
-        logger.error(f"プロンプト再読み込みエラー: {e}", exc_info=True)
-        if fail_on_error:
-            raise
-        return False
-
 # チャンネルごとの会話インスタンスを保持する辞書
 channel_conversations: defaultdict[str, Sphene] = defaultdict(
     lambda: Sphene(system_setting=load_system_prompt())

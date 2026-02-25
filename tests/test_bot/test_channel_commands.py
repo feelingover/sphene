@@ -15,7 +15,6 @@ from bot.commands import (
     cmd_list_channels,
     cmd_mode,
     cmd_remove_channel,
-    cmd_update_list,
 )
 
 
@@ -294,75 +293,6 @@ class TestChannelCommands:
 
     @pytest.mark.asyncio
     @patch("bot.commands.config_manager")
-    async def test_update_list_command_success(self, mock_config_manager):
-        """チャンネルリスト保存コマンドのテスト（成功）"""
-        # モックguild設定
-        mock_guild = MagicMock()
-        mock_guild.id = 123456
-
-        # モックチャンネル設定
-        mock_channel_config = MagicMock()
-        mock_channel_config.save_config.return_value = True
-        mock_channel_config.get_list_display_name.return_value = "拒否チャンネルリスト"
-        mock_channel_config.storage_type = "local"
-
-        # マネージャーからチャンネル設定を返すようにセット
-        mock_config_manager.get_config.return_value = mock_channel_config
-
-        # インタラクションのモック
-        interaction = MagicMock()
-        interaction.response.send_message = AsyncMock()
-        interaction.guild = mock_guild
-
-        # コマンド実行
-        await cmd_update_list(interaction)
-
-        # アサーション
-        mock_config_manager.get_config.assert_called_once_with(mock_guild.id)
-        mock_channel_config.save_config.assert_called_once()
-        interaction.response.send_message.assert_called_once()
-
-        # 成功メッセージが表示されていることを確認
-        args, kwargs = interaction.response.send_message.call_args
-        assert "✅" in args[0]
-        assert "保存しました" in args[0]
-
-    @pytest.mark.asyncio
-    @patch("bot.commands.config_manager")
-    async def test_update_list_command_failure(self, mock_config_manager):
-        """チャンネルリスト保存コマンドのテスト（失敗）"""
-        # モックguild設定
-        mock_guild = MagicMock()
-        mock_guild.id = 123456
-
-        # モックチャンネル設定
-        mock_channel_config = MagicMock()
-        mock_channel_config.save_config.return_value = False
-        mock_channel_config.get_list_display_name.return_value = "拒否チャンネルリスト"
-
-        # マネージャーからチャンネル設定を返すようにセット
-        mock_config_manager.get_config.return_value = mock_channel_config
-
-        # インタラクションのモック
-        interaction = MagicMock()
-        interaction.response.send_message = AsyncMock()
-        interaction.guild = mock_guild
-
-        # コマンド実行
-        await cmd_update_list(interaction)
-
-        # アサーション
-        mock_config_manager.get_config.assert_called_once_with(mock_guild.id)
-        mock_channel_config.save_config.assert_called_once()
-        interaction.response.send_message.assert_called_once()
-
-        # 失敗メッセージが表示されていることを確認
-        args, kwargs = interaction.response.send_message.call_args
-        assert "❌" in args[0]
-        assert "失敗" in args[0]
-
-    @pytest.mark.asyncio
-    @patch("bot.commands.config_manager")
     async def test_commands_without_guild(self, mock_config_manager):
         """ギルドなしの場合のエラーメッセージテスト"""
         # インタラクションのモック（guild=Noneに設定）
@@ -375,10 +305,9 @@ class TestChannelCommands:
         await cmd_add_channel(interaction)
         await cmd_remove_channel(interaction)
         await cmd_clear_channels(interaction)
-        await cmd_update_list(interaction)
 
         # 各コマンドで同じエラーメッセージが表示されていることを確認
-        assert interaction.response.send_message.call_count == 5
-        for i in range(5):
+        assert interaction.response.send_message.call_count == 4
+        for i in range(4):
             args, kwargs = interaction.response.send_message.call_args_list[i]
             assert "サーバー内でのみ使用できます" in args[0]

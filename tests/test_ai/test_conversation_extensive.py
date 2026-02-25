@@ -19,7 +19,6 @@ from ai.conversation import (
     _handle_api_error,
     cleanup_expired_conversations,
     load_system_prompt,
-    reload_system_prompt,
     channel_conversations,
     _prompt_cache,
 )
@@ -52,27 +51,6 @@ class TestConversationExtensive:
         p3 = load_system_prompt(force_reload=True)
         assert p3 == "Custom Prompt"
         assert mock_load_local.call_count == 2
-
-    @patch("ai.conversation._load_prompt_from_local")
-    def test_reload_system_prompt_success(self, mock_load_local):
-        """プロンプト再読み込み成功テスト"""
-        mock_load_local.return_value = "Reloaded Prompt"
-        result = reload_system_prompt()
-        assert result is True
-        assert load_system_prompt() == "Reloaded Prompt"
-
-    @patch("ai.conversation.load_system_prompt")
-    def test_reload_system_prompt_failure(self, mock_load_prompt):
-        """プロンプト再読み込み失敗テスト"""
-        mock_load_prompt.side_effect = Exception("Load Error")
-
-        # fail_on_error=False
-        result = reload_system_prompt(fail_on_error=False)
-        assert result is False
-
-        # fail_on_error=True
-        with pytest.raises(Exception):
-            reload_system_prompt(fail_on_error=True)
 
     def test_trim_conversation_history_safety(self):
         """トリミング時の安全な切断ポイントのテスト"""

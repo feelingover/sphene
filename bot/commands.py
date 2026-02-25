@@ -2,12 +2,7 @@ import discord
 from discord import app_commands, ui
 
 import config
-from ai.conversation import (
-    Sphene,
-    load_system_prompt,
-    reload_system_prompt,
-    channel_conversations,
-)
+from ai.conversation import channel_conversations
 from log_utils.logger import logger
 from utils.channel_config import ChannelConfigManager
 
@@ -416,87 +411,6 @@ async def cmd_clear_channels(interaction: discord.Interaction) -> None:
     )
 
 
-async def cmd_update_list(interaction: discord.Interaction) -> None:
-    """チャンネルリストを手動で保存するコマンドを処理する
-
-    Args:
-        interaction: インタラクションオブジェクト
-    """
-    if not interaction.guild:
-        await interaction.response.send_message(
-            "❌ このコマンドはサーバー内でのみ使用できます"
-        )
-        return
-
-    # ギルド固有の設定を取得
-    guild_id = interaction.guild.id
-    channel_config = config_manager.get_config(guild_id)
-
-    success = channel_config.save_config()
-    list_name = channel_config.get_list_display_name()
-
-    if success:
-        # 設定保存後にリストを再読み込み
-        channel_config.load_config()
-        await interaction.response.send_message(
-            f"✅ {list_name}を保存しました！\n" f"保存先: {channel_config.storage_type}"
-        )
-    else:
-        await interaction.response.send_message(f"❌ {list_name}の保存に失敗しました")
-
-
-async def cmd_reset_conversation(interaction: discord.Interaction) -> None:
-    """会話履歴リセットコマンドを処理する
-
-    Args:
-        interaction: インタラクションオブジェクト
-    """
-    if interaction.channel_id is None:
-        await interaction.response.send_message("❌ チャンネル情報の取得に失敗しました")
-        return
-
-    channel_id = str(interaction.channel_id)
-
-    if channel_id in channel_conversations:
-        channel_conversations[channel_id] = Sphene(system_setting=load_system_prompt())
-        await interaction.response.send_message(
-            "🔄 このチャンネルの会話履歴をリセットしたよ！また一から話そうね！"
-        )
-        logger.info(f"チャンネルID {channel_id} の会話履歴を手動リセット")
-    else:
-        await interaction.response.send_message(
-            "🤔 このチャンネルではまだ話したことがないみたいだね！これから仲良くしようね！"
-        )
-
-
-async def cmd_reload_prompt(interaction: discord.Interaction) -> None:
-    """システムプロンプト再読み込みコマンドを処理する
-
-    Args:
-        interaction: インタラクションオブジェクト
-    """
-    # 応答を遅延送信（処理に時間がかかる可能性があるため）
-    await interaction.response.defer(ephemeral=True)
-
-    # 手動再読み込みではfail_on_error=Falseを指定（エラー時にボットを停止しない）
-    success = reload_system_prompt(fail_on_error=False)
-
-    if success:
-        logger.info(
-            f"システムプロンプト再読み込み成功（実行者: {interaction.user.name}）"
-        )
-        await interaction.followup.send(
-            "✅ システムプロンプトを再読み込みしました！\n"
-            f"プロンプトファイル: **{config.SYSTEM_PROMPT_FILENAME}**"
-        )
-    else:
-        logger.error(
-            f"システムプロンプト再読み込み失敗（実行者: {interaction.user.name}）"
-        )
-        await interaction.followup.send(
-            "❌ システムプロンプトの再読み込みに失敗しました。ログを確認してください。"
-        )
-
 
 async def cmd_translation(interaction: discord.Interaction) -> None:
     """翻訳機能の有効/無効切替コマンドを処理する
@@ -614,30 +528,6 @@ def setup_commands(bot: discord.Client) -> app_commands.Group:
     @app_commands.checks.has_permissions(administrator=True)
     async def clear_channels_command(interaction: discord.Interaction) -> None:
         await cmd_clear_channels(interaction)
-
-    # チャンネルリスト保存コマンド
-    @command_group.command(
-        name="updatelist",
-        description="チャンネルリストと評価モードを手動で保存します",
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def update_list_command(interaction: discord.Interaction) -> None:
-        await cmd_update_list(interaction)
-
-    # リセットコマンド
-    @command_group.command(
-        name="reset", description="このチャンネルの会話履歴をリセットします"
-    )
-    async def reset_conversation_command(interaction: discord.Interaction) -> None:
-        await cmd_reset_conversation(interaction)
-
-    # システムプロンプト再読み込みコマンド
-    @command_group.command(
-        name="reload_prompt", description="システムプロンプトを再読み込みします"
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def reload_prompt_command(interaction: discord.Interaction) -> None:
-        await cmd_reload_prompt(interaction)
 
     # 翻訳機能設定コマンド
     @command_group.command(
