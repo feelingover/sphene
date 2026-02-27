@@ -219,6 +219,32 @@ class TestLLMJudge:
     @patch("memory.llm_judge.get_model_name")
     @patch("memory.llm_judge._get_genai_client")
     @patch("memory.llm_judge.config")
+    async def test_evaluate_empty_list_response(
+        self, mock_config, mock_get_client, mock_model_name
+    ):
+        """LLMが空のJSON配列を返した場合はFalseを返すこと"""
+        mock_config.JUDGE_MODEL = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-2.5-flash"
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps([])
+        mock_get_client.return_value.models.generate_content.return_value = (
+            mock_response
+        )
+
+        judge = LLMJudge()
+        should_respond, response_type = await judge.evaluate(
+            message_content="おもしろいね",
+            recent_context="UserA: 今日天気いいね",
+            bot_name="アサヒ",
+        )
+        assert should_respond is False
+        assert response_type == "none"
+
+    @pytest.mark.asyncio
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
+    @patch("memory.llm_judge.config")
     async def test_evaluate_with_empty_context(
         self, mock_config, mock_get_client, mock_model_name
     ):
