@@ -77,6 +77,8 @@ class LLMJudge:
                 return False, "none"
 
             result = json.loads(content)
+            if isinstance(result, list):
+                result = result[0] if result else {}
             should_respond = bool(result.get("respond", False))
             llm_type = result.get("response_type", "none")
             

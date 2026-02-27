@@ -188,6 +188,37 @@ class TestLLMJudge:
     @patch("memory.llm_judge.get_model_name")
     @patch("memory.llm_judge._get_genai_client")
     @patch("memory.llm_judge.config")
+    async def test_evaluate_list_response(
+        self, mock_config, mock_get_client, mock_model_name
+    ):
+        """LLMがJSON配列で返した場合も正常に処理できること"""
+        mock_config.JUDGE_MODEL = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-2.5-flash"
+
+        mock_response = MagicMock()
+        # Geminiが稀にJSON配列で返すケース
+        mock_response.text = json.dumps([{
+            "respond": True,
+            "response_type": "short",
+            "reason": "テスト"
+        }])
+        mock_get_client.return_value.models.generate_content.return_value = (
+            mock_response
+        )
+
+        judge = LLMJudge()
+        should_respond, response_type = await judge.evaluate(
+            message_content="おもしろいね",
+            recent_context="UserA: 今日天気いいね",
+            bot_name="アサヒ",
+        )
+        assert should_respond is True
+        assert response_type == "short_ack"
+
+    @pytest.mark.asyncio
+    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge._get_genai_client")
+    @patch("memory.llm_judge.config")
     async def test_evaluate_with_empty_context(
         self, mock_config, mock_get_client, mock_model_name
     ):
