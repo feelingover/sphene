@@ -21,6 +21,16 @@ class UserProfile:
     last_interaction: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_topic: list[str] = field(default_factory=list)
 
+    # 追加フィールド (Phase 3B)
+    schema_version: int = 1
+    tags: list[str] = field(default_factory=list)
+    personality_notes: str = ""
+    last_conversation_summary: str = ""
+    preferred_tone: str | None = None
+    notable_facts: list[str] = field(default_factory=list)
+    emotional_state_last: str | None = None
+    nickname: str | None = None
+
     @property
     def familiarity_level(self) -> str:
         """interaction_count の閾値から関係性レベルを自動算出する"""
@@ -33,13 +43,44 @@ class UserProfile:
         return "close"
 
     def format_for_injection(self) -> str:
-        """LLM注入用のフォーマット済み文字列を返す"""
+        """LLM注入用のフォーマット済み文字列を返す（後方互換性のために残す）"""
+        return "\n\n".join(filter(None, [
+            self.format_for_familiarity(),
+            self.format_for_context(),
+            self.format_for_persona(),
+        ]))
+
+    def format_for_familiarity(self) -> str:
+        """関係性・基本情報の注入用"""
         if self.interaction_count == 0:
             return ""
-        parts = [f"【{self.display_name}さんについて】"]
+        name = self.nickname or self.display_name
+        parts = [f"【{name}さんについて】"]
         parts.append(f"関係性: {self.familiarity_level}（{self.interaction_count}回のやりとり）")
+        return "\n".join(parts)
+
+    def format_for_context(self) -> str:
+        """会話文脈（前回要約・直近話題）の注入用"""
+        parts = []
+        if self.last_conversation_summary:
+            parts.append(f"前回の会話要約: {self.last_conversation_summary}")
         if self.last_topic:
             parts.append(f"直近の話題: {', '.join(self.last_topic)}")
+        return "\n".join(parts)
+
+    def format_for_persona(self) -> str:
+        """ユーザー人物像（tags・notable_facts・personality_notes）の注入用"""
+        parts = []
+        if self.tags:
+            parts.append(f"タグ: {', '.join(self.tags)}")
+        if self.notable_facts:
+            parts.append("記憶事実:\n" + "\n".join(f"- {f}" for f in self.notable_facts))
+        if self.personality_notes:
+            parts.append(f"性格メモ: {self.personality_notes}")
+        if self.preferred_tone:
+            parts.append(f"好みのトーン: {self.preferred_tone}")
+        if self.emotional_state_last:
+            parts.append(f"直近の感情状態: {self.emotional_state_last}")
         return "\n".join(parts)
 
     def to_dict(self) -> dict:
@@ -52,6 +93,14 @@ class UserProfile:
             "channels_active": self.channels_active,
             "last_interaction": self.last_interaction.isoformat(),
             "last_topic": self.last_topic,
+            "schema_version": self.schema_version,
+            "tags": self.tags,
+            "personality_notes": self.personality_notes,
+            "last_conversation_summary": self.last_conversation_summary,
+            "preferred_tone": self.preferred_tone,
+            "notable_facts": self.notable_facts,
+            "emotional_state_last": self.emotional_state_last,
+            "nickname": self.nickname,
         }
 
     @classmethod
@@ -71,6 +120,14 @@ class UserProfile:
             channels_active=data.get("channels_active", []),
             last_interaction=last_interaction,
             last_topic=data.get("last_topic", []),
+            schema_version=data.get("schema_version", 1),
+            tags=data.get("tags", []),
+            personality_notes=data.get("personality_notes", ""),
+            last_conversation_summary=data.get("last_conversation_summary", ""),
+            preferred_tone=data.get("preferred_tone"),
+            notable_facts=data.get("notable_facts", []),
+            emotional_state_last=data.get("emotional_state_last"),
+            nickname=data.get("nickname"),
         )
 
 
@@ -106,6 +163,12 @@ class UserProfileStore:
         profile.last_interaction = datetime.now(timezone.utc)
         if channel_id not in profile.channels_active:
             profile.channels_active.append(channel_id)
+        else:
+            profile.channels_active.remove(channel_id)
+            profile.channels_active.append(channel_id)
+        limit = config.CHANNELS_ACTIVE_LIMIT
+        if len(profile.channels_active) > limit:
+            profile.channels_active = profile.channels_active[-limit:]
 
     def record_bot_mention(self, user_id: int) -> None:
         """ボットへのメンション時にカウンタを更新する
@@ -125,6 +188,44 @@ class UserProfileStore:
         """
         if user_id in self._profiles and topic_keywords:
             self._profiles[user_id].last_topic = list(topic_keywords)
+
+    def update_from_reflection(self, user_id: int, extracted: dict) -> None:
+        """反省会LLM抽出結果でUserProfileを更新する
+
+        Args:
+            user_id: DiscordユーザーID
+            extracted: LLMが抽出した辞書（tags, notable_facts, personality_notes 等）
+        """
+        profile = self._profiles.get(user_id)
+        if not profile:
+            return
+        for tag in extracted.get("tags", []):
+            if tag not in profile.tags:
+                profile.tags.append(tag)
+        profile.tags = profile.tags[-config.USER_PROFILE_TAGS_LIMIT:]
+        for fact in extracted.get("notable_facts", []):
+            if fact not in profile.notable_facts:
+                profile.notable_facts.append(fact)
+        profile.notable_facts = profile.notable_facts[-config.USER_PROFILE_FACTS_LIMIT:]
+        if extracted.get("personality_notes"):
+            profile.personality_notes = extracted["personality_notes"]
+        if extracted.get("last_conversation_summary"):
+            profile.last_conversation_summary = extracted["last_conversation_summary"]
+        if extracted.get("preferred_tone"):
+            profile.preferred_tone = extracted["preferred_tone"]
+        if extracted.get("emotional_state_last"):
+            profile.emotional_state_last = extracted["emotional_state_last"]
+
+    def update_nickname(self, user_id: int, nickname: str) -> None:
+        """ユーザーのニックネームを更新する
+
+        Args:
+            user_id: DiscordユーザーID
+            nickname: 設定するニックネーム
+        """
+        profile = self._profiles.get(user_id)
+        if profile:
+            profile.nickname = nickname
 
     def persist_all(self) -> None:
         """全プロファイルを永続化する（定期タスクから呼ばれる）"""
