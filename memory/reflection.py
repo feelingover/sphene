@@ -44,8 +44,9 @@ USER_PROFILE_REFLECTION_PROMPT = """\
   "notable_facts": ["具体的な事実1", "具体的な事実2"],
   "personality_notes": "性格の特徴（1-2文）",
   "last_conversation_summary": "今回の会話の要約（1-2文）",
-  "preferred_tone": "カジュアル|フォーマル|null",
-  "emotional_state_last": "楽しそう|疲れ気味|null"
+  "nickname": "ユーザーが呼んでほしいと言った名前（なければJSONのnull）",
+  "preferred_tone": "カジュアル" または "フォーマル"（不明な場合はJSONのnull）,
+  "emotional_state_last": "楽しそう" や "疲れ気味" など（不明な場合はJSONのnull）
 }}]
 
 抽出基準:
@@ -268,20 +269,24 @@ class ReflectionEngine:
                 return
 
             store = get_user_profile_store()
+            updated_count = 0
             for item in result:
                 if not isinstance(item, dict):
                     continue
                 user_id = item.get("user_id")
                 if isinstance(user_id, int):
                     store.update_from_reflection(user_id, item)
+                    updated_count += 1
                 elif isinstance(user_id, str) and user_id.isdigit():
                     store.update_from_reflection(int(user_id), item)
-            store.persist_all()
-            logger.info(f"ユーザープロファイル反省会完了: {len(result)}件処理")
+                    updated_count += 1
+            if updated_count > 0:
+                store.persist_all()
+            logger.info(f"ユーザープロファイル反省会完了: {updated_count}件処理")
         except json.JSONDecodeError as e:
             logger.warning(f"ユーザープロファイルLLM JSONパースエラー: {e}")
         except Exception as e:
-            logger.warning(f"ユーザープロファイルLLM呼び出し失敗: {e}")
+            logger.warning(f"ユーザープロファイルLLM呼び出し失敗: {e}", exc_info=True)
 
 
 # シングルトン

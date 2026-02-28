@@ -308,7 +308,7 @@ class TestUserProfileTags:
         messages = [_make_message(author_id=12345)]
 
         mock_response = MagicMock()
-        mock_response.text = '[{"user_id": 12345, "tags": ["プログラマー"], "notable_facts": ["東京在住"], "personality_notes": "明るい", "last_conversation_summary": "テスト", "preferred_tone": null, "emotional_state_last": "楽しそう"}]'
+        mock_response.text = '[{"user_id": 12345, "tags": ["プログラマー"], "notable_facts": ["東京在住"], "personality_notes": "明るい", "last_conversation_summary": "テスト", "preferred_tone": null, "emotional_state_last": "楽しそう", "nickname": "ポチ"}]'
 
         mock_store = MagicMock()
 
@@ -327,6 +327,7 @@ class TestUserProfileTags:
             "last_conversation_summary": "テスト",
             "preferred_tone": None,
             "emotional_state_last": "楽しそう",
+            "nickname": "ポチ",
         })
         mock_store.persist_all.assert_called_once()
 

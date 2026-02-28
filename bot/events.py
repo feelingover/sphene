@@ -1,6 +1,5 @@
 import asyncio
 import random
-import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -26,29 +25,6 @@ from utils.text_utils import split_message, truncate_text
 
 # リアクション用の絵文字リスト
 _REACTION_EMOJIS = ["👀", "😊", "👍", "🤔", "✨", "💡"]
-
-_NICKNAME_PATTERN = re.compile(
-    r"(?:私|俺|自分|オレ)?(?:のことを?)?([^\s、。,，!！?？・…]+?)(?:って呼んで|と呼んで(?:ください|くれ|ね|$))",
-    re.UNICODE,
-)
-
-
-def _detect_nickname(text: str) -> str | None:
-    """メッセージからニックネーム変更リクエストを検出する
-
-    Args:
-        text: メッセージ内容
-
-    Returns:
-        検出されたニックネーム、またはNone
-    """
-    m = _NICKNAME_PATTERN.search(text)
-    if m:
-        nickname = m.group(1).strip()
-        if 1 <= len(nickname) <= 20:
-            return nickname
-    return None
-
 
 # bot の型ヒントを commands.Bot に変更
 async def is_bot_mentioned(
@@ -573,13 +549,9 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         if config.USER_PROFILE_ENABLED:
             from memory.user_profile import get_user_profile_store
 
-            store = get_user_profile_store()
-            store.record_message(
+            get_user_profile_store().record_message(
                 message.author.id, message.channel.id, message.author.display_name
             )
-            nickname = _detect_nickname(message.content or "")
-            if nickname:
-                store.update_nickname(message.author.id, nickname)
 
         # バッファ量ベースの反省会トリガー
         if config.REFLECTION_ENABLED:

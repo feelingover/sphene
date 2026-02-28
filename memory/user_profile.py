@@ -215,6 +215,8 @@ class UserProfileStore:
             profile.preferred_tone = extracted["preferred_tone"]
         if extracted.get("emotional_state_last"):
             profile.emotional_state_last = extracted["emotional_state_last"]
+        if extracted.get("nickname"):
+            self.update_nickname(user_id, extracted["nickname"])
 
     def update_nickname(self, user_id: int, nickname: str) -> None:
         """ユーザーのニックネームを更新する
@@ -226,6 +228,7 @@ class UserProfileStore:
         profile = self._profiles.get(user_id)
         if profile:
             profile.nickname = nickname
+            logger.info(f"ニックネーム更新: user_id={user_id}, nickname={nickname!r}")
 
     def persist_all(self) -> None:
         """全プロファイルを永続化する（定期タスクから呼ばれる）"""

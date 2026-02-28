@@ -722,3 +722,18 @@ class TestUpdateNickname:
         """存在しないユーザーIDでエラーにならないこと"""
         store = UserProfileStore()
         store.update_nickname(9999, "ポチ")  # エラーが起きないこと
+
+    def test_update_nickname_via_reflection(self):
+        """update_from_reflection 経由でニックネームが更新されること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_from_reflection(1, {"nickname": "ポチ"})
+        assert store._profiles[1].nickname == "ポチ"
+
+    def test_update_nickname_via_reflection_none_ignored(self):
+        """nickname が null（None）の場合、既存値を上書きしないこと"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_nickname(1, "ポチ")
+        store.update_from_reflection(1, {"nickname": None})
+        assert store._profiles[1].nickname == "ポチ"
