@@ -32,7 +32,8 @@ SpheneはGoogle Gen AI SDK（Vertex AI経由のGemini）を活用した会話機
 ```
 DISCORD_TOKEN=your_discord_bot_token
 BOT_NAME=スフェーン  # ボットの呼び名（コードのデフォルト: アサヒ）
-COMMAND_GROUP_NAME=sphene  # コマンドグループ名（コードのデフォルト: asahi）
+INSTANCE_NAME=sphene-dev  # インスタンス識別子（マルチテナント識別・ログ用途などで必須）
+COMMAND_GROUP_NAME=sphene  # コマンドグループ名（未指定時は INSTANCE_NAME が使用される）
 GEMINI_MODEL=google/gemini-2.5-flash  # 使用するモデル
 
 # Vertex AI設定
@@ -48,8 +49,8 @@ SYSTEM_PROMPT_FILENAME=system.txt
 # ストレージタイプ: local または firestore（チャンネル設定・コンテキスト・プロファイルで共有）
 STORAGE_TYPE=local
 
-# Firestoreネームスペース（マルチテナント対応、空=プレフィックスなし）
-# コレクション名: {namespace}_channel_configs, {namespace}_user_profiles, {namespace}_channel_contexts
+# Firestoreネームスペース（マルチテナント対応、未指定時は INSTANCE_NAME が使用される）
+# コレクション名: {namespace}_channel_configs, {namespace}_user_profiles, {namespace}_channel_contexts, {namespace}_facts
 # FIRESTORE_NAMESPACE=
 # GCPサービスアカウントキーのパス（Workload Identity使用時は不要）
 # GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
@@ -95,6 +96,12 @@ AUTONOMOUS_RESPONSE_ENABLED=false
 # FAMILIARITY_THRESHOLD_ACQUAINTANCE=6    # 0-5回: stranger / 6回以上: acquaintance
 # FAMILIARITY_THRESHOLD_REGULAR=31        # 6-30回: acquaintance / 31回以上: regular
 # FAMILIARITY_THRESHOLD_CLOSE=101         # 31-100回: regular / 101回以上: close
+
+# ユーザープロファイル拡張（LLMによるタグ・ファクト抽出）
+# USER_PROFILE_TAGS_ENABLED=false
+# USER_PROFILE_TAGS_LIMIT=30
+# USER_PROFILE_FACTS_LIMIT=30
+# CHANNELS_ACTIVE_LIMIT=20
 
 # 長期記憶: 反省会エンジン（会話からファクト抽出）
 # REFLECTION_ENABLED=false
