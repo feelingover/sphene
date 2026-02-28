@@ -199,12 +199,12 @@ class UserProfileStore:
         profile = self._profiles.get(user_id)
         if not profile:
             return
-        for tag in extracted.get("tags", []):
-            if tag not in profile.tags:
+        for tag in extracted.get("tags") or []:
+            if isinstance(tag, str) and tag not in profile.tags:
                 profile.tags.append(tag)
         profile.tags = profile.tags[-config.USER_PROFILE_TAGS_LIMIT:]
-        for fact in extracted.get("notable_facts", []):
-            if fact not in profile.notable_facts:
+        for fact in extracted.get("notable_facts") or []:
+            if isinstance(fact, str) and fact not in profile.notable_facts:
                 profile.notable_facts.append(fact)
         profile.notable_facts = profile.notable_facts[-config.USER_PROFILE_FACTS_LIMIT:]
         if extracted.get("personality_notes"):
