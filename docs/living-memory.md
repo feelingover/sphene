@@ -68,7 +68,60 @@
 
 ---
 
-## 5. 今後の拡張 (Roadmap)
+## 5. 環境変数 (Environment Variables)
+
+記憶システムを制御するための主要な環境変数一覧。
+
+### 短期記憶 (Short Term Memory)
+- `CHANNEL_BUFFER_SIZE`: チャンネルごとに保持するメッセージの最大数 (デフォルト: 50)
+- `CHANNEL_BUFFER_TTL_MINUTES`: メッセージをバッファに保持する時間（分） (デフォルト: 30)
+
+### 中期記憶 (Channel Context)
+- `CHANNEL_CONTEXT_ENABLED`: チャンネルコンテキスト（ローリング要約）機能を有効にするか (デフォルト: false)
+- `SUMMARIZE_EVERY_N_MESSAGES`: 何件のメッセージごとに要約を実行するか (デフォルト: 20)
+- `SUMMARIZE_EVERY_N_MINUTES`: 何分経過で要約を実行するか (デフォルト: 15)
+- `SUMMARIZE_MODEL`: 要約に使用するモデル名（空の場合はメインモデルを使用）
+
+### 自律応答 (Autonomous Response) & LLM Judge
+- `AUTONOMOUS_RESPONSE_ENABLED`: ボットの自律的な応答（Judgeによる判定）を有効にするか (デフォルト: false)
+- `JUDGE_SCORE_THRESHOLD`: 応答するための最低スコア (デフォルト: 20)
+- `JUDGE_SCORE_FULL_RESPONSE`: フル応答するためのスコア閾値 (デフォルト: 60)
+- `JUDGE_SCORE_SHORT_ACK`: 相槌などの短い応答をするためのスコア閾値 (デフォルト: 30)
+- `COOLDOWN_SECONDS`: 発言後のクールダウン時間（秒） (デフォルト: 120)
+- `ENGAGEMENT_DURATION_SECONDS`: 応答後のエンゲージメント（会話継続）とみなす期間（秒） (デフォルト: 300)
+- `ENGAGEMENT_BOOST`: エンゲージメント中のスコア加算値 (デフォルト: 40)
+- `JUDGE_KEYWORDS`: スコアをブーストするキーワード（カンマ区切り）
+- `LLM_JUDGE_ENABLED`: LLMによる二次判定を有効にするか。`AUTONOMOUS_RESPONSE_ENABLED=true`が必要 (デフォルト: false)
+- `JUDGE_MODEL`: LLM Judgeに使用するモデル名（空の場合はメインモデルを使用）
+- `JUDGE_LLM_THRESHOLD_LOW`: LLM Judgeが発動するスコアの下限 (デフォルト: 20)
+- `JUDGE_LLM_THRESHOLD_HIGH`: LLM Judgeが発動するスコアの上限 (デフォルト: 60)
+- `RESPONSE_DIVERSITY_ENABLED`: スコアに応じてリアクション/相槌/フル応答を使い分ける機能を有効にするか (デフォルト: false)
+
+### ユーザープロファイル (User Profile)
+- `USER_PROFILE_ENABLED`: ユーザープロファイル機能を有効にするか (デフォルト: false)
+- `FAMILIARITY_THRESHOLD_ACQUAINTANCE`: 親密度がstrangerからacquaintanceに上がる会話回数 (デフォルト: 6)
+- `FAMILIARITY_THRESHOLD_REGULAR`: 親密度がacquaintanceからregularに上がる会話回数 (デフォルト: 31)
+- `FAMILIARITY_THRESHOLD_CLOSE`: 親密度がregularからcloseに上がる会話回数 (デフォルト: 101)
+
+### 長期記憶: 反省会エンジン (Reflection)
+- `REFLECTION_ENABLED`: 反省会エンジン機能を有効にするか (デフォルト: false)
+- `REFLECTION_LULL_MINUTES`: 沈黙が何分続いたら反省会をトリガーするか (デフォルト: 10)
+- `REFLECTION_MIN_MESSAGES`: 反省会をトリガーするために必要な最低メッセージ数 (デフォルト: 10)
+- `REFLECTION_MAX_BUFFER_MESSAGES`: バッファ蓄積量での強制反省会トリガー件数 (デフォルト: 30)
+- `REFLECTION_MODEL`: 反省会に使用するモデル名（空の場合はメインモデルを使用）
+
+### 長期記憶: ファクトストア (Fact Store)
+- `FACT_STORE_MAX_FACTS_PER_CHANNEL`: チャンネルあたりの最大ファクト保持件数 (デフォルト: 100)
+- `FACT_DECAY_HALF_LIFE_DAYS`: ファクトのスコア減衰の半減期（日数） (デフォルト: 30)
+- `FACT_USER_BOOST_FACTOR`: 発言ユーザーIDが一致するファクトの検索スコアブースト倍率 (デフォルト: 1.5)
+
+### 自発的会話 (Proactive Conversation)
+- `PROACTIVE_CONVERSATION_ENABLED`: 沈黙時に自発的に会話を始める機能を有効にするか。`REFLECTION_ENABLED=true`が必要 (デフォルト: false)
+- `PROACTIVE_SILENCE_MINUTES`: 自発会話をトリガーする沈黙時間（分）。REFLECTION_LULL_MINUTESと独立 (デフォルト: 10)
+
+---
+
+## 6. 今後の拡張 (Roadmap)
 
 - **ベクトル検索 (Phase 3B):** Vertex AI Embeddings を利用し、「あの時、こんな話してたよね」といった曖昧な文脈からの想起を実現。 ([#77](https://github.com/feelingover/sphene/issues/77), [#78](https://github.com/feelingover/sphene/issues/78))
 - **忘却機能:** 関連性の低い古いファクトを自然に減衰・削除する仕組みの実装。 ([#80](https://github.com/feelingover/sphene/issues/80))
