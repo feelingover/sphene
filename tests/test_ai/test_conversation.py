@@ -290,6 +290,7 @@ def test_generate_short_ack_success() -> None:
          patch("ai.conversation.get_model_name", return_value="test-model"):
         mock_part = MagicMock()
         mock_part.text = "そだねー"
+        mock_part.thought = False
 
         mock_content = MagicMock()
         mock_content.parts = [mock_part]
@@ -319,6 +320,68 @@ def test_generate_short_ack_error() -> None:
          patch("ai.conversation.get_model_name", return_value="test-model"):
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception("API error")
+        mock_client_fn.return_value = mock_client
+
+        from ai.conversation import generate_short_ack
+        result = generate_short_ack(
+            channel_context="User1: hello",
+            trigger_message="hi",
+        )
+
+        assert result is None
+
+
+def test_generate_short_ack_thought_parts_only() -> None:
+    """thought parts のみの場合 None を返すこと"""
+    with patch("ai.conversation._get_genai_client") as mock_client_fn, \
+         patch("ai.conversation.get_model_name", return_value="test-model"):
+        mock_thought_part = MagicMock()
+        mock_thought_part.text = "内部思考テキスト"
+        mock_thought_part.thought = True
+
+        mock_content = MagicMock()
+        mock_content.parts = [mock_thought_part]
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = mock_content
+        mock_candidate.finish_reason = "STOP"
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_fn.return_value = mock_client
+
+        from ai.conversation import generate_short_ack
+        result = generate_short_ack(
+            channel_context="User1: 今日疲れた",
+            trigger_message="ほんとね",
+        )
+
+        assert result is None
+
+
+def test_generate_short_ack_empty_text_parts() -> None:
+    """text が空文字の場合 None を返すこと"""
+    with patch("ai.conversation._get_genai_client") as mock_client_fn, \
+         patch("ai.conversation.get_model_name", return_value="test-model"):
+        mock_empty_part = MagicMock()
+        mock_empty_part.text = ""
+        mock_empty_part.thought = False
+
+        mock_content = MagicMock()
+        mock_content.parts = [mock_empty_part]
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = mock_content
+        mock_candidate.finish_reason = "MAX_TOKENS"
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
         mock_client_fn.return_value = mock_client
 
         from ai.conversation import generate_short_ack

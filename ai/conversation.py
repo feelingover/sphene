@@ -247,7 +247,7 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=instruction,
-                max_output_tokens=50,
+                max_output_tokens=100,
             ),
         )
 
@@ -256,12 +256,19 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
             text_parts = [
                 p.text
                 for p in candidate.content.parts
-                if p.text
+                if p.text and not getattr(p, "thought", False)
             ]
             if text_parts:
                 result = "".join(text_parts)
                 logger.debug(f"相槌生成: {result}")
                 return result
+        finish_reason = (
+            candidate.finish_reason if candidate else "no_candidate"
+        )
+        logger.warning(
+            "相槌生成: 有効なテキストパーツが得られませんでした (finish_reason=%s)",
+            finish_reason,
+        )
         return None
     except Exception as e:
         logger.error(f"相槌生成エラー: {e}", exc_info=True)

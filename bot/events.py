@@ -389,6 +389,7 @@ async def _process_short_ack(
     buffer = get_channel_buffer()
     context = buffer.get_context_string(message.channel.id, limit=10)
     if not context:
+        logger.debug("相槌: コンテキストが空のためスキップ (channel=%s)", message.channel.id)
         return
 
     answer = await asyncio.to_thread(
@@ -397,7 +398,14 @@ async def _process_short_ack(
         trigger_message=message.content or "",
     )
 
-    if answer:
+    if not answer:
+        logger.warning(
+            "相槌生成に失敗、リアクションにフォールバック (channel=%s)", message.channel.id
+        )
+        await _send_reaction(message)
+        return
+
+    try:
         await message.channel.send(answer)
         logger.info(
             f"相槌応答: チャンネル={message.channel.id}, "
@@ -418,6 +426,8 @@ async def _process_short_ack(
                     is_bot=True,
                 )
             )
+    except Exception as e:
+        logger.error("相槌送信エラー: %s", e, exc_info=True)
 
 
 async def _process_autonomous_response(
