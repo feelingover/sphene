@@ -229,8 +229,8 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
 
         instruction = (
             f"{system_prompt}\n\n"
-            f"以下の会話の流れを読んで、一言の自然な相槌を返してね。"
-            f"長い説明は不要、短く自然に。\n\n"
+            f"以下の会話の流れを読んで、短い自然な相槌を返してね。"
+            f"1〜2文程度で、感情や共感を少し込めてもOK。長い説明は不要。\n\n"
             f"--- チャンネルの直近の会話 ---\n{channel_context}\n---"
         )
 
