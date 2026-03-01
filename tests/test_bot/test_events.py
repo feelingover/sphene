@@ -370,6 +370,51 @@ class TestProcessShortAck:
         message.channel.send.assert_called_once_with("なるほどー")
         mock_judge.record_response.assert_called_once_with(100)
 
+    @pytest.mark.asyncio
+    @patch("memory.short_term.get_channel_buffer")
+    async def test_short_ack_empty_context(self, mock_buffer_fn):
+        """コンテキストが空の場合、send が呼ばれない"""
+        mock_buffer = MagicMock()
+        mock_buffer.get_context_string.return_value = ""
+        mock_buffer_fn.return_value = mock_buffer
+
+        bot = MagicMock()
+        message = MagicMock()
+        message.channel.id = 100
+        message.channel.send = AsyncMock()
+
+        from bot.events import _process_short_ack
+        await _process_short_ack(bot, message)
+
+        message.channel.send.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("asyncio.to_thread")
+    @patch("memory.short_term.get_channel_buffer")
+    async def test_short_ack_none_answer(self, mock_buffer_fn, mock_to_thread):
+        """generate_short_ack が None を返した場合、_send_reaction にフォールバック"""
+        mock_buffer = MagicMock()
+        mock_buffer.get_context_string.return_value = "User1: hello"
+        mock_buffer_fn.return_value = mock_buffer
+
+        mock_to_thread.return_value = None
+
+        bot = MagicMock()
+        message = MagicMock()
+        message.channel.id = 100
+        message.channel.send = AsyncMock()
+        message.add_reaction = AsyncMock()
+        message.content = "テスト"
+
+        with patch("bot.events._send_reaction") as mock_send_reaction:
+            mock_send_reaction.return_value = None
+
+            from bot.events import _process_short_ack
+            await _process_short_ack(bot, message)
+
+        message.channel.send.assert_not_called()
+        mock_send_reaction.assert_called_once_with(message)
+
 
 class TestCollectAiContextFacts:
     """_collect_ai_context のファクト検索テスト"""
