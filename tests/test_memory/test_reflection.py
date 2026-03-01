@@ -271,3 +271,86 @@ class TestGetReflectionEngine:
             assert e1 is e2
         finally:
             ref_module._reflection_engine = original
+
+
+class TestUserProfileTags:
+    """USER_PROFILE_TAGS_ENABLED フラグのテスト"""
+
+    @pytest.mark.asyncio
+    async def test_user_profile_llm_not_called_when_disabled(self):
+        """USER_PROFILE_TAGS_ENABLED=False のとき _call_user_profile_llm が呼ばれないこと"""
+        engine = ReflectionEngine()
+        messages = [_make_message() for _ in range(15)]
+
+        with patch("config.USER_PROFILE_TAGS_ENABLED", False):
+            with patch.object(engine, "_call_reflection_llm", return_value=[]):
+                with patch.object(engine, "_apply_facts"):
+                    with patch.object(engine, "_call_user_profile_llm") as mock_profile_llm:
+                        await engine._run_reflect(100, messages)
+                        mock_profile_llm.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_user_profile_llm_called_when_enabled(self):
+        """USER_PROFILE_TAGS_ENABLED=True のとき _call_user_profile_llm が呼ばれること"""
+        engine = ReflectionEngine()
+        messages = [_make_message() for _ in range(15)]
+
+        with patch("config.USER_PROFILE_TAGS_ENABLED", True):
+            with patch.object(engine, "_call_reflection_llm", return_value=[]):
+                with patch.object(engine, "_apply_facts"):
+                    with patch.object(engine, "_call_user_profile_llm") as mock_profile_llm:
+                        await engine._run_reflect(100, messages)
+                        mock_profile_llm.assert_called_once_with(messages)
+
+    def test_call_user_profile_llm_parses_and_updates(self):
+        """_call_user_profile_llm が正常にパースし update_from_reflection を呼ぶこと"""
+        engine = ReflectionEngine()
+        messages = [_make_message(author_id=12345)]
+
+        mock_response = MagicMock()
+        mock_response.text = '[{"user_id": 12345, "tags": ["プログラマー"], "notable_facts": ["東京在住"], "personality_notes": "明るい", "last_conversation_summary": "テスト", "preferred_tone": null, "emotional_state_last": "楽しそう", "nickname": "ポチ"}]'
+
+        mock_store = MagicMock()
+
+        with patch("memory.reflection.get_genai_client"):
+            with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
+                with patch("config.REFLECTION_MODEL", ""):
+                    with patch("memory.reflection.get_model_name", return_value="test-model"):
+                        with patch("memory.user_profile.get_user_profile_store", return_value=mock_store):
+                            engine._call_user_profile_llm(messages)
+
+        mock_store.update_from_reflection.assert_called_once_with(12345, {
+            "user_id": 12345,
+            "tags": ["プログラマー"],
+            "notable_facts": ["東京在住"],
+            "personality_notes": "明るい",
+            "last_conversation_summary": "テスト",
+            "preferred_tone": None,
+            "emotional_state_last": "楽しそう",
+            "nickname": "ポチ",
+        })
+        mock_store.persist_all.assert_called_once()
+
+    def test_call_user_profile_llm_handles_invalid_json(self):
+        """不正なJSONの場合、例外を発生させず警告ログを出すこと"""
+        engine = ReflectionEngine()
+        messages = [_make_message()]
+
+        mock_response = MagicMock()
+        mock_response.text = "invalid json"
+
+        with patch("memory.reflection.get_genai_client"):
+            with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
+                with patch("config.REFLECTION_MODEL", ""):
+                    with patch("memory.reflection.get_model_name", return_value="test-model"):
+                        # 例外が発生しないこと
+                        engine._call_user_profile_llm(messages)
+
+    def test_call_user_profile_llm_skips_empty_messages(self):
+        """空メッセージのとき何も実行しないこと"""
+        engine = ReflectionEngine()
+
+        with patch("memory.reflection.get_genai_client"):
+            with patch("memory.reflection._generate_content_with_retry") as mock_api:
+                engine._call_user_profile_llm([])
+                mock_api.assert_not_called()

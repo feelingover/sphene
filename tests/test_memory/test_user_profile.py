@@ -210,6 +210,7 @@ class TestUserProfileStoreRecordMessage:
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
+            mock_cfg.CHANNELS_ACTIVE_LIMIT = 20
             yield mock_cfg
 
     def test_creates_new_profile(self):
@@ -262,6 +263,7 @@ class TestUserProfileStoreRecordBotMention:
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
+            mock_cfg.CHANNELS_ACTIVE_LIMIT = 20
             yield mock_cfg
 
     def test_increments_mentioned_bot_count(self):
@@ -289,6 +291,7 @@ class TestUserProfileStoreUpdateLastTopic:
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
+            mock_cfg.CHANNELS_ACTIVE_LIMIT = 20
             yield mock_cfg
 
     def test_updates_last_topic(self):
@@ -331,6 +334,7 @@ class TestUserProfileStoreBasicStorage:
             mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
             mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
             mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
+            mock_cfg.CHANNELS_ACTIVE_LIMIT = 20
             yield mock_cfg
 
     def test_persist_all_calls_save_to_local(self):
@@ -453,3 +457,283 @@ class TestGetUserProfileStore:
                 assert s1 is s2
         finally:
             up_module._store = original
+
+
+class TestUserProfileNewFields:
+    """Phase 3B の新フィールドに関するテスト"""
+
+    def test_new_field_defaults(self):
+        """新フィールドがデフォルト値を持つこと"""
+        profile = UserProfile(user_id=1, display_name="User")
+        assert profile.schema_version == 1
+        assert profile.tags == []
+        assert profile.personality_notes == ""
+        assert profile.last_conversation_summary == ""
+        assert profile.preferred_tone is None
+        assert profile.notable_facts == []
+        assert profile.emotional_state_last is None
+        assert profile.nickname is None
+
+    def test_from_dict_legacy_format(self):
+        """旧フォーマット（新フィールドなし）からも正常に復元できること"""
+        data = {
+            "user_id": 123,
+            "display_name": "LegacyUser",
+            "interaction_count": 5,
+            "mentioned_bot_count": 1,
+            "channels_active": [100],
+            "last_interaction": datetime.now(timezone.utc).isoformat(),
+            "last_topic": ["Python"],
+        }
+        profile = UserProfile.from_dict(data)
+        assert profile.user_id == 123
+        assert profile.schema_version == 1
+        assert profile.tags == []
+        assert profile.personality_notes == ""
+        assert profile.nickname is None
+
+    def test_round_trip_with_new_fields(self):
+        """新フィールドを含むシリアライズ/デシリアライズが正しく動作すること"""
+        profile = UserProfile(
+            user_id=1,
+            display_name="User",
+            tags=["プログラマー", "猫好き"],
+            notable_facts=["東京在住"],
+            personality_notes="明るい性格",
+            last_conversation_summary="Pythonの話をした",
+            preferred_tone="カジュアル",
+            emotional_state_last="楽しそう",
+            nickname="ポチ",
+        )
+        restored = UserProfile.from_dict(profile.to_dict())
+        assert restored.tags == ["プログラマー", "猫好き"]
+        assert restored.notable_facts == ["東京在住"]
+        assert restored.personality_notes == "明るい性格"
+        assert restored.last_conversation_summary == "Pythonの話をした"
+        assert restored.preferred_tone == "カジュアル"
+        assert restored.emotional_state_last == "楽しそう"
+        assert restored.nickname == "ポチ"
+
+
+class TestChannelsActiveLimit:
+    """channels_active 上限制御のテスト"""
+
+    @pytest.fixture(autouse=True)
+    def mock_config(self):
+        with patch("memory.user_profile.config") as mock_cfg, \
+             patch("memory.user_profile.os.path.exists", return_value=False):
+            mock_cfg.STORAGE_TYPE = "local"
+            mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
+            mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
+            mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
+            mock_cfg.CHANNELS_ACTIVE_LIMIT = 3
+            yield mock_cfg
+
+    def test_channels_active_limit(self):
+        """CHANNELS_ACTIVE_LIMIT=3 で 4 件追加したとき、最新3件のみ残ること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.record_message(1, 200, "User")
+        store.record_message(1, 300, "User")
+        store.record_message(1, 400, "User")
+        assert store._profiles[1].channels_active == [200, 300, 400]
+
+    def test_channels_active_lru_order(self):
+        """既存チャンネルへの再アクセスで末尾に移動すること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.record_message(1, 200, "User")
+        store.record_message(1, 100, "User")  # 100に再アクセス
+        assert store._profiles[1].channels_active[-1] == 100
+
+
+class TestFormatMethods:
+    """format_for_familiarity / format_for_context / format_for_persona のテスト"""
+
+    @pytest.fixture(autouse=True)
+    def mock_config(self):
+        with patch("memory.user_profile.config") as mock_cfg:
+            mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
+            mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
+            mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
+            mock_cfg.STORAGE_TYPE = "local"
+            yield mock_cfg
+
+    def test_format_for_familiarity_empty_when_no_interactions(self):
+        """interaction_count=0 のとき空文字を返す"""
+        profile = UserProfile(user_id=1, display_name="User")
+        assert profile.format_for_familiarity() == ""
+
+    def test_format_for_familiarity_uses_nickname(self):
+        """nickname が設定されていれば display_name の代わりに使われること"""
+        profile = UserProfile(user_id=1, display_name="本名", interaction_count=10, nickname="ポチ")
+        result = profile.format_for_familiarity()
+        assert "ポチ" in result
+        assert "本名" not in result
+
+    def test_format_for_familiarity_uses_display_name_when_no_nickname(self):
+        """nickname が None のとき display_name を使うこと"""
+        profile = UserProfile(user_id=1, display_name="田中", interaction_count=10)
+        result = profile.format_for_familiarity()
+        assert "田中" in result
+
+    def test_format_for_context_empty_when_no_data(self):
+        """summary も last_topic もないとき空文字を返す"""
+        profile = UserProfile(user_id=1, display_name="User")
+        assert profile.format_for_context() == ""
+
+    def test_format_for_context_with_summary(self):
+        """last_conversation_summary があれば含まれること"""
+        profile = UserProfile(user_id=1, display_name="User", last_conversation_summary="Pythonの話をした")
+        result = profile.format_for_context()
+        assert "Pythonの話をした" in result
+
+    def test_format_for_context_with_topic(self):
+        """last_topic があれば含まれること"""
+        profile = UserProfile(user_id=1, display_name="User", last_topic=["Rust", "async"])
+        result = profile.format_for_context()
+        assert "Rust, async" in result
+
+    def test_format_for_persona_empty_when_no_data(self):
+        """persona 情報がないとき空文字を返す"""
+        profile = UserProfile(user_id=1, display_name="User")
+        assert profile.format_for_persona() == ""
+
+    def test_format_for_persona_with_tags(self):
+        """tags があれば含まれること"""
+        profile = UserProfile(user_id=1, display_name="User", tags=["プログラマー", "猫好き"])
+        result = profile.format_for_persona()
+        assert "プログラマー" in result
+        assert "猫好き" in result
+
+    def test_format_for_persona_with_notable_facts(self):
+        """notable_facts があれば含まれること"""
+        profile = UserProfile(user_id=1, display_name="User", notable_facts=["東京在住", "犬を飼っている"])
+        result = profile.format_for_persona()
+        assert "東京在住" in result
+        assert "犬を飼っている" in result
+
+    def test_format_for_persona_with_personality_notes(self):
+        """personality_notes があれば含まれること"""
+        profile = UserProfile(user_id=1, display_name="User", personality_notes="明るい性格")
+        result = profile.format_for_persona()
+        assert "明るい性格" in result
+
+
+class TestUpdateFromReflection:
+    """UserProfileStore.update_from_reflection のテスト"""
+
+    @pytest.fixture(autouse=True)
+    def mock_config(self):
+        with patch("memory.user_profile.config") as mock_cfg, \
+             patch("memory.user_profile.os.path.exists", return_value=False):
+            mock_cfg.STORAGE_TYPE = "local"
+            mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
+            mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
+            mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
+            mock_cfg.CHANNELS_ACTIVE_LIMIT = 20
+            mock_cfg.USER_PROFILE_TAGS_LIMIT = 3
+            mock_cfg.USER_PROFILE_FACTS_LIMIT = 3
+            yield mock_cfg
+
+    def test_update_tags_dedup(self):
+        """重複タグは追加されないこと"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_from_reflection(1, {"tags": ["Python", "Python", "猫好き"]})
+        assert store._profiles[1].tags.count("Python") == 1
+
+    def test_update_tags_limit(self):
+        """USER_PROFILE_TAGS_LIMIT を超えた場合、古いものが削除されること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store._profiles[1].tags = ["A", "B", "C"]
+        store.update_from_reflection(1, {"tags": ["D"]})
+        assert len(store._profiles[1].tags) == 3
+        assert "A" not in store._profiles[1].tags
+        assert "D" in store._profiles[1].tags
+
+    def test_update_notable_facts_dedup(self):
+        """重複ファクトは追加されないこと"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_from_reflection(1, {"notable_facts": ["東京在住", "東京在住"]})
+        assert store._profiles[1].notable_facts.count("東京在住") == 1
+
+    def test_update_notable_facts_limit(self):
+        """USER_PROFILE_FACTS_LIMIT を超えた場合、古いものが削除されること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store._profiles[1].notable_facts = ["A", "B", "C"]
+        store.update_from_reflection(1, {"notable_facts": ["D"]})
+        assert len(store._profiles[1].notable_facts) == 3
+        assert "A" not in store._profiles[1].notable_facts
+
+    def test_update_personality_notes(self):
+        """personality_notes が上書き更新されること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_from_reflection(1, {"personality_notes": "明るい性格"})
+        assert store._profiles[1].personality_notes == "明るい性格"
+
+    def test_update_conversation_summary(self):
+        """last_conversation_summary が更新されること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_from_reflection(1, {"last_conversation_summary": "Pythonの話をした"})
+        assert store._profiles[1].last_conversation_summary == "Pythonの話をした"
+
+    def test_no_error_for_unknown_user(self):
+        """存在しないユーザーIDでエラーにならないこと"""
+        store = UserProfileStore()
+        store.update_from_reflection(9999, {"tags": ["test"]})  # エラーが起きないこと
+
+
+class TestUpdateNickname:
+    """UserProfileStore.update_nickname のテスト"""
+
+    @pytest.fixture(autouse=True)
+    def mock_config(self):
+        with patch("memory.user_profile.config") as mock_cfg, \
+             patch("memory.user_profile.os.path.exists", return_value=False):
+            mock_cfg.STORAGE_TYPE = "local"
+            mock_cfg.FAMILIARITY_THRESHOLD_ACQUAINTANCE = 6
+            mock_cfg.FAMILIARITY_THRESHOLD_REGULAR = 31
+            mock_cfg.FAMILIARITY_THRESHOLD_CLOSE = 101
+            mock_cfg.CHANNELS_ACTIVE_LIMIT = 20
+            yield mock_cfg
+
+    def test_update_nickname(self):
+        """ニックネームが正しく設定されること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_nickname(1, "ポチ")
+        assert store._profiles[1].nickname == "ポチ"
+
+    def test_update_nickname_overwrites(self):
+        """既存のニックネームが上書きされること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_nickname(1, "ポチ")
+        store.update_nickname(1, "タマ")
+        assert store._profiles[1].nickname == "タマ"
+
+    def test_no_error_for_unknown_user(self):
+        """存在しないユーザーIDでエラーにならないこと"""
+        store = UserProfileStore()
+        store.update_nickname(9999, "ポチ")  # エラーが起きないこと
+
+    def test_update_nickname_via_reflection(self):
+        """update_from_reflection 経由でニックネームが更新されること"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_from_reflection(1, {"nickname": "ポチ"})
+        assert store._profiles[1].nickname == "ポチ"
+
+    def test_update_nickname_via_reflection_none_ignored(self):
+        """nickname が null（None）の場合、既存値を上書きしないこと"""
+        store = UserProfileStore()
+        store.record_message(1, 100, "User")
+        store.update_nickname(1, "ポチ")
+        store.update_from_reflection(1, {"nickname": None})
+        assert store._profiles[1].nickname == "ポチ"

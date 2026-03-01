@@ -309,7 +309,9 @@ class TestCollectAiContext:
         mock_buffer_fn.return_value = mock_buffer
 
         mock_profile = MagicMock()
-        mock_profile.format_for_injection.return_value = "user profile text"
+        mock_profile.format_for_familiarity.return_value = "user profile text"
+        mock_profile.format_for_context.return_value = ""
+        mock_profile.format_for_persona.return_value = ""
         mock_profile_store = MagicMock()
         mock_profile_store.get_profile.return_value = mock_profile
         mock_profile_store_fn.return_value = mock_profile_store

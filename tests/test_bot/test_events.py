@@ -640,3 +640,5 @@ class TestTryProactiveConversation:
                     with patch("bot.events._dispatch_proactive_message", new_callable=AsyncMock) as mock_dispatch:
                         await _try_proactive_conversation(bot, message, pre_add_last_time)
                         mock_dispatch.assert_called_once_with(bot, message, mock_fact)
+
+

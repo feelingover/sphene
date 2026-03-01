@@ -26,7 +26,6 @@ from utils.text_utils import split_message, truncate_text
 # リアクション用の絵文字リスト
 _REACTION_EMOJIS = ["👀", "😊", "👍", "🤔", "✨", "💡"]
 
-
 # bot の型ヒントを commands.Bot に変更
 async def is_bot_mentioned(
     bot: commands.Bot, message: discord.Message
@@ -120,7 +119,11 @@ async def _collect_ai_context(
         profile = get_user_profile_store().get_profile(
             message.author.id, message.author.display_name
         )
-        user_profile_str = profile.format_for_injection()
+        user_profile_str = "\n\n".join(filter(None, [
+            profile.format_for_familiarity(),
+            profile.format_for_context(),
+            profile.format_for_persona(),
+        ]))
 
     if config.REFLECTION_ENABLED:
         from memory.fact_store import extract_keywords, get_fact_store

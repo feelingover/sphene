@@ -29,6 +29,33 @@ REFLECTION_PROMPT = """\
 shareable=true にする基準: 後でチャンネルが再活性化した時に話題として振りやすい興味深い事実
 """
 
+USER_PROFILE_REFLECTION_PROMPT = """\
+あなたはDiscordの会話からユーザーの特性を抽出するAIです。
+以下の会話ログを読み、登場した各ユーザーについて情報をJSON配列で返してください。
+
+--- 会話ログ ---
+{messages}
+---
+
+以下のJSON形式で回答してください（情報がなければ空配列 [] を返す）:
+[{{
+  "user_id": <数値>,
+  "tags": ["ラベル1", "ラベル2"],
+  "notable_facts": ["具体的な事実1", "具体的な事実2"],
+  "personality_notes": "性格の特徴（1-2文）",
+  "last_conversation_summary": "今回の会話の要約（1-2文）",
+  "nickname": "ユーザーが呼んでほしいと言った名前（なければJSONのnull）",
+  "preferred_tone": "カジュアル" または "フォーマル"（不明な場合はJSONのnull）,
+  "emotional_state_last": "楽しそう" や "疲れ気味" など（不明な場合はJSONのnull）
+}}]
+
+抽出基準:
+- tags: ラベル的・検索向き（"プログラマー", "猫好き" など）
+- notable_facts: 具体的事実（"犬を飼っている", "東京在住" など）
+- emotional_state_last: ざっくりした感情のみ（詳細な感情分析は行わない）
+- ボットメッセージは対象外
+"""
+
 
 def _format_messages_for_reflection(messages: list[ChannelMessage]) -> str:
     """メッセージを反省会プロンプト用にフォーマットする（XMLタグでプロンプトインジェクション対策）"""
@@ -99,6 +126,9 @@ class ReflectionEngine:
                 )
             else:
                 logger.warning(f"反省会結果が空: channel_id={channel_id}")
+
+            if config.USER_PROFILE_TAGS_ENABLED:
+                await asyncio.to_thread(self._call_user_profile_llm, messages)
         except Exception as e:
             logger.error(
                 f"反省会実行エラー: channel_id={channel_id}: {e}", exc_info=True
@@ -196,6 +226,67 @@ class ReflectionEngine:
         # どちらの場合もカウンタをリセットして次のサイクルを開始する
         if saved_count > 0 or len(raw_facts) == 0:
             get_channel_buffer().mark_reflected(channel_id)
+
+    def _call_user_profile_llm(self, messages: list[ChannelMessage]) -> None:
+        """ユーザープロファイル専用LLMコール。会話からユーザー特性を抽出してストアに反映
+
+        Args:
+            messages: 対象メッセージリスト
+        """
+        from memory.user_profile import get_user_profile_store
+
+        client = get_genai_client()
+        model_name = config.REFLECTION_MODEL or get_model_name()
+
+        messages_text = _format_messages_for_reflection(messages)
+        if not messages_text:
+            return
+
+        prompt = USER_PROFILE_REFLECTION_PROMPT.format(messages=messages_text)
+
+        try:
+            response = _generate_content_with_retry(
+                client=client,
+                model=model_name,
+                contents=[
+                    types.Content(
+                        role="user", parts=[types.Part.from_text(text=prompt)]
+                    )
+                ],
+                config=types.GenerateContentConfig(
+                    temperature=0.3,
+                    response_mime_type="application/json",
+                ),
+            )
+
+            content = response.text
+            if not content:
+                return
+
+            result = json.loads(content)
+            if not isinstance(result, list):
+                logger.warning(f"ユーザープロファイルLLMが非配列を返した: {type(result)}")
+                return
+
+            store = get_user_profile_store()
+            updated_count = 0
+            for item in result:
+                if not isinstance(item, dict):
+                    continue
+                user_id = item.get("user_id")
+                if isinstance(user_id, int):
+                    store.update_from_reflection(user_id, item)
+                    updated_count += 1
+                elif isinstance(user_id, str) and user_id.isdigit():
+                    store.update_from_reflection(int(user_id), item)
+                    updated_count += 1
+            if updated_count > 0:
+                store.persist_all()
+            logger.info(f"ユーザープロファイル反省会完了: {updated_count}件処理")
+        except json.JSONDecodeError as e:
+            logger.warning(f"ユーザープロファイルLLM JSONパースエラー: {e}")
+        except Exception as e:
+            logger.warning(f"ユーザープロファイルLLM呼び出し失敗: {e}", exc_info=True)
 
 
 # シングルトン
