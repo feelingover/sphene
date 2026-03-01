@@ -294,6 +294,7 @@ requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini 
 
 | 日付 | 決定 | 理由 |
 |------|------|------|
+| 2026/3 | `ENABLE_GOOGLE_SEARCH_GROUNDING` とfunction calling(XIVAPI等)を排他利用 | Vertex AI `generateContent` APIの制約: `google_search` と `function_declarations` は同一リクエストに混在不可。Live API移行で両立可能 (issue #94) |
 | 2026/2 | 記憶機能: ハイブリッドJudge方式 | ルールベースでLLMコールを最小化しつつ、曖昧ケースはLLMで精度向上 |
 | 2026/2 | 記憶機能: 既存Spheneクラスとは独立した1-shot応答 | 既存の会話管理を壊さない。自律応答は会話履歴不要 |
 | 2026/2 | S3廃止→Firestore移行 | k8sデプロイ方針変更に伴いGCPに一本化 |

@@ -120,53 +120,6 @@ def _handle_api_error(error: Exception) -> str:
     return "ごめん！AIとの通信中にエラーが発生しちゃった...😢"
 
 
-
-def _get_grounded_response(
-    client: Any,
-    model_id: str,
-    system_instruction: str,
-    contents: list[types.Content],
-    search_tools: list[types.Tool],
-) -> str | None:
-    """検索グラウンディングを使って最終応答を取得する。
-
-    Vertex AIはfunction_declarationsとgoogle_searchを同時に使えないため、
-    テキスト応答確定後にsearch_toolsのみで別途呼び出す。
-
-    Args:
-        client: Gen AIクライアント
-        model_id: モデルID
-        system_instruction: システムプロンプト
-        contents: 会話履歴（最後の非グラウンディング応答を除く）
-        search_tools: Google Search等の検索ツールリスト
-
-    Returns:
-        グラウンディング済みテキスト、失敗時はNone
-    """
-    logger.info("グラウンディング付きで最終応答を生成")
-    try:
-        response = generate_content_with_retry(
-            client=client,
-            model=model_id,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                tools=search_tools,  # type: ignore[arg-type]
-            ),
-        )
-        if response.candidates:
-            candidate = response.candidates[0]
-            if hasattr(candidate, "grounding_metadata") and candidate.grounding_metadata:
-                logger.info(f"Groundingメタデータを検出: {candidate.grounding_metadata}")
-            resp_content = candidate.content
-            if resp_content and resp_content.parts:
-                text_parts = [p.text for p in resp_content.parts if p.text]
-                if text_parts:
-                    return "".join(text_parts)
-    except Exception as e:
-        logger.warning(f"グラウンディング呼び出し失敗、フォールバック: {e}")
-    return None
-
 def call_genai_with_tools(
     contents: list[types.Content],
     system_instruction: str,
@@ -176,14 +129,14 @@ def call_genai_with_tools(
     model_id = get_model_name()
 
     # ツール設定
-    # Vertex AIはfunction_declarationsとgoogle_searchを同時に使えないため分離する
-    # メインループではfunction_toolsのみ使用し、テキスト応答確定後にsearch_toolsでグラウンディング
-    function_tools = get_tools()
-    search_tools = (
-        [types.Tool(google_search=types.GoogleSearch())]
-        if ENABLE_GOOGLE_SEARCH_GROUNDING
-        else []
-    )
+    # Vertex AIの制約: google_search(grounding)とfunction_declarationsは同一リクエストに混在不可
+    # ENABLE_GOOGLE_SEARCH_GROUNDING=trueの場合はgrounding優先、function calling(XIVAPI等)は無効
+    # 両立にはLive APIへの移行が必要: https://github.com/feelingover/sphene/issues/94
+    if ENABLE_GOOGLE_SEARCH_GROUNDING:
+        tools: list[types.Tool] = [types.Tool(google_search=types.GoogleSearch())]
+        logger.debug("グラウンディングモード: function callingは無効 (Vertex AI制約)")
+    else:
+        tools = get_tools()
 
     # contentsリストをコピーして操作する
     local_history = list(contents)
@@ -198,7 +151,7 @@ def call_genai_with_tools(
                 contents=local_history,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
-                    tools=function_tools,  # type: ignore[arg-type]
+                    tools=tools,  # type: ignore[arg-type]
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(
                         disable=True
                     ),  # 手動ループ
@@ -222,7 +175,7 @@ def call_genai_with_tools(
 
         local_history.append(resp_content)
 
-        # ツール呼び出しがあるか確認
+        # ツール呼び出しがあるか確認 (grounding時はfunction callsは来ない)
         function_calls = [p.function_call for p in resp_content.parts if p.function_call]
 
         if function_calls:
@@ -236,20 +189,6 @@ def call_genai_with_tools(
         if text_parts:
             final_text = "".join(text_parts)
             logger.debug(f"GenAI応答受信: {truncate_text(final_text)}")
-
-            # グラウンディングが有効な場合、search_toolsで再度呼び出してgrounded応答を取得
-            # (Vertex AIの制約: function_declarationsとgoogle_searchは混在不可)
-            if search_tools:
-                grounded_text = _get_grounded_response(
-                    client,
-                    model_id,
-                    system_instruction,
-                    local_history[:-1],  # 非グラウンディング応答を除いた履歴
-                    search_tools,
-                )
-                if grounded_text is not None:
-                    return True, grounded_text, local_history
-
             return True, final_text, local_history
 
         return False, "応答を読み取れなかったよ…😢", local_history
