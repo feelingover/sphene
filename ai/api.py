@@ -129,9 +129,14 @@ def call_genai_with_tools(
     model_id = get_model_name()
 
     # ツール設定
-    tools = get_tools()
+    # Vertex AIの制約: google_search(grounding)とfunction_declarationsは同一リクエストに混在不可
+    # ENABLE_GOOGLE_SEARCH_GROUNDING=trueの場合はgrounding優先、function calling(XIVAPI等)は無効
+    # 両立にはLive APIへの移行が必要: https://github.com/feelingover/sphene/issues/94
     if ENABLE_GOOGLE_SEARCH_GROUNDING:
-        tools.append(types.Tool(google_search=types.GoogleSearch()))
+        tools: list[types.Tool] = [types.Tool(google_search=types.GoogleSearch())]
+        logger.debug("グラウンディングモード: function callingは無効 (Vertex AI制約)")
+    else:
+        tools = get_tools()
 
     # contentsリストをコピーして操作する
     local_history = list(contents)
@@ -170,7 +175,7 @@ def call_genai_with_tools(
 
         local_history.append(resp_content)
 
-        # ツール呼び出しがあるか確認
+        # ツール呼び出しがあるか確認 (grounding時はfunction callsは来ない)
         function_calls = [p.function_call for p in resp_content.parts if p.function_call]
 
         if function_calls:
