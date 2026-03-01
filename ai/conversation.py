@@ -262,9 +262,7 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
                 result = "".join(text_parts)
                 logger.debug(f"相槌生成: {result}")
                 return result
-        finish_reason = (
-            candidate.finish_reason if candidate else "no_candidate"
-        )
+        finish_reason = candidate.finish_reason if candidate else "no_candidate"
         logger.warning(
             "相槌生成: 有効なテキストパーツが得られませんでした (finish_reason=%s)",
             finish_reason,
