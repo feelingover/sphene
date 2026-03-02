@@ -29,7 +29,7 @@ ENABLE_GOOGLE_SEARCH_GROUNDING: bool = (
 )
 
 DISCORD_TOKEN: str = str(os.getenv("DISCORD_TOKEN"))
-BOT_NAME: str = str(os.getenv("BOT_NAME", "アサヒ"))
+BOT_NAME: str = str(os.getenv("BOT_NAME", "スフェーン"))
 COMMAND_GROUP_NAME: str = str(os.getenv("COMMAND_GROUP_NAME", INSTANCE_NAME))
 SYSTEM_PROMPT_FILENAME: str = str(os.getenv("SYSTEM_PROMPT_FILENAME", "system.txt"))
 

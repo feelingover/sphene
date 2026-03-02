@@ -39,7 +39,7 @@ class TestLLMJudge:
         should_respond, response_type = await judge.evaluate(
             message_content="Pythonの書き方を教えて",
             recent_context="UserA: プログラミングの話しよう",
-            bot_name="アサヒ",
+            bot_name="スフェーン",
         )
         assert should_respond is True
         assert response_type == "full_response"
@@ -69,7 +69,7 @@ class TestLLMJudge:
         should_respond, response_type = await judge.evaluate(
             message_content="今日のランチ何にする？",
             recent_context="UserA: お腹空いたね\nUserB: ラーメンどう？",
-            bot_name="アサヒ",
+            bot_name="スフェーン",
         )
         assert should_respond is False
         assert response_type == "none"
@@ -210,7 +210,7 @@ class TestLLMJudge:
         should_respond, response_type = await judge.evaluate(
             message_content="おもしろいね",
             recent_context="UserA: 今日天気いいね",
-            bot_name="アサヒ",
+            bot_name="スフェーン",
         )
         assert should_respond is True
         assert response_type == "short_ack"
@@ -236,7 +236,7 @@ class TestLLMJudge:
         should_respond, response_type = await judge.evaluate(
             message_content="おもしろいね",
             recent_context="UserA: 今日天気いいね",
-            bot_name="アサヒ",
+            bot_name="スフェーン",
         )
         assert should_respond is False
         assert response_type == "none"

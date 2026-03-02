@@ -31,7 +31,7 @@ SpheneはGoogle Gen AI SDK（Vertex AI経由のGemini）を活用した会話機
 
 ```
 DISCORD_TOKEN=your_discord_bot_token
-BOT_NAME=スフェーン  # ボットの呼び名（コードのデフォルト: アサヒ）
+BOT_NAME=スフェーン  # ボットの呼び名（コードのデフォルト: スフェーン）
 INSTANCE_NAME=sphene-dev  # インスタンス識別子（マルチテナント識別・ログ用途などで必須）
 COMMAND_GROUP_NAME=sphene  # コマンドグループ名（未指定時は INSTANCE_NAME が使用される）
 GEMINI_MODEL=google/gemini-2.5-flash  # 使用するモデル
@@ -209,7 +209,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 ### スラッシュコマンド
 
-コマンドプレフィックスは `COMMAND_GROUP_NAME` 環境変数で設定（デフォルト: `asahi`）。
+コマンドプレフィックスは `COMMAND_GROUP_NAME` 環境変数で設定（デフォルト: `sphene`）。
 
 - `/<prefix> reset` - 会話履歴をリセットします
 - `/<prefix> mode` - 評価モード（全体モード/限定モード）を切り替えます（管理者のみ）
