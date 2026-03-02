@@ -74,23 +74,23 @@ class TestAtomicWriteJson:
     def test_ensure_ascii_false_by_default(self, tmp_path: Path) -> None:
         """デフォルトで日本語がエスケープされない"""
         file_path = str(tmp_path / "output.json")
-        data = {"name": "アサヒ"}
+        data = {"name": "スフェーン"}
 
         atomic_write_json(file_path, data)
 
         raw = Path(file_path).read_text(encoding="utf-8")
-        assert "アサヒ" in raw
+        assert "スフェーン" in raw
         assert r"\u" not in raw
 
     def test_ensure_ascii_true_escapes_unicode(self, tmp_path: Path) -> None:
         """ensure_ascii=True で日本語がエスケープされる"""
         file_path = str(tmp_path / "output.json")
-        data = {"name": "アサヒ"}
+        data = {"name": "スフェーン"}
 
         atomic_write_json(file_path, data, ensure_ascii=True)
 
         raw = Path(file_path).read_text(encoding="utf-8")
-        assert "アサヒ" not in raw
+        assert "スフェーン" not in raw
         assert r"\u" in raw
 
     def test_nested_dict(self, tmp_path: Path) -> None:

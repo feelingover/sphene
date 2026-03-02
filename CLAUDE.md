@@ -43,7 +43,7 @@ storage/                  # Local file storage (prompts, configs)
 
 - `CHANNEL_CONFIG_STORAGE_TYPE`: "local" | "firestore"
 - `FIRESTORE_COLLECTION_NAME`: Firestore collection name (default: "channel_configs")
-- `BOT_NAME`: Bot trigger name (default: "アサヒ")
+- `BOT_NAME`: Bot trigger name (default: "スフェーン")
 - `COMMAND_GROUP_NAME`: Slash command group prefix
 
 ## Code Standards

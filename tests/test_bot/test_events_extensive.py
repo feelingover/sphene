@@ -48,13 +48,13 @@ class TestEventsExtensive:
         assert is_reply is True
 
         # 2. 名前で呼ばれる
-        with patch("config.BOT_NAME", "アサヒ"):
+        with patch("config.BOT_NAME", "スフェーン"):
             msg2 = MagicMock()
-            msg2.content = "アサヒ、今日の天気は？"
+            msg2.content = "スフェーン、今日の天気は？"
             msg2.mentions = []
             mentioned, q, is_reply = await is_bot_mentioned(bot, msg2)
             assert mentioned is True
-            assert q == "アサヒ、今日の天気は？"
+            assert q == "スフェーン、今日の天気は？"
             assert is_reply is False
 
         # 3. リプライ

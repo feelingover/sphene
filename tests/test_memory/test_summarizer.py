@@ -60,11 +60,11 @@ class TestFormatMessagesForSummary:
         """Botメッセージに[BOT]タグが付くこと"""
         messages = [
             _make_message(author_name="Alice", content="質問です"),
-            _make_message(author_name="アサヒ", content="回答です", is_bot=True),
+            _make_message(author_name="スフェーン", content="回答です", is_bot=True),
         ]
         result = _format_messages_for_summary(messages)
         assert "Alice: 質問です" in result
-        assert "アサヒ[BOT]: 回答です" in result
+        assert "スフェーン[BOT]: 回答です" in result
 
     def test_single_message(self):
         """メッセージが1件の場合も正しくフォーマットされること"""
