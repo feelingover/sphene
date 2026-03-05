@@ -78,20 +78,16 @@ class TestRouterLLMCall:
         mock_response.text = json.dumps({"tool_mode": tool_mode, "reason": reason})
         return mock_response
 
+    @patch("ai.router._generate_content_with_retry")
+    @patch("ai.router.get_model_name", return_value="gemini-flash")
     @patch("ai.router._get_genai_client")
     @patch("ai.router.config")
-    def test_grounding_mode_detection(self, mock_config, mock_get_client):
+    def test_grounding_mode_detection(self, mock_config, mock_client, mock_model, mock_gen):
         """groundingモードが正しく判定されるテスト"""
         mock_config.ROUTER_MODEL = ""
         mock_config.JUDGE_MODEL = ""
-        mock_config.ROUTER_ENABLED = True
-        with patch("ai.router.get_model_name", return_value="gemini-flash"):
-            mock_get_client.return_value.models.generate_content.return_value = (
-                self._make_mock_response("grounding", "最新ニュースが必要")
-            )
-            with patch("ai.router._generate_content_with_retry") as mock_gen:
-                mock_gen.return_value = self._make_mock_response("grounding")
-                result = _call_router_llm("今日のニュースを教えて", None)
+        mock_gen.return_value = self._make_mock_response("grounding", "最新ニュースが必要")
+        result = _call_router_llm("今日のニュースを教えて", None)
         assert result == "grounding"
 
     @patch("ai.router._generate_content_with_retry")

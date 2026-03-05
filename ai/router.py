@@ -1,7 +1,7 @@
 """Router LLM: ユーザーの意図を判定し、適切なツールモードを動的に選択する (issue #94)"""
 
 import json
-from typing import Literal
+from typing import Literal, cast
 
 from google.genai import types
 
@@ -13,7 +13,7 @@ from log_utils.logger import logger
 ToolMode = Literal["grounding", "function_calling", "none"]
 
 # プリフィルタ: この文字数以下のメッセージはRouterを呼ばずに"none"を返す
-_PREFILT_MAX_CHARS = 10
+_PREFILT_MAX_CHARS = 7
 
 _ROUTER_PROMPT = """\
 あなたはDiscordボットのルーティングAIです。
@@ -94,6 +94,6 @@ def _call_router_llm(message: str, context: str | None) -> ToolMode:
         logger.warning(f"Router LLM: 不正なtool_mode={raw_mode!r} → function_calling")
         return "function_calling"
 
-    tool_mode: ToolMode = raw_mode  # type: ignore[assignment]
+    tool_mode = cast(ToolMode, raw_mode)
     logger.info(f"Router判定: tool_mode={tool_mode}, reason={reason}")
     return tool_mode
