@@ -19,14 +19,11 @@ GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "google/gemini-2.5-flash")
 # Vertex AI設定
 VERTEX_AI_PROJECT_ID: str = os.getenv("VERTEX_AI_PROJECT_ID", "")
 VERTEX_AI_LOCATION: str = os.getenv("VERTEX_AI_LOCATION", "asia-northeast1")
-# Google検索によるGroundingを有効にするか
-# 注意: Vertex AIの制約により、groundingとfunction calling(XIVAPI等)は排他利用
-# true → Google Search grounding有効、XIVAPIツール無効
-# false → XIVAPIツール有効、grounding無効 (デフォルト)
-# 両立にはLive APIへの移行が必要 (issue #94)
-ENABLE_GOOGLE_SEARCH_GROUNDING: bool = (
-    os.getenv("ENABLE_GOOGLE_SEARCH_GROUNDING", "false").lower() == "true"
-)
+# Router LLM設定 (issue #94)
+# ユーザーの意図を軽量LLMで判定し、grounding/function_calling/noneを動的選択する
+ROUTER_ENABLED: bool = os.getenv("ROUTER_ENABLED", "true").lower() == "true"
+# 空の場合は JUDGE_MODEL → GEMINI_MODEL の順でフォールバック
+ROUTER_MODEL: str = os.getenv("ROUTER_MODEL", "")
 
 DISCORD_TOKEN: str = str(os.getenv("DISCORD_TOKEN"))
 BOT_NAME: str = str(os.getenv("BOT_NAME", "スフェーン"))

@@ -14,6 +14,7 @@ from ai.api import (
     _execute_tool_calls,
     _handle_api_error,
 )
+from ai.router import detect_tool_mode
 from config import (
     SYSTEM_PROMPT_FILENAME,
     SYSTEM_PROMPT_PATH,
@@ -168,11 +169,16 @@ class Sphene:
 
             # ツール使用を促す指示とコンテキストを統合
             instruction = f"{self.system_prompt}{context_section}\n\n{TOOL_USAGE_INSTRUCTION}"
-            
+
+            # Router LLMで使用ツールを判定
+            tool_mode = detect_tool_mode(input_text, context=channel_context)
+            logger.info(f"Router判定結果: tool_mode={tool_mode}")
+
             # 共通ロジックで呼び出し
             success, response, updated_history = _call_genai_with_tools(
                 contents=self.history,
-                system_instruction=instruction
+                system_instruction=instruction,
+                tool_mode=tool_mode,
             )
             
             # 履歴を更新

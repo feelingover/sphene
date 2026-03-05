@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from google.genai import types, errors as genai_errors
 from google.api_core import exceptions as google_exceptions
@@ -16,9 +16,12 @@ from tenacity import (
 
 from ai.client import _get_genai_client, get_model_name
 from ai.tools import get_tools, TOOL_FUNCTIONS
-from config import GEMINI_MODEL, MAX_TOOL_CALL_ROUNDS, ENABLE_GOOGLE_SEARCH_GROUNDING
+from config import GEMINI_MODEL, MAX_TOOL_CALL_ROUNDS
 from log_utils.logger import logger
 from utils.text_utils import truncate_text
+
+if TYPE_CHECKING:
+    from ai.router import ToolMode
 
 
 def _should_retry_api_error(exception: BaseException) -> bool:
@@ -123,20 +126,32 @@ def _handle_api_error(error: Exception) -> str:
 def call_genai_with_tools(
     contents: list[types.Content],
     system_instruction: str,
+    tool_mode: "ToolMode" = "function_calling",
 ) -> tuple[bool, str, list[types.Content]]:
-    """ツール呼び出しループを含むGenAI呼び出し (共通ロジック)"""
+    """ツール呼び出しループを含むGenAI呼び出し (共通ロジック)
+
+    Args:
+        contents: 会話履歴
+        system_instruction: システムプロンプト
+        tool_mode: Router LLMが判定したツールモード。
+            "grounding" → Google Search grounding、
+            "function_calling" → XIVAPI等のFunction Calling、
+            "none" → ツールなし
+    """
     client = _get_genai_client()
     model_id = get_model_name()
 
-    # ツール設定
+    # tool_modeに応じてツールを動的選択
     # Vertex AIの制約: google_search(grounding)とfunction_declarationsは同一リクエストに混在不可
-    # ENABLE_GOOGLE_SEARCH_GROUNDING=trueの場合はgrounding優先、function calling(XIVAPI等)は無効
-    # 両立にはLive APIへの移行が必要: https://github.com/feelingover/sphene/issues/94
-    if ENABLE_GOOGLE_SEARCH_GROUNDING:
-        tools: list[types.Tool] = [types.Tool(google_search=types.GoogleSearch())]
+    tools: list[types.Tool]
+    if tool_mode == "grounding":
+        tools = [types.Tool(google_search=types.GoogleSearch())]
         logger.debug("グラウンディングモード: function callingは無効 (Vertex AI制約)")
-    else:
+    elif tool_mode == "function_calling":
         tools = get_tools()
+    else:
+        tools = []
+        logger.debug("ツールなしモード")
 
     # contentsリストをコピーして操作する
     local_history = list(contents)
