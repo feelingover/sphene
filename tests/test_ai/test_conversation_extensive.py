@@ -374,7 +374,7 @@ class TestConversationExtensive:
         _, kwargs = mock_call.call_args
         instruction = kwargs["system_instruction"]
         assert "Base Prompt" in instruction
-        assert "積極的にツールを使って調べてね" in instruction
+        assert "必ずツールを使って最新データを取得すること" in instruction
 
     @patch("ai.api.get_model_name")
     @patch("ai.api._get_genai_client")
