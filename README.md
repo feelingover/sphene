@@ -13,7 +13,7 @@ SpheneはGoogle Gen AI SDK（Vertex AI経由のGemini）を活用した会話機
 - チャンネルごとの応答制限機能（全体モード/限定モード）
 - カスタマイズ可能なシステムプロンプトでボットのキャラクター設定が自由に変更可能
 - XIVAPI v2連携によるFF14データ検索（アイテム、アクション、レシピ、クエスト、アチーブメント、F.A.T.E.、マウント、ミニオン、ステータス。ジョブ・IL・レベルでの絞り込み対応）
-- Google検索Grounding対応（Geminiの検索拡張機能）
+- Router LLMによるGrounding + Function Callingの動的切り替え（ユーザーの意図を自動判定、設定不要）
 - 自律応答機能（ルールベーススコアリング＋LLM二次判定による自動会話参加）
 - 短期記憶（チャンネルメッセージバッファ）による文脈を考慮した応答
 - **コンテキスト統合**: メンション応答と自律応答が共通の履歴とチャンネル文脈を参照
@@ -40,8 +40,9 @@ GEMINI_MODEL=google/gemini-2.5-flash  # 使用するモデル
 # VERTEX_AI_PROJECT_ID=your-gcp-project-id  # 未設定の場合はGCEメタデータから自動取得
 VERTEX_AI_LOCATION=asia-northeast1
 
-# Google検索によるGroundingを有効にするか
-ENABLE_GOOGLE_SEARCH_GROUNDING=false
+# Router LLM: ユーザーの意図を自動判定してgrounding/function_callingを動的切り替え (issue #94)
+# ROUTER_ENABLED=true
+# ROUTER_MODEL=  # 空の場合は JUDGE_MODEL → GEMINI_MODEL の順でフォールバック
 
 # システムプロンプトの設定
 SYSTEM_PROMPT_FILENAME=system.txt
@@ -238,6 +239,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 │   ├── __init__.py
 │   ├── client.py           # Google Gen AI SDKクライアント（Vertex AI経由）
 │   ├── conversation.py     # 会話管理・プロンプト・Gen AI API呼び出し
+│   ├── router.py           # Router LLM（意図判定によるツールモード動的選択）
 │   └── tools.py            # Function Calling ツール定義・変換
 ├── bot/                    # Discordボット機能
 │   ├── __init__.py
@@ -323,7 +325,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - 会話タイムアウト（30分）
 - 会話履歴制限（最大10ターン）
 - Function Callingによるツール連携（XIVAPI ゲームデータ検索）
-- Google検索Grounding（オプション）
+- Router LLMによるGrounding + Function Callingの動的切り替え（意図自動判定）
 
 **記憶・自律応答機能**
 

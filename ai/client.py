@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from google import genai
@@ -10,33 +11,39 @@ import config
 from log_utils.logger import logger
 
 _client: genai.Client | None = None
+_client_lock = threading.Lock()
 
 
 def _get_genai_client() -> genai.Client:
     """Google Gen AI SDKのクライアントを取得する"""
     global _client
-    
+
     if _client is not None:
         return _client
 
-    logger.info("Google Gen AIクライアントを初期化しています")
-    
-    # 認証情報を取得
-    credentials, project = google.auth.default()
-    project_id = config.VERTEX_AI_PROJECT_ID or (project or "")
+    with _client_lock:
+        # ロック取得後に再チェック（double-checked locking）
+        if _client is not None:
+            return _client
 
-    # 新しいSDKのクライアント作成
-    # vertexai=True を指定することで Vertex AI エンドポイントを使用する
-    _client = genai.Client(
-        vertexai=True,
-        project=project_id,
-        location=config.VERTEX_AI_LOCATION,
-    )
-    
-    logger.info(
-        "Google Gen AIクライアントを初期化しました（プロジェクト: "
-        f"{project_id}, リージョン: {config.VERTEX_AI_LOCATION}）"
-    )
+        logger.info("Google Gen AIクライアントを初期化しています")
+
+        # 認証情報を取得
+        credentials, project = google.auth.default()
+        project_id = config.VERTEX_AI_PROJECT_ID or (project or "")
+
+        # 新しいSDKのクライアント作成
+        # vertexai=True を指定することで Vertex AI エンドポイントを使用する
+        _client = genai.Client(
+            vertexai=True,
+            project=project_id,
+            location=config.VERTEX_AI_LOCATION,
+        )
+
+        logger.info(
+            "Google Gen AIクライアントを初期化しました（プロジェクト: "
+            f"{project_id}, リージョン: {config.VERTEX_AI_LOCATION}）"
+        )
     return _client
 
 
