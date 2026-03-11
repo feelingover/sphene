@@ -302,17 +302,29 @@ async def _try_autonomous_response(
         recent_messages=recent_messages,
     )
 
+    # リアクション先行実行（返信とは独立。LLM生成を待たない）
+    if result.should_react:
+        asyncio.create_task(
+            _send_reaction(message, result.reaction_emojis, record=False),
+            name="reaction_task",
+        )
+
     if result.score >= config.JUDGE_LLM_THRESHOLD_HIGH:
         # 高スコア: 即応答
-        logger.info(
-            f"自律応答決定(高スコア): チャンネル={message.channel.id}, "
-            f"スコア={result.score}, 理由={result.reason}"
-        )
-        await _dispatch_response(bot, message, images, result.response_type)
+        # react_only かつリアクション済みの場合のみスキップ（ダブルリアクション防止）
+        if result.response_type != "react_only" or not result.should_react:
+            logger.info(
+                f"自律応答決定(高スコア): チャンネル={message.channel.id}, "
+                f"スコア={result.score}, 理由={result.reason}"
+            )
+            await _dispatch_response(
+                bot, message, images, result.response_type,
+                already_reacted=result.should_react,
+            )
         return
 
     if result.score <= config.JUDGE_LLM_THRESHOLD_LOW:
-        # 低スコア: スキップ
+        # 低スコア: リアクション済みの場合あり、返信はスキップ
         return
 
     # 中間スコア: LLM Judgeで二次判定
@@ -321,24 +333,39 @@ async def _try_autonomous_response(
 
         context = buffer.get_context_string(message.channel.id, limit=15)
         llm_judge = get_llm_judge()
-        should_respond, llm_response_type = await llm_judge.evaluate(
-            message_content=message.content or "",
-            recent_context=context,
-            bot_name=config.BOT_NAME,
+        should_respond, llm_response_type, llm_should_react, llm_emojis = (
+            await llm_judge.evaluate(
+                message_content=message.content or "",
+                recent_context=context,
+                bot_name=config.BOT_NAME,
+            )
         )
+        # LLMがリアクションを追加すべきと判定し、ルールベースでは未実行の場合
+        if llm_should_react and not result.should_react:
+            asyncio.create_task(
+                _send_reaction(message, llm_emojis, record=False),
+                name="reaction_task",
+            )
         if should_respond and llm_response_type != "none":
             logger.info(
                 f"自律応答決定(LLM Judge): チャンネル={message.channel.id}, "
                 f"スコア={result.score}, タイプ={llm_response_type}"
             )
-            await _dispatch_response(bot, message, images, llm_response_type)
+            already_reacted = result.should_react or llm_should_react
+            await _dispatch_response(
+                bot, message, images, llm_response_type,
+                already_reacted=already_reacted,
+            )
     elif result.should_respond:
         # LLM Judge無効の場合はルールベースの判定に従う
         logger.info(
             f"自律応答決定(ルールベース): チャンネル={message.channel.id}, "
             f"スコア={result.score}, 理由={result.reason}"
         )
-        await _dispatch_response(bot, message, images, result.response_type)
+        await _dispatch_response(
+            bot, message, images, result.response_type,
+            already_reacted=result.should_react,
+        )
 
 
 async def _dispatch_response(
@@ -346,6 +373,7 @@ async def _dispatch_response(
     message: discord.Message,
     images: list[str],
     response_type: str,
+    already_reacted: bool = False,
 ) -> None:
     """応答タイプに応じて適切な応答を実行する
 
@@ -354,26 +382,39 @@ async def _dispatch_response(
         message: トリガーとなったDiscordメッセージ
         images: 添付画像URLリスト
         response_type: "full_response" | "short_ack" | "react_only"
+        already_reacted: True の場合、リアクション済みとしてフォールバック処理を抑制する
     """
     if response_type == "react_only":
         await _send_reaction(message)
     elif response_type == "short_ack":
-        await _process_short_ack(bot, message)
+        await _process_short_ack(bot, message, already_reacted=already_reacted)
     else:
         await _process_autonomous_response(bot, message, images)
 
 
-async def _send_reaction(message: discord.Message) -> None:
-    """ランダムな絵文字リアクションを追加する"""
+async def _send_reaction(
+    message: discord.Message,
+    emojis: list[str] | None = None,
+    record: bool = True,
+) -> None:
+    """絵文字リアクションを追加する
+
+    Args:
+        message: リアクションを追加するDiscordメッセージ
+        emojis: 使用する絵文字リスト。Noneまたは空の場合はランダム選択（最大2個まで使用）
+        record: Trueの場合、クールダウンを記録する
+    """
     from memory.judge import get_judge
 
     try:
-        emoji = random.choice(_REACTION_EMOJIS)
-        await message.add_reaction(emoji)
+        selected = emojis[:2] if emojis else [random.choice(_REACTION_EMOJIS)]
+        for emoji in selected:
+            await message.add_reaction(emoji)
         logger.info(
-            f"リアクション応答: チャンネル={message.channel.id}, 絵文字={emoji}"
+            f"リアクション応答: チャンネル={message.channel.id}, 絵文字={selected}"
         )
-        get_judge().record_response(message.channel.id)
+        if record:
+            get_judge().record_response(message.channel.id)
     except Exception as e:
         logger.error(f"リアクション追加エラー: {e}", exc_info=True)
 
@@ -381,8 +422,15 @@ async def _send_reaction(message: discord.Message) -> None:
 async def _process_short_ack(
     bot: commands.Bot,
     message: discord.Message,
+    already_reacted: bool = False,
 ) -> None:
-    """短い相槌を生成して送信する"""
+    """短い相槌を生成して送信する
+
+    Args:
+        bot: Discordクライアント
+        message: トリガーとなったDiscordメッセージ
+        already_reacted: True の場合、相槌生成失敗時のリアクションフォールバックをスキップする
+    """
     from memory.judge import get_judge
     from memory.short_term import ChannelMessage, get_channel_buffer
 
@@ -399,10 +447,18 @@ async def _process_short_ack(
     )
 
     if not answer:
-        logger.warning(
-            "相槌生成に失敗、リアクションにフォールバック (channel=%s)", message.channel.id
-        )
-        await _send_reaction(message)
+        if already_reacted:
+            # リアクション済みの場合はフォールバックリアクションを省略し、クールダウンのみ記録
+            logger.debug(
+                "相槌生成に失敗（リアクション済みのためフォールバックをスキップ）(channel=%s)",
+                message.channel.id,
+            )
+            get_judge().record_response(message.channel.id)
+        else:
+            logger.warning(
+                "相槌生成に失敗、リアクションにフォールバック (channel=%s)", message.channel.id
+            )
+            await _send_reaction(message)
         return
 
     try:

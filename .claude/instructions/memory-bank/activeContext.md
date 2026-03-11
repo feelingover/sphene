@@ -3,10 +3,11 @@ applyTo: "**"
 ---
 # Active Context
 
-## Current State (2026/2)
+## Current State (2026/3)
 
 - 記憶システム「リビングメモリー (Living Memory)」の仕様を `docs/living-memory.md` に集約。
-- 全テスト通過（546件）、カバレッジ 87%、mypy 66ファイル no issues
+- 全テスト通過（639件）、カバレッジ 90%、mypy 72ファイル no issues
+- リアクション機能の抜本的な見直し（issue #97）実装済み。`should_react` フィールドによる独立制御、先行実行（asyncio.create_task）、LLM絵文字選択に対応。
 - 記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）実装済み。
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
 - 環境変数を `GEMINI_MODEL` 形式に統一、`OPENAI_API_KEY` を完全削除。
@@ -17,6 +18,20 @@ applyTo: "**"
 - コードレビュー Medium/Low 全課題対応完了（Group A〜E）。
 
 ## Recent Changes
+
+### 2026/3: リアクション機能の抜本的な見直し (issue #97)
+
+リアクションを `response_type == "react_only"` の排他制御から独立した `should_react` フィールドに分離。
+
+#### 変更ファイル
+- **`config.py`**: `REACTION_ENABLED`（デフォルト false）と `JUDGE_REACT_THRESHOLD`（デフォルト 5）を追加
+- **`memory/judge.py`**: `JudgeResult` に `should_react: bool` と `reaction_emojis: list[str]` フィールドを追加。`evaluate()` で独立スコア判定
+- **`memory/llm_judge.py`**: プロンプトに `react/emojis` フィールドを追加。戻り値型を 2-tuple → 4-tuple `(bool, str, bool, list[str])` に変更（破壊的変更）
+- **`bot/events.py`**: `_send_reaction()` に `emojis/record` パラメータ追加。`_try_autonomous_response()` でリアクションを `asyncio.create_task` で先行発火
+
+#### 新規環境変数
+- `REACTION_ENABLED`: リアクション機能の有効化（デフォルト false）
+- `JUDGE_REACT_THRESHOLD`: リアクション実行の最低スコア閾値（デフォルト 5）
 
 ### 2026/2: 記憶システムのブランド化「リビングメモリー」
 

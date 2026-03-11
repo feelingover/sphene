@@ -16,6 +16,8 @@ class JudgeResult:
     should_respond: bool
     reason: str  # ログ用の判定理由
     response_type: str = "full_response"  # "full_response" | "short_ack" | "react_only"
+    should_react: bool = False  # 返信と独立したリアクション判定
+    reaction_emojis: list[str] = field(default_factory=list)  # LLMが埋める絵文字リスト
 
 
 class RuleBasedJudge:
@@ -116,10 +118,13 @@ class RuleBasedJudge:
         # 応答タイプの決定
         response_type = self._determine_response_type(score, is_engaged)
 
+        # リアクション判定（返信とは独立）
+        should_react = config.REACTION_ENABLED and score >= config.JUDGE_REACT_THRESHOLD
+
         logger.debug(
             f"Judge評価: チャンネル={message.channel_id}, "
             f"スコア={score}, 閾値={threshold}, 応答={should_respond}, "
-            f"タイプ={response_type}, 理由=[{reason}]"
+            f"タイプ={response_type}, リアクション={should_react}, 理由=[{reason}]"
         )
 
         return JudgeResult(
@@ -127,6 +132,8 @@ class RuleBasedJudge:
             should_respond=should_respond,
             reason=reason,
             response_type=response_type,
+            should_react=should_react,
+            reaction_emojis=[],  # ルールベースはランダム絵文字を使用 (_send_reaction がフォールバック)
         )
 
     def record_response(self, channel_id: int) -> None:

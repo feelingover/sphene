@@ -5,6 +5,12 @@ applyTo: "**"
 
 ## Completed Features
 
+- **リアクション機能の独立制御 (issue #97)**:
+  - `JudgeResult.should_react` / `reaction_emojis` フィールドで返信とリアクションを独立管理
+  - `REACTION_ENABLED` / `JUDGE_REACT_THRESHOLD` 環境変数でしきい値チューニング可能
+  - LLM Judge が文脈に合う絵文字（最大2個）を選択して返すように拡張
+  - `asyncio.create_task` によるリアクション先行実行（LLM生成を待たない）
+  - `LLMJudge.evaluate()` 戻り値を 4-tuple に変更（破壊的変更、全呼び出し元を更新済み）
 - **記憶システム「リビングメモリー (Living Memory)」**:
   - `docs/living-memory.md`: 記憶の3層構造（短期・中期・長期）とライフサイクルを定義。
 - **記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）**:

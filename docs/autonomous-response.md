@@ -9,10 +9,14 @@
 │
 └─ それ以外 → RuleBasedJudge でスコアリング
                   │
-                  ├─ スコア >= LLM_THRESHOLD_HIGH → 即応答 (タイプはスコアで決定)
-                  ├─ スコア <= LLM_THRESHOLD_LOW  → スキップ
+                  ├─ should_react=True → asyncio.create_task でリアクション先行実行（返信と並列）
+                  │
+                  ├─ スコア >= LLM_THRESHOLD_HIGH → 即応答 (react_only 以外)
+                  ├─ スコア <= LLM_THRESHOLD_LOW  → スキップ（リアクション済みの場合あり）
                   └─ 中間スコア → LLM Judge で二次判定
                                     │
+                                    ├─ llm_should_react=True かつ ルールベースが未リアクション
+                                    │     → asyncio.create_task でリアクション発火
                                     ├─ respond: true  → 応答 (タイプもLLMが決定)
                                     └─ respond: false → スキップ
 ```
@@ -45,9 +49,25 @@
 |---------------|------------|------|
 | `JUDGE_SCORE_FULL_RESPONSE` (60) 以上 | `full_response` | 通常の文章による応答 |
 | `JUDGE_SCORE_SHORT_ACK` (30) 以上 | `short_ack` | 短い相槌や同意のみ |
-| それ未満 | `react_only` | リアクションのみ |
+| それ未満 | `react_only` | リアクションのみ（`REACTION_ENABLED=true` 時は `should_react` で代替） |
 
 **注:** LLM Judgeが有効な場合、上記の閾値に関わらずLLMが最適な `response_type` (`full`, `short`, `react`) を選択し、その決定が優先される。
+
+### リアクション機能 (REACTION_ENABLED)
+
+`REACTION_ENABLED=true` にすると、返信とは独立してリアクションを追加できる。
+
+| 特徴 | 説明 |
+|------|------|
+| **独立判定** | `should_react` は `should_respond` と別フィールドで管理。低スコアでも反応可能 |
+| **先行実行** | LLM 生成を待たず `asyncio.create_task` でリアクションを即時発火（「生きてる感」演出） |
+| **LLM絵文字** | LLM Judge 有効時、LLM が文脈に合う絵文字（最大2個）を選択して返す |
+| **クールダウンなし** | `record=False` で発火するため、リアクションはクールダウンカウントに含まれない |
+
+```
+REACTION_ENABLED=true
+JUDGE_REACT_THRESHOLD=5   # score >= 5 でリアクション実行（JUDGE_SCORE_THRESHOLD より低く設定）
+```
 
 ## コンテキストの統合
 
@@ -75,8 +95,20 @@
 
 ### LLM Judge
 
-中間スコア帯のメッセージに対して、安価なLLMで「自然に参加すべきか」および「その形式」を二次判定する。
-直近15メッセージのコンテキストを渡し、JSON形式で `{"respond": true/false, "response_type": "full"|"short"|"react"|"none", "reason": "..."}` を返す。
+中間スコア帯のメッセージに対して、安価なLLMで「自然に参加すべきか」「その形式」「リアクションするか」を二次判定する。
+直近15メッセージのコンテキストを渡し、JSON形式で以下を返す:
+
+```json
+{
+  "respond": true,
+  "response_type": "full"|"short"|"react"|"none",
+  "react": true,
+  "emojis": ["🤔", "💡"],
+  "reason": "判定理由"
+}
+```
+
+`react`・`emojis` フィールドは `REACTION_ENABLED=true` 時に利用される。ルールベースが未リアクションの場合のみ、LLM指定の絵文字でリアクションを発火する（重複防止）。
 
 ## パラメータリファレンス
 
@@ -115,6 +147,13 @@
 |------|-----------|------|
 | `RESPONSE_DIVERSITY_ENABLED` | `false` | スコアに応じた応答パターンの変化を有効化 |
 
+### リアクション機能
+
+| 変数 | デフォルト | 説明 |
+|------|-----------|------|
+| `REACTION_ENABLED` | `false` | 返信と独立したリアクション機能の有効化 |
+| `JUDGE_REACT_THRESHOLD` | `5` | リアクション実行の最低スコア閾値（`JUDGE_SCORE_THRESHOLD` より低く設定推奨） |
+
 ### チャンネルコンテキスト（要約）
 
 | 変数 | デフォルト | 説明 |
@@ -130,3 +169,5 @@
 - **応答しすぎる場合**: `JUDGE_SCORE_THRESHOLD` を上げる / `ENGAGEMENT_BOOST` を下げる / `COOLDOWN_SECONDS` を伸ばす
 - **応答が少なすぎる場合**: `JUDGE_SCORE_THRESHOLD` を下げる / `ENGAGEMENT_BOOST` を上げる / `ENGAGEMENT_DURATION_SECONDS` を伸ばす
 - **LLM Judgeの判定範囲を広げたい場合**: `JUDGE_LLM_THRESHOLD_LOW` を下げる / `JUDGE_LLM_THRESHOLD_HIGH` を下げる
+- **リアクションが多すぎる場合**: `JUDGE_REACT_THRESHOLD` を上げる（スコアが高い会話のみリアクション）
+- **リアクションが少なすぎる場合**: `JUDGE_REACT_THRESHOLD` を下げる（デフォルト5、最低0まで下げられる）

@@ -311,7 +311,19 @@ class TestDispatchResponse:
         from bot.events import _dispatch_response
         await _dispatch_response(bot, message, [], "short_ack")
 
-        mock_ack.assert_called_once_with(bot, message)
+        mock_ack.assert_called_once_with(bot, message, already_reacted=False)
+
+    @pytest.mark.asyncio
+    @patch("bot.events._process_short_ack")
+    async def test_dispatch_short_ack_with_already_reacted(self, mock_ack):
+        """already_reacted=True が _process_short_ack に伝播する"""
+        bot = MagicMock()
+        message = MagicMock()
+
+        from bot.events import _dispatch_response
+        await _dispatch_response(bot, message, [], "short_ack", already_reacted=True)
+
+        mock_ack.assert_called_once_with(bot, message, already_reacted=True)
 
 
 class TestSendReaction:
@@ -333,6 +345,42 @@ class TestSendReaction:
 
         message.add_reaction.assert_called_once()
         mock_judge.record_response.assert_called_once_with(100)
+
+    @pytest.mark.asyncio
+    @patch("memory.judge.get_judge")
+    async def test_send_reaction_uses_provided_emojis(self, mock_get_judge):
+        """emojisが渡された場合は最大2個までリアクションが追加される"""
+        mock_judge = MagicMock()
+        mock_get_judge.return_value = mock_judge
+
+        message = MagicMock()
+        message.add_reaction = AsyncMock()
+        message.channel.id = 100
+
+        from bot.events import _send_reaction
+        await _send_reaction(message, emojis=["🤔", "💡"])
+
+        assert message.add_reaction.call_count == 2
+        message.add_reaction.assert_any_call("🤔")
+        message.add_reaction.assert_any_call("💡")
+        mock_judge.record_response.assert_called_once_with(100)
+
+    @pytest.mark.asyncio
+    @patch("memory.judge.get_judge")
+    async def test_send_reaction_record_false_skips_cooldown(self, mock_get_judge):
+        """record=False の場合 record_response が呼ばれない"""
+        mock_judge = MagicMock()
+        mock_get_judge.return_value = mock_judge
+
+        message = MagicMock()
+        message.add_reaction = AsyncMock()
+        message.channel.id = 100
+
+        from bot.events import _send_reaction
+        await _send_reaction(message, record=False)
+
+        message.add_reaction.assert_called_once()
+        mock_judge.record_response.assert_not_called()
 
 
 class TestProcessShortAck:
@@ -414,6 +462,37 @@ class TestProcessShortAck:
 
         message.channel.send.assert_not_called()
         mock_send_reaction.assert_called_once_with(message)
+
+    @pytest.mark.asyncio
+    @patch("asyncio.to_thread")
+    @patch("memory.judge.get_judge")
+    @patch("memory.short_term.get_channel_buffer")
+    async def test_short_ack_none_answer_already_reacted_skips_reaction(
+        self, mock_buffer_fn, mock_get_judge, mock_to_thread
+    ):
+        """already_reacted=True かつ相槌失敗時はリアクションを追加せずクールダウンのみ記録"""
+        mock_buffer = MagicMock()
+        mock_buffer.get_context_string.return_value = "User1: hello"
+        mock_buffer_fn.return_value = mock_buffer
+        mock_judge = MagicMock()
+        mock_get_judge.return_value = mock_judge
+        mock_to_thread.return_value = None
+
+        bot = MagicMock()
+        message = MagicMock()
+        message.channel.id = 100
+        message.channel.send = AsyncMock()
+        message.add_reaction = AsyncMock()
+        message.content = "テスト"
+
+        with patch("bot.events._send_reaction") as mock_send_reaction:
+            from bot.events import _process_short_ack
+            await _process_short_ack(bot, message, already_reacted=True)
+
+        message.channel.send.assert_not_called()
+        mock_send_reaction.assert_not_called()
+        # クールダウンは記録される
+        mock_judge.record_response.assert_called_once_with(100)
 
 
 class TestCollectAiContextFacts:
@@ -687,3 +766,171 @@ class TestTryProactiveConversation:
                         mock_dispatch.assert_called_once_with(bot, message, mock_fact)
 
 
+class TestTryAutonomousResponseReaction:
+    """_try_autonomous_response のリアクション機能テスト"""
+
+    def _make_message_mock(self) -> MagicMock:
+        message = MagicMock()
+        message.channel.id = 12345
+        message.content = "テストメッセージ"
+        message.author.id = 67890
+        message.author.display_name = "TestUser"
+        message.created_at = datetime.now(timezone.utc)
+        message.add_reaction = AsyncMock()
+        return message
+
+    @pytest.mark.asyncio
+    @patch("bot.events.config")
+    @patch("asyncio.create_task")
+    async def test_reaction_fires_when_should_react_true(self, mock_create_task, mock_config):
+        """should_react=True のとき asyncio.create_task でリアクションが発火すること"""
+        mock_config.JUDGE_LLM_THRESHOLD_HIGH = 60
+        mock_config.JUDGE_LLM_THRESHOLD_LOW = 20
+        mock_config.LLM_JUDGE_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+
+        from memory.judge import JudgeResult
+        mock_result = JudgeResult(
+            score=10,  # 低スコア: should_respond=False
+            should_respond=False,
+            reason="テスト",
+            response_type="full_response",
+            should_react=True,
+            reaction_emojis=["👀"],
+        )
+        mock_judge = MagicMock()
+        mock_judge.evaluate.return_value = mock_result
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_recent_messages.return_value = []
+
+        bot = MagicMock()
+        message = self._make_message_mock()
+
+        with patch("memory.judge.get_judge", return_value=mock_judge):
+            with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+                from bot.events import _try_autonomous_response
+                await _try_autonomous_response(bot, message, [])
+
+        mock_create_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("bot.events.config")
+    @patch("asyncio.create_task")
+    async def test_reaction_not_fired_when_should_react_false(self, mock_create_task, mock_config):
+        """should_react=False のとき asyncio.create_task が呼ばれないこと"""
+        mock_config.JUDGE_LLM_THRESHOLD_HIGH = 60
+        mock_config.JUDGE_LLM_THRESHOLD_LOW = 20
+        mock_config.LLM_JUDGE_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+
+        from memory.judge import JudgeResult
+        mock_result = JudgeResult(
+            score=0,
+            should_respond=False,
+            reason="テスト",
+            response_type="full_response",
+            should_react=False,
+        )
+        mock_judge = MagicMock()
+        mock_judge.evaluate.return_value = mock_result
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_recent_messages.return_value = []
+
+        bot = MagicMock()
+        message = self._make_message_mock()
+
+        with patch("memory.judge.get_judge", return_value=mock_judge):
+            with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+                from bot.events import _try_autonomous_response
+                await _try_autonomous_response(bot, message, [])
+
+        mock_create_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("bot.events.config")
+    @patch("asyncio.create_task")
+    @patch("bot.events._dispatch_response")
+    async def test_high_score_both_reaction_and_reply(
+        self, mock_dispatch, mock_create_task, mock_config
+    ):
+        """高スコアで should_react=True のとき、リアクションと返信が両方実行されること"""
+        mock_config.JUDGE_LLM_THRESHOLD_HIGH = 60
+        mock_config.JUDGE_LLM_THRESHOLD_LOW = 20
+        mock_config.LLM_JUDGE_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+
+        from memory.judge import JudgeResult
+        mock_result = JudgeResult(
+            score=80,  # 高スコア
+            should_respond=True,
+            reason="テスト",
+            response_type="full_response",
+            should_react=True,
+            reaction_emojis=["😊"],
+        )
+        mock_judge = MagicMock()
+        mock_judge.evaluate.return_value = mock_result
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_recent_messages.return_value = []
+
+        bot = MagicMock()
+        message = self._make_message_mock()
+
+        with patch("memory.judge.get_judge", return_value=mock_judge):
+            with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+                from bot.events import _try_autonomous_response
+                await _try_autonomous_response(bot, message, [])
+
+        # リアクションも返信も発火
+        mock_create_task.assert_called_once()
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("bot.events.config")
+    @patch("asyncio.create_task")
+    @patch("bot.events._dispatch_response")
+    async def test_llm_judge_reaction_fires_when_llm_should_react(
+        self, mock_dispatch, mock_create_task, mock_config
+    ):
+        """LLM Judge が should_react=True を返したとき、リアクションが発火すること"""
+        mock_config.JUDGE_LLM_THRESHOLD_HIGH = 60
+        mock_config.JUDGE_LLM_THRESHOLD_LOW = 20
+        mock_config.LLM_JUDGE_ENABLED = True
+        mock_config.BOT_NAME = "テストボット"
+
+        from memory.judge import JudgeResult
+        mock_result = JudgeResult(
+            score=40,  # 中間スコア: LLM Judge へ
+            should_respond=False,
+            reason="テスト",
+            response_type="full_response",
+            should_react=False,  # ルールベースはreact不要
+        )
+        mock_judge = MagicMock()
+        mock_judge.evaluate.return_value = mock_result
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_recent_messages.return_value = []
+        mock_buffer.get_context_string.return_value = "context"
+
+        mock_llm_judge = MagicMock()
+        mock_llm_judge.evaluate = AsyncMock(
+            return_value=(True, "full_response", True, ["🤔"])
+        )
+
+        bot = MagicMock()
+        message = self._make_message_mock()
+
+        with patch("memory.judge.get_judge", return_value=mock_judge):
+            with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+                with patch("memory.llm_judge.get_llm_judge", return_value=mock_llm_judge):
+                    from bot.events import _try_autonomous_response
+                    await _try_autonomous_response(bot, message, [])
+
+        # LLM judgeのリアクションが発火
+        mock_create_task.assert_called_once()
+        # 返信も発火
+        mock_dispatch.assert_called_once()

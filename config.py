@@ -93,6 +93,11 @@ RESPONSE_DIVERSITY_ENABLED: bool = (
     os.getenv("RESPONSE_DIVERSITY_ENABLED", "false").lower() == "true"
 )
 
+# === リアクション機能設定 ===
+REACTION_ENABLED: bool = os.getenv("REACTION_ENABLED", "false").lower() == "true"
+# should_react=True になる最低スコア閾値（JUDGE_SCORE_THRESHOLD より低く設定する）
+JUDGE_REACT_THRESHOLD: int = int(os.getenv("JUDGE_REACT_THRESHOLD", "5"))
+
 # === ユーザープロファイル設定 (Phase 2B) ===
 USER_PROFILE_ENABLED: bool = os.getenv("USER_PROFILE_ENABLED", "false").lower() == "true"
 FAMILIARITY_THRESHOLD_ACQUAINTANCE: int = int(os.getenv("FAMILIARITY_THRESHOLD_ACQUAINTANCE", "6"))
