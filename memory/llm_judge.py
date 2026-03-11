@@ -4,7 +4,7 @@ import json
 import asyncio
 
 import config
-from ai.client import _get_genai_client, get_model_name
+from ai.client import _get_genai_client, get_lite_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from google.genai import types
 from log_utils.logger import logger
@@ -55,7 +55,7 @@ class LLMJudge:
     ) -> tuple[bool, str]:
         """Google Gen AI SDKを同期的に呼び出す"""
         client = _get_genai_client()
-        model_name = config.JUDGE_MODEL or get_model_name()
+        model_name = get_lite_model_name()
         
         prompt = f"{LLM_JUDGE_PROMPT.format(bot_name=bot_name)}\n\n直近の会話:\n{recent_context}\n\n最新メッセージ:\n{message_content}"
 

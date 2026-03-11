@@ -14,7 +14,8 @@ INSTANCE_NAME: str = os.getenv("INSTANCE_NAME", "")
 if not INSTANCE_NAME:
     raise ValueError("INSTANCE_NAME is required")
 
-GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "google/gemini-2.5-flash")
+BOT_MODEL: str = os.getenv("BOT_MODEL", "google/gemini-2.5-flash")
+BOT_LITE_MODEL: str = os.getenv("BOT_LITE_MODEL", "google/gemini-2.5-flash")
 
 # Vertex AI設定
 VERTEX_AI_PROJECT_ID: str = os.getenv("VERTEX_AI_PROJECT_ID", "")
@@ -22,8 +23,6 @@ VERTEX_AI_LOCATION: str = os.getenv("VERTEX_AI_LOCATION", "asia-northeast1")
 # Router LLM設定 (issue #94)
 # ユーザーの意図を軽量LLMで判定し、grounding/function_calling/noneを動的選択する
 ROUTER_ENABLED: bool = os.getenv("ROUTER_ENABLED", "true").lower() == "true"
-# 空の場合は JUDGE_MODEL → GEMINI_MODEL の順でフォールバック
-ROUTER_MODEL: str = os.getenv("ROUTER_MODEL", "")
 
 DISCORD_TOKEN: str = str(os.getenv("DISCORD_TOKEN"))
 BOT_NAME: str = str(os.getenv("BOT_NAME", "スフェーン"))
@@ -79,7 +78,6 @@ JUDGE_KEYWORDS: str = os.getenv("JUDGE_KEYWORDS", "")
 LLM_JUDGE_ENABLED: bool = (
     os.getenv("LLM_JUDGE_ENABLED", "false").lower() == "true"
 )
-JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "")
 JUDGE_LLM_THRESHOLD_LOW: int = int(os.getenv("JUDGE_LLM_THRESHOLD_LOW", "20"))
 JUDGE_LLM_THRESHOLD_HIGH: int = int(os.getenv("JUDGE_LLM_THRESHOLD_HIGH", "60"))
 
@@ -89,7 +87,6 @@ CHANNEL_CONTEXT_ENABLED: bool = (
 )
 SUMMARIZE_EVERY_N_MESSAGES: int = int(os.getenv("SUMMARIZE_EVERY_N_MESSAGES", "20"))
 SUMMARIZE_EVERY_N_MINUTES: int = int(os.getenv("SUMMARIZE_EVERY_N_MINUTES", "15"))
-SUMMARIZE_MODEL: str = os.getenv("SUMMARIZE_MODEL", "")
 
 # === 応答多様性設定 ===
 RESPONSE_DIVERSITY_ENABLED: bool = (
@@ -121,7 +118,6 @@ REFLECTION_MIN_MESSAGES: int = int(os.getenv("REFLECTION_MIN_MESSAGES", "10"))
 # バッファ量ベースの反省会トリガー閾値。
 # CHANNEL_BUFFER_SIZE 以下の値を設定すること（それを超えると絶対に発動しない）。
 REFLECTION_MAX_BUFFER_MESSAGES: int = int(os.getenv("REFLECTION_MAX_BUFFER_MESSAGES", "30"))
-REFLECTION_MODEL: str = os.getenv("REFLECTION_MODEL", "")
 
 # === 自発的会話設定 (Phase 3A) ===
 PROACTIVE_CONVERSATION_ENABLED: bool = (

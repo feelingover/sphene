@@ -92,7 +92,7 @@ class Summarizer:
     ) -> dict | None:
         """LLMを呼び出して要約を生成する（同期）"""
         client = _get_genai_client()
-        model_name = config.SUMMARIZE_MODEL or get_model_name()
+        model_name = get_model_name()
 
         messages_text = _format_messages_for_summary(messages)
         if not messages_text:

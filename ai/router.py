@@ -6,7 +6,7 @@ from typing import Literal, cast
 from google.genai import types
 
 import config
-from ai.client import _get_genai_client, get_model_name
+from ai.client import _get_genai_client, get_lite_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
 
@@ -57,7 +57,7 @@ def detect_tool_mode(message: str, context: str | None = None) -> ToolMode:
 def _call_router_llm(message: str, context: str | None) -> ToolMode:
     """Router LLMを同期的に呼び出す。"""
     client = _get_genai_client()
-    model_name = config.ROUTER_MODEL or config.JUDGE_MODEL or get_model_name()
+    model_name = get_lite_model_name()
 
     prompt_parts = [_ROUTER_PROMPT]
     if context:

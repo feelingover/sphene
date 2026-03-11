@@ -49,7 +49,15 @@ def _get_genai_client() -> genai.Client:
 
 def get_model_name() -> str:
     """使用するモデル名を取得する（google/ プレフィックスを調整）"""
-    model_name = config.GEMINI_MODEL
+    model_name = config.BOT_MODEL
+    if model_name.startswith("google/"):
+        model_name = model_name.replace("google/", "")
+    return model_name
+
+
+def get_lite_model_name() -> str:
+    """軽量モデル名を取得する（google/ プレフィックスを調整）"""
+    model_name = config.BOT_LITE_MODEL
     if model_name.startswith("google/"):
         model_name = model_name.replace("google/", "")
     return model_name
