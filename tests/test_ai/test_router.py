@@ -10,7 +10,6 @@ import pytest
 from google.genai import types
 
 from ai.router import detect_tool_mode, _call_router_llm, _PREFILT_MAX_CHARS
-import config
 
 
 class TestPrefilt:
