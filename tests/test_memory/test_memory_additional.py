@@ -85,9 +85,11 @@ class TestMemoryAdditional:
     async def test_llm_judge_exception(self):
         judge = LLMJudge()
         with patch("asyncio.to_thread", side_effect=Exception("error")):
-            res, rtype = await judge.evaluate("t", "c", "B")
+            res, rtype, should_react, reaction_emojis = await judge.evaluate("t", "c", "B")
             assert res is False
             assert rtype == "react_only"
+            assert should_react is False
+            assert reaction_emojis == []
 
     # --- Reflection ---
     def test_get_reflection_engine_singleton(self):

@@ -20,7 +20,11 @@ LLM_JUDGE_PROMPT = """\
 - "react": 絵文字リアクションのみ（スタンプ的な応答）
 - "none": 応答しない（会話を静観する）
 
-JSONで回答してください: {{"respond": true/false, "response_type": "full"|"short"|"react"|"none", "reason": "判定理由"}}
+JSONで回答してください:
+{{"respond": true/false, "response_type": "full"|"short"|"react"|"none",
+ "react": true/false, "emojis": ["絵文字1", "絵文字2"], "reason": "判定理由"}}
+
+emojis は文脈に合う Unicode 絵文字を 0〜2 個のリストで返してください。
 """
 
 
@@ -32,27 +36,30 @@ class LLMJudge:
         message_content: str,
         recent_context: str,
         bot_name: str,
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, str, bool, list[str]]:
         """LLMで応答すべきかとその形式を判定する
 
         Returns:
-            tuple[bool, str]: (応答すべきか, 応答形式 "full_response"|"short_ack"|"react_only")
+            tuple[bool, str, bool, list[str]]:
+                (should_respond, response_type, should_react, reaction_emojis)
         """
         try:
-            should_respond, response_type = await asyncio.to_thread(
-                self._call_llm, message_content, recent_context, bot_name
+            should_respond, response_type, should_react, reaction_emojis = (
+                await asyncio.to_thread(
+                    self._call_llm, message_content, recent_context, bot_name
+                )
             )
-            return should_respond, response_type
+            return should_respond, response_type, should_react, reaction_emojis
         except Exception as e:
             logger.error(f"LLM Judge呼び出しエラー: {str(e)}", exc_info=True)
-            return False, "react_only"
+            return False, "react_only", False, []
 
     def _call_llm(
         self,
         message_content: str,
         recent_context: str,
         bot_name: str,
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, str, bool, list[str]]:
         """Google Gen AI SDKを同期的に呼び出す"""
         client = _get_genai_client()
         model_name = get_lite_model_name()
@@ -74,14 +81,14 @@ class LLMJudge:
 
             content = response.text
             if not content:
-                return False, "none"
+                return False, "none", False, []
 
             result = json.loads(content)
             if isinstance(result, list):
                 result = result[0] if result else {}
             should_respond = bool(result.get("respond", False))
             llm_type = result.get("response_type", "none")
-            
+
             # 内部形式に変換
             type_map = {
                 "full": "full_response",
@@ -90,19 +97,24 @@ class LLMJudge:
                 "none": "none"
             }
             final_type = type_map.get(llm_type, "react_only")
-            
+
             if not should_respond:
                 final_type = "none"
 
+            should_react = bool(result.get("react", False))
+            raw_emojis = result.get("emojis", [])
+            emojis: list[str] = [e for e in raw_emojis if isinstance(e, str)][:2]
+
             logger.info(
                 f"LLM Judge判定: respond={should_respond}, type={final_type}, "
+                f"react={should_react}, emojis={emojis}, "
                 f"reason={result.get('reason', '')}"
             )
-            return should_respond, final_type
+            return should_respond, final_type, should_react, emojis
 
         except Exception as e:
             logger.warning(f"LLM Judge処理失敗: {str(e)}")
-            return False, "none"
+            return False, "none", False, []
 
 
 _llm_judge: LLMJudge | None = None

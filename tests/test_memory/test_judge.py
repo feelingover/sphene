@@ -58,6 +58,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         msg = _make_message(content="これってどうなの？")
@@ -78,6 +80,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         msg = _make_message(content="How about this?")
@@ -97,6 +101,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         msg = _make_message(content="Pythonの書き方教えて")
@@ -117,6 +123,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         msg = _make_message(content="Pythonの書き方って？")
@@ -138,6 +146,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         # まずクールダウンを記録
@@ -163,6 +173,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         # 2秒前に応答したことにする（クールダウンもエンゲージメントも切れ）
@@ -187,6 +199,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         msg = _make_message(content="普通のメッセージ")
@@ -209,6 +223,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         # クールダウン中 + 条件なし = -50 -> 0
@@ -228,6 +244,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         # 疑問符(20) + キーワード(15) = 35 >= 30 -> True
@@ -249,6 +267,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         assert judge._keywords == []
@@ -263,6 +283,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         assert 100 not in judge._last_response_times
@@ -281,6 +303,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         # クールダウン期間外・エンゲージメント期間内（例: 30秒前に応答）
@@ -309,6 +333,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         # 直後に応答（クールダウン中 かつ エンゲージメント中）
@@ -336,6 +362,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         # 301秒前に応答 → エンゲージメント期間外
@@ -364,6 +392,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
 
@@ -388,6 +418,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         # チャンネル200で応答
@@ -415,6 +447,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         recent = [
@@ -439,6 +473,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         recent = [
@@ -461,6 +497,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         recent = [
@@ -486,6 +524,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         recent = [
@@ -515,6 +555,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
         mock_config.RESPONSE_DIVERSITY_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
         msg = _make_message(content="テスト")
@@ -529,6 +571,97 @@ class TestRuleBasedJudge:
         """JudgeResultのデフォルトresponse_type"""
         result = JudgeResult(score=50, should_respond=True, reason="test")
         assert result.response_type == "full_response"
+
+    def test_judge_result_default_should_react(self):
+        """JudgeResultのデフォルトshould_react=False"""
+        result = JudgeResult(score=50, should_respond=True, reason="test")
+        assert result.should_react is False
+        assert result.reaction_emojis == []
+
+    @patch("memory.judge.config")
+    def test_should_react_true_when_enabled_and_above_threshold(self, mock_config):
+        """REACTION_ENABLED=True かつ score >= JUDGE_REACT_THRESHOLD で should_react=True"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = True
+        mock_config.JUDGE_REACT_THRESHOLD = 5
+
+        judge = RuleBasedJudge()
+        # 疑問符(+20) = 20 >= 5 → should_react=True
+        msg = _make_message(content="どうなの？")
+        result = judge.evaluate(message=msg, recent_messages=[])
+        assert result.should_react is True
+        assert result.reaction_emojis == []
+
+    @patch("memory.judge.config")
+    def test_should_react_false_when_disabled(self, mock_config):
+        """REACTION_ENABLED=False の場合 should_react=False"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = False
+        mock_config.JUDGE_REACT_THRESHOLD = 5
+
+        judge = RuleBasedJudge()
+        msg = _make_message(content="どうなの？")
+        result = judge.evaluate(message=msg, recent_messages=[])
+        assert result.should_react is False
+
+    @patch("memory.judge.config")
+    def test_should_react_false_when_score_below_threshold(self, mock_config):
+        """score < JUDGE_REACT_THRESHOLD の場合 should_react=False"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = True
+        mock_config.JUDGE_REACT_THRESHOLD = 30  # 閾値を高めに設定
+
+        judge = RuleBasedJudge()
+        # 疑問符(+20) = 20 < 30 → should_react=False
+        msg = _make_message(content="どうなの？")
+        result = judge.evaluate(message=msg, recent_messages=[])
+        assert result.should_react is False
+
+    @patch("memory.judge.config")
+    def test_should_react_independent_of_should_respond(self, mock_config):
+        """should_react は should_respond と独立している（低スコアでもリアクション可能）"""
+        mock_config.JUDGE_KEYWORDS = ""
+        mock_config.COOLDOWN_SECONDS = 120
+        mock_config.JUDGE_SCORE_THRESHOLD = 20
+        mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
+        mock_config.JUDGE_SCORE_SHORT_ACK = 30
+        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.BOT_NAME = "テストボット"
+        mock_config.REACTION_ENABLED = True
+        mock_config.JUDGE_REACT_THRESHOLD = 5
+
+        judge = RuleBasedJudge()
+        # 条件なし → score=0 < JUDGE_SCORE_THRESHOLD=20 → should_respond=False
+        # しかし score=0 < JUDGE_REACT_THRESHOLD=5 → should_react=False
+        msg = _make_message(content="普通のメッセージ")
+        result = judge.evaluate(message=msg, recent_messages=[])
+        assert result.should_respond is False
+        assert result.should_react is False
+
+        # 疑問符(+20) → score=20 >= JUDGE_REACT_THRESHOLD=5 → should_react=True
+        # score=20 >= JUDGE_SCORE_THRESHOLD=20 → should_respond=True
+        msg2 = _make_message(content="どうなの？")
+        result2 = judge.evaluate(message=msg2, recent_messages=[])
+        assert result2.should_respond is True
+        assert result2.should_react is True
 
 
 class TestHelperFunctions:
