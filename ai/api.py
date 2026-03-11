@@ -16,7 +16,7 @@ from tenacity import (
 
 from ai.client import _get_genai_client, get_model_name
 from ai.tools import get_tools, TOOL_FUNCTIONS
-from config import GEMINI_MODEL, MAX_TOOL_CALL_ROUNDS
+from config import BOT_MODEL, MAX_TOOL_CALL_ROUNDS
 from log_utils.logger import logger
 from utils.text_utils import truncate_text
 
@@ -114,7 +114,7 @@ def _handle_api_error(error: Exception) -> str:
     if (isinstance(error, genai_errors.APIError) and error.code == 404) or isinstance(
         error, google_exceptions.NotFound
     ):
-        return f"ごめんね、指定されたAIモデル「{GEMINI_MODEL}」が見つからないか、このリージョンでは使えないみたい…😢"
+        return f"ごめんね、指定されたAIモデル「{BOT_MODEL}」が見つからないか、このリージョンでは使えないみたい…😢"
     if (isinstance(error, genai_errors.APIError) and error.code == 429) or isinstance(
         error, (google_exceptions.TooManyRequests, google_exceptions.ResourceExhausted)
     ):

@@ -142,7 +142,7 @@ class ReflectionEngine:
     ) -> list[dict] | None:
         """Gemini を同期呼び出し。JSON配列を返す。失敗時は None"""
         client = get_genai_client()
-        model_name = config.REFLECTION_MODEL or get_model_name()
+        model_name = get_model_name()
 
         messages_text = _format_messages_for_reflection(messages)
         if not messages_text:
@@ -236,7 +236,7 @@ class ReflectionEngine:
         from memory.user_profile import get_user_profile_store
 
         client = get_genai_client()
-        model_name = config.REFLECTION_MODEL or get_model_name()
+        model_name = get_model_name()
 
         messages_text = _format_messages_for_reflection(messages)
         if not messages_text:

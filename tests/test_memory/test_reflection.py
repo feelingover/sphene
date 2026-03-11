@@ -104,9 +104,8 @@ class TestCallReflectionLlm:
 
         with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
-                with patch("config.REFLECTION_MODEL", ""):
-                    with patch("memory.reflection.get_model_name", return_value="test-model"):
-                        result = engine._call_reflection_llm(messages)
+                with patch("memory.reflection.get_model_name", return_value="test-model"):
+                    result = engine._call_reflection_llm(messages)
 
         assert isinstance(result, list)
         assert len(result) == 1
@@ -122,9 +121,8 @@ class TestCallReflectionLlm:
 
         with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
-                with patch("config.REFLECTION_MODEL", ""):
-                    with patch("memory.reflection.get_model_name", return_value="test-model"):
-                        result = engine._call_reflection_llm(messages)
+                with patch("memory.reflection.get_model_name", return_value="test-model"):
+                    result = engine._call_reflection_llm(messages)
 
         assert result == []
 
@@ -138,9 +136,8 @@ class TestCallReflectionLlm:
 
         with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
-                with patch("config.REFLECTION_MODEL", ""):
-                    with patch("memory.reflection.get_model_name", return_value="test-model"):
-                        result = engine._call_reflection_llm(messages)
+                with patch("memory.reflection.get_model_name", return_value="test-model"):
+                    result = engine._call_reflection_llm(messages)
 
         assert result is None
 
@@ -154,9 +151,8 @@ class TestCallReflectionLlm:
 
         with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
-                with patch("config.REFLECTION_MODEL", ""):
-                    with patch("memory.reflection.get_model_name", return_value="test-model"):
-                        result = engine._call_reflection_llm(messages)
+                with patch("memory.reflection.get_model_name", return_value="test-model"):
+                    result = engine._call_reflection_llm(messages)
 
         assert result is None
 
@@ -167,9 +163,8 @@ class TestCallReflectionLlm:
 
         with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", side_effect=Exception("API エラー")):
-                with patch("config.REFLECTION_MODEL", ""):
-                    with patch("memory.reflection.get_model_name", return_value="test-model"):
-                        result = engine._call_reflection_llm(messages)
+                with patch("memory.reflection.get_model_name", return_value="test-model"):
+                    result = engine._call_reflection_llm(messages)
 
         assert result is None
 
@@ -314,10 +309,9 @@ class TestUserProfileTags:
 
         with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
-                with patch("config.REFLECTION_MODEL", ""):
-                    with patch("memory.reflection.get_model_name", return_value="test-model"):
-                        with patch("memory.user_profile.get_user_profile_store", return_value=mock_store):
-                            engine._call_user_profile_llm(messages)
+                with patch("memory.reflection.get_model_name", return_value="test-model"):
+                    with patch("memory.user_profile.get_user_profile_store", return_value=mock_store):
+                        engine._call_user_profile_llm(messages)
 
         mock_store.update_from_reflection.assert_called_once_with(12345, {
             "user_id": 12345,
@@ -341,10 +335,9 @@ class TestUserProfileTags:
 
         with patch("memory.reflection.get_genai_client"):
             with patch("memory.reflection._generate_content_with_retry", return_value=mock_response):
-                with patch("config.REFLECTION_MODEL", ""):
-                    with patch("memory.reflection.get_model_name", return_value="test-model"):
-                        # 例外が発生しないこと
-                        engine._call_user_profile_llm(messages)
+                with patch("memory.reflection.get_model_name", return_value="test-model"):
+                    # 例外が発生しないこと
+                    engine._call_user_profile_llm(messages)
 
     def test_call_user_profile_llm_skips_empty_messages(self):
         """空メッセージのとき何も実行しないこと"""

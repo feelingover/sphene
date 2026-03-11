@@ -218,12 +218,10 @@ class TestSummarizerMaybeSummarize:
 class TestSummarizerCallSummarizeLlm:
     """Summarizer._call_summarize_llmのテスト"""
 
-    @patch("memory.summarizer.config")
     @patch("memory.summarizer.get_model_name")
     @patch("memory.summarizer._get_genai_client")
-    def test_success(self, mock_get_client, mock_get_model, mock_config):
+    def test_success(self, mock_get_client, mock_get_model):
         """LLM呼び出しが成功した場合、解析済み辞書を返すこと"""
-        mock_config.SUMMARIZE_MODEL = ""
         mock_get_model.return_value = "gemini-2.5-flash"
 
         expected_result = {
@@ -252,35 +250,10 @@ class TestSummarizerCallSummarizeLlm:
         assert result["topic_keywords"] == ["Python", "テスト"]
         mock_client.models.generate_content.assert_called_once()
 
-    @patch("memory.summarizer.config")
     @patch("memory.summarizer.get_model_name")
     @patch("memory.summarizer._get_genai_client")
-    def test_uses_summarize_model_when_set(self, mock_get_client, mock_get_model, mock_config):
-        """SUMMARIZE_MODELが設定されている場合、そのモデルを使用すること"""
-        mock_config.SUMMARIZE_MODEL = "gemini-2.5-pro"
-
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"summary": "要約", "mood": "", "topic_keywords": []})
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
-        mock_get_client.return_value = mock_client
-
-        summarizer = Summarizer()
-        context = ChannelContext(channel_id=100)
-        messages = [_make_message()]
-
-        summarizer._call_summarize_llm(context, messages)
-
-        call_args = mock_client.models.generate_content.call_args
-        assert call_args.kwargs["model"] == "gemini-2.5-pro"
-        mock_get_model.assert_not_called()
-
-    @patch("memory.summarizer.config")
-    @patch("memory.summarizer.get_model_name")
-    @patch("memory.summarizer._get_genai_client")
-    def test_falls_back_to_default_model(self, mock_get_client, mock_get_model, mock_config):
-        """SUMMARIZE_MODELが空の場合、get_model_nameのデフォルトを使用すること"""
-        mock_config.SUMMARIZE_MODEL = ""
+    def test_uses_bot_model(self, mock_get_client, mock_get_model):
+        """BOT_MODELが使用されることをテスト"""
         mock_get_model.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
@@ -299,12 +272,32 @@ class TestSummarizerCallSummarizeLlm:
         assert call_args.kwargs["model"] == "gemini-2.5-flash"
         mock_get_model.assert_called_once()
 
-    @patch("memory.summarizer.config")
     @patch("memory.summarizer.get_model_name")
     @patch("memory.summarizer._get_genai_client")
-    def test_empty_messages_returns_none(self, mock_get_client, mock_get_model, mock_config):
+    def test_falls_back_to_default_model(self, mock_get_client, mock_get_model):
+        """get_model_nameのデフォルトを使用すること"""
+        mock_get_model.return_value = "gemini-2.5-flash"
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"summary": "要約", "mood": "", "topic_keywords": []})
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_get_client.return_value = mock_client
+
+        summarizer = Summarizer()
+        context = ChannelContext(channel_id=100)
+        messages = [_make_message()]
+
+        summarizer._call_summarize_llm(context, messages)
+
+        call_args = mock_client.models.generate_content.call_args
+        assert call_args.kwargs["model"] == "gemini-2.5-flash"
+        mock_get_model.assert_called_once()
+
+    @patch("memory.summarizer.get_model_name")
+    @patch("memory.summarizer._get_genai_client")
+    def test_empty_messages_returns_none(self, mock_get_client, mock_get_model):
         """メッセージが空の場合、Noneを返すこと"""
-        mock_config.SUMMARIZE_MODEL = ""
         mock_get_model.return_value = "gemini-2.5-flash"
 
         summarizer = Summarizer()
@@ -316,12 +309,10 @@ class TestSummarizerCallSummarizeLlm:
         assert result is None
         mock_get_client.return_value.models.generate_content.assert_not_called()
 
-    @patch("memory.summarizer.config")
     @patch("memory.summarizer.get_model_name")
     @patch("memory.summarizer._get_genai_client")
-    def test_empty_response_text_returns_none(self, mock_get_client, mock_get_model, mock_config):
+    def test_empty_response_text_returns_none(self, mock_get_client, mock_get_model):
         """レスポンスのtextが空の場合、Noneを返すこと"""
-        mock_config.SUMMARIZE_MODEL = ""
         mock_get_model.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
@@ -338,12 +329,10 @@ class TestSummarizerCallSummarizeLlm:
 
         assert result is None
 
-    @patch("memory.summarizer.config")
     @patch("memory.summarizer.get_model_name")
     @patch("memory.summarizer._get_genai_client")
-    def test_llm_exception_returns_none(self, mock_get_client, mock_get_model, mock_config):
+    def test_llm_exception_returns_none(self, mock_get_client, mock_get_model):
         """LLM呼び出しで例外が発生した場合、Noneを返すこと"""
-        mock_config.SUMMARIZE_MODEL = ""
         mock_get_model.return_value = "gemini-2.5-flash"
 
         mock_client = MagicMock()
@@ -358,12 +347,10 @@ class TestSummarizerCallSummarizeLlm:
 
         assert result is None
 
-    @patch("memory.summarizer.config")
     @patch("memory.summarizer.get_model_name")
     @patch("memory.summarizer._get_genai_client")
-    def test_invalid_json_returns_none(self, mock_get_client, mock_get_model, mock_config):
+    def test_invalid_json_returns_none(self, mock_get_client, mock_get_model):
         """不正なJSONレスポンスの場合、Noneを返すこと"""
-        mock_config.SUMMARIZE_MODEL = ""
         mock_get_model.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
@@ -380,12 +367,10 @@ class TestSummarizerCallSummarizeLlm:
 
         assert result is None
 
-    @patch("memory.summarizer.config")
     @patch("memory.summarizer.get_model_name")
     @patch("memory.summarizer._get_genai_client")
-    def test_previous_context_included_in_prompt(self, mock_get_client, mock_get_model, mock_config):
+    def test_previous_context_included_in_prompt(self, mock_get_client, mock_get_model):
         """前回の要約がある場合、プロンプトに含まれること"""
-        mock_config.SUMMARIZE_MODEL = ""
         mock_get_model.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()

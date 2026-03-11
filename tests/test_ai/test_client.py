@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import config
-from ai.client import _get_genai_client, get_model_name, reset_client
+from ai.client import _get_genai_client, get_model_name, get_lite_model_name, reset_client
 
 
 @pytest.fixture(autouse=True)
@@ -84,13 +84,27 @@ class TestGetModelName:
 
     def test_strips_google_prefix(self) -> None:
         """google/ プレフィックスが除去されることをテスト"""
-        with patch.object(config, "GEMINI_MODEL", "google/gemini-2.5-flash"):
+        with patch.object(config, "BOT_MODEL", "google/gemini-2.5-flash"):
             assert get_model_name() == "gemini-2.5-flash"
 
     def test_keeps_name_without_prefix(self) -> None:
         """プレフィックスなしのモデル名がそのまま返されることをテスト"""
-        with patch.object(config, "GEMINI_MODEL", "gemini-2.5-pro"):
+        with patch.object(config, "BOT_MODEL", "gemini-2.5-pro"):
             assert get_model_name() == "gemini-2.5-pro"
+
+
+class TestGetLiteModelName:
+    """get_lite_model_name()のテスト"""
+
+    def test_strips_google_prefix(self) -> None:
+        """google/ プレフィックスが除去されることをテスト"""
+        with patch.object(config, "BOT_LITE_MODEL", "google/gemini-2.5-flash"):
+            assert get_lite_model_name() == "gemini-2.5-flash"
+
+    def test_keeps_name_without_prefix(self) -> None:
+        """プレフィックスなしのモデル名がそのまま返されることをテスト"""
+        with patch.object(config, "BOT_LITE_MODEL", "gemini-2.5-pro"):
+            assert get_lite_model_name() == "gemini-2.5-pro"
 
 
 class TestResetClient:

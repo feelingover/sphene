@@ -10,6 +10,7 @@ import pytest
 from google.genai import types
 
 from ai.router import detect_tool_mode, _call_router_llm, _PREFILT_MAX_CHARS
+import config
 
 
 class TestPrefilt:
@@ -62,8 +63,6 @@ class TestRouterDisabled:
         long_msg = "FF14のカッパーオアの入手方法を教えて"
         with patch("ai.router.config") as mock_config:
             mock_config.ROUTER_ENABLED = False
-            mock_config.ROUTER_MODEL = ""
-            mock_config.JUDGE_MODEL = ""
             with patch("ai.router._call_router_llm") as mock_llm:
                 result = detect_tool_mode(long_msg)
         assert result == "function_calling"
@@ -79,61 +78,46 @@ class TestRouterLLMCall:
         return mock_response
 
     @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="gemini-flash")
+    @patch("ai.router.get_lite_model_name", return_value="gemini-flash")
     @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_grounding_mode_detection(self, mock_config, mock_client, mock_model, mock_gen):
+    def test_grounding_mode_detection(self, mock_client, mock_model, mock_gen):
         """groundingモードが正しく判定されるテスト"""
-        mock_config.ROUTER_MODEL = ""
-        mock_config.JUDGE_MODEL = ""
         mock_gen.return_value = self._make_mock_response("grounding", "最新ニュースが必要")
         result = _call_router_llm("今日のニュースを教えて", None)
         assert result == "grounding"
 
     @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="gemini-flash")
+    @patch("ai.router.get_lite_model_name", return_value="gemini-flash")
     @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_function_calling_mode_detection(self, mock_config, mock_client, mock_model, mock_gen):
+    def test_function_calling_mode_detection(self, mock_client, mock_model, mock_gen):
         """function_callingモードが正しく判定されるテスト"""
-        mock_config.ROUTER_MODEL = ""
-        mock_config.JUDGE_MODEL = ""
         mock_gen.return_value = self._make_mock_response("function_calling", "XIVAPIが必要")
         result = _call_router_llm("カッパーオアのレシピを調べて", None)
         assert result == "function_calling"
 
     @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="gemini-flash")
+    @patch("ai.router.get_lite_model_name", return_value="gemini-flash")
     @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_none_mode_detection(self, mock_config, mock_client, mock_model, mock_gen):
+    def test_none_mode_detection(self, mock_client, mock_model, mock_gen):
         """noneモードが正しく判定されるテスト"""
-        mock_config.ROUTER_MODEL = ""
-        mock_config.JUDGE_MODEL = ""
         mock_gen.return_value = self._make_mock_response("none", "雑談")
         result = _call_router_llm("今日もよろしくね！", None)
         assert result == "none"
 
     @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="gemini-flash")
+    @patch("ai.router.get_lite_model_name", return_value="gemini-flash")
     @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_invalid_mode_falls_back_to_function_calling(self, mock_config, mock_client, mock_model, mock_gen):
+    def test_invalid_mode_falls_back_to_function_calling(self, mock_client, mock_model, mock_gen):
         """不正なtool_modeはfunction_callingにフォールバックする"""
-        mock_config.ROUTER_MODEL = ""
-        mock_config.JUDGE_MODEL = ""
         mock_gen.return_value = self._make_mock_response("unknown_mode")
         result = _call_router_llm("何かを調べて", None)
         assert result == "function_calling"
 
     @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="gemini-flash")
+    @patch("ai.router.get_lite_model_name", return_value="gemini-flash")
     @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_empty_response_falls_back_to_function_calling(self, mock_config, mock_client, mock_model, mock_gen):
+    def test_empty_response_falls_back_to_function_calling(self, mock_client, mock_model, mock_gen):
         """空レスポンスはfunction_callingにフォールバックする"""
-        mock_config.ROUTER_MODEL = ""
-        mock_config.JUDGE_MODEL = ""
         mock_response = MagicMock()
         mock_response.text = ""
         mock_gen.return_value = mock_response
@@ -141,13 +125,10 @@ class TestRouterLLMCall:
         assert result == "function_calling"
 
     @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="gemini-flash")
+    @patch("ai.router.get_lite_model_name", return_value="gemini-flash")
     @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_list_response_uses_first_element(self, mock_config, mock_client, mock_model, mock_gen):
+    def test_list_response_uses_first_element(self, mock_client, mock_model, mock_gen):
         """LLMがリスト形式で返した場合も最初の要素を使う"""
-        mock_config.ROUTER_MODEL = ""
-        mock_config.JUDGE_MODEL = ""
         mock_response = MagicMock()
         mock_response.text = json.dumps([{"tool_mode": "grounding", "reason": "test"}])
         mock_gen.return_value = mock_response
@@ -155,13 +136,10 @@ class TestRouterLLMCall:
         assert result == "grounding"
 
     @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="gemini-flash")
+    @patch("ai.router.get_lite_model_name", return_value="gemini-flash")
     @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_context_is_passed_to_prompt(self, mock_config, mock_client, mock_model, mock_gen):
+    def test_context_is_passed_to_prompt(self, mock_client, mock_model, mock_gen):
         """contextが渡された場合、promptに含まれること"""
-        mock_config.ROUTER_MODEL = ""
-        mock_config.JUDGE_MODEL = ""
         mock_gen.return_value = self._make_mock_response("none")
         _call_router_llm("続きを教えて", context="過去の会話コンテキスト")
 
@@ -171,46 +149,15 @@ class TestRouterLLMCall:
         assert "過去の会話コンテキスト" in prompt_text
 
     @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="gemini-flash")
+    @patch("ai.router.get_lite_model_name", return_value="lite-model")
     @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_router_model_priority(self, mock_config, mock_client, mock_model, mock_gen):
-        """ROUTER_MODEL > JUDGE_MODEL > GEMINI_MODELの優先順位テスト"""
-        mock_config.ROUTER_MODEL = "custom-router-model"
-        mock_config.JUDGE_MODEL = "judge-model"
+    def test_uses_bot_lite_model(self, mock_client, mock_model, mock_gen):
+        """BOT_LITE_MODELが使用されることをテスト"""
         mock_gen.return_value = self._make_mock_response("none")
         _call_router_llm("テスト", None)
 
         call_args = mock_gen.call_args
-        assert call_args.kwargs["model"] == "custom-router-model"
-
-    @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="default-model")
-    @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_judge_model_fallback(self, mock_config, mock_client, mock_model, mock_gen):
-        """ROUTER_MODEL未設定時はJUDGE_MODELを使うテスト"""
-        mock_config.ROUTER_MODEL = ""
-        mock_config.JUDGE_MODEL = "judge-model"
-        mock_gen.return_value = self._make_mock_response("none")
-        _call_router_llm("テスト", None)
-
-        call_args = mock_gen.call_args
-        assert call_args.kwargs["model"] == "judge-model"
-
-    @patch("ai.router._generate_content_with_retry")
-    @patch("ai.router.get_model_name", return_value="default-model")
-    @patch("ai.router._get_genai_client")
-    @patch("ai.router.config")
-    def test_default_model_fallback(self, mock_config, mock_client, mock_model, mock_gen):
-        """ROUTER_MODELもJUDGE_MODELも未設定時はデフォルトモデルを使うテスト"""
-        mock_config.ROUTER_MODEL = ""
-        mock_config.JUDGE_MODEL = ""
-        mock_gen.return_value = self._make_mock_response("none")
-        _call_router_llm("テスト", None)
-
-        call_args = mock_gen.call_args
-        assert call_args.kwargs["model"] == "default-model"
+        assert call_args.kwargs["model"] == "lite-model"
 
 
 class TestDetectToolModeIntegration:

@@ -15,14 +15,12 @@ class TestLLMJudge:
     """LLMJudgeのテスト"""
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge.get_lite_model_name")
     @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
     async def test_evaluate_respond_true(
-        self, mock_config, mock_get_client, mock_model_name
+        self, mock_get_client, mock_model_name
     ):
         """LLMがrespond=trueを返す場合"""
-        mock_config.JUDGE_MODEL = "gemini-2.5-flash"
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
@@ -45,14 +43,12 @@ class TestLLMJudge:
         assert response_type == "full_response"
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge.get_lite_model_name")
     @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
     async def test_evaluate_respond_false(
-        self, mock_config, mock_get_client, mock_model_name
+        self, mock_get_client, mock_model_name
     ):
         """LLMがrespond=falseを返す場合"""
-        mock_config.JUDGE_MODEL = ""
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
@@ -75,15 +71,13 @@ class TestLLMJudge:
         assert response_type == "none"
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge.get_lite_model_name")
     @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
-    async def test_evaluate_uses_judge_model(
-        self, mock_config, mock_get_client, mock_model_name
+    async def test_evaluate_uses_bot_lite_model(
+        self, mock_get_client, mock_model_name
     ):
-        """JUDGE_MODELが設定されている場合それを使用する"""
-        mock_config.JUDGE_MODEL = "gemini-2.5-flash"
-        mock_model_name.return_value = "gemini-2.5-pro"  # fallback（使われないはず）
+        """BOT_LITE_MODELが使用されることをテスト"""
+        mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({"respond": False, "reason": "test"})
@@ -98,37 +92,12 @@ class TestLLMJudge:
         assert call_args.kwargs["model"] == "gemini-2.5-flash"
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge.get_lite_model_name")
     @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
-    async def test_evaluate_falls_back_to_model_name(
-        self, mock_config, mock_get_client, mock_model_name
-    ):
-        """JUDGE_MODELが空の場合get_model_name()を使用する"""
-        mock_config.JUDGE_MODEL = ""
-        mock_model_name.return_value = "gemini-2.5-pro"
-
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"respond": False, "reason": "test"})
-        mock_get_client.return_value.models.generate_content.return_value = (
-            mock_response
-        )
-
-        judge = LLMJudge()
-        await judge.evaluate("test", "context", "Bot")
-
-        call_args = mock_get_client.return_value.models.generate_content.call_args
-        assert call_args.kwargs["model"] == "gemini-2.5-pro"
-
-    @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
-    @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
     async def test_evaluate_empty_response(
-        self, mock_config, mock_get_client, mock_model_name
+        self, mock_get_client, mock_model_name
     ):
         """LLMからの応答が空の場合はFalse"""
-        mock_config.JUDGE_MODEL = ""
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
@@ -143,14 +112,12 @@ class TestLLMJudge:
         assert response_type == "none"
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge.get_lite_model_name")
     @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
     async def test_evaluate_invalid_json_returns_false(
-        self, mock_config, mock_get_client, mock_model_name
+        self, mock_get_client, mock_model_name
     ):
         """JSON解析失敗時はFalseを返す"""
-        mock_config.JUDGE_MODEL = ""
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
@@ -166,14 +133,12 @@ class TestLLMJudge:
         assert response_type == "none"
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge.get_lite_model_name")
     @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
     async def test_evaluate_api_error_returns_false(
-        self, mock_config, mock_get_client, mock_model_name
+        self, mock_get_client, mock_model_name
     ):
         """API呼び出しエラー時はFalseを返す（安全側フォールバック）"""
-        mock_config.JUDGE_MODEL = ""
         mock_model_name.return_value = "gemini-2.5-flash"
         mock_get_client.return_value.models.generate_content.side_effect = Exception(
             "API Error"
@@ -185,14 +150,12 @@ class TestLLMJudge:
         assert response_type == "none"
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge.get_lite_model_name")
     @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
     async def test_evaluate_list_response(
-        self, mock_config, mock_get_client, mock_model_name
+        self, mock_get_client, mock_model_name
     ):
         """LLMがJSON配列で返した場合も正常に処理できること"""
-        mock_config.JUDGE_MODEL = "gemini-2.5-flash"
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
@@ -216,14 +179,12 @@ class TestLLMJudge:
         assert response_type == "short_ack"
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge.get_lite_model_name")
     @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
     async def test_evaluate_empty_list_response(
-        self, mock_config, mock_get_client, mock_model_name
+        self, mock_get_client, mock_model_name
     ):
         """LLMが空のJSON配列を返した場合はFalseを返すこと"""
-        mock_config.JUDGE_MODEL = "gemini-2.5-flash"
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
@@ -242,14 +203,12 @@ class TestLLMJudge:
         assert response_type == "none"
 
     @pytest.mark.asyncio
-    @patch("memory.llm_judge.get_model_name")
+    @patch("memory.llm_judge.get_lite_model_name")
     @patch("memory.llm_judge._get_genai_client")
-    @patch("memory.llm_judge.config")
     async def test_evaluate_with_empty_context(
-        self, mock_config, mock_get_client, mock_model_name
+        self, mock_get_client, mock_model_name
     ):
         """コンテキストが空の場合でも動作すること"""
-        mock_config.JUDGE_MODEL = ""
         mock_model_name.return_value = "gemini-2.5-flash"
 
         mock_response = MagicMock()
