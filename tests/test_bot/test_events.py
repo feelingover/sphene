@@ -348,8 +348,8 @@ class TestSendReaction:
 
     @pytest.mark.asyncio
     @patch("memory.judge.get_judge")
-    async def test_send_reaction_uses_provided_emoji(self, mock_get_judge):
-        """emojisが渡された場合は最初の絵文字が使われる"""
+    async def test_send_reaction_uses_provided_emojis(self, mock_get_judge):
+        """emojisが渡された場合は最大2個までリアクションが追加される"""
         mock_judge = MagicMock()
         mock_get_judge.return_value = mock_judge
 
@@ -360,7 +360,9 @@ class TestSendReaction:
         from bot.events import _send_reaction
         await _send_reaction(message, emojis=["🤔", "💡"])
 
-        message.add_reaction.assert_called_once_with("🤔")
+        assert message.add_reaction.call_count == 2
+        message.add_reaction.assert_any_call("🤔")
+        message.add_reaction.assert_any_call("💡")
         mock_judge.record_response.assert_called_once_with(100)
 
     @pytest.mark.asyncio

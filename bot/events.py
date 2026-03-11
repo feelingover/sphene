@@ -305,12 +305,14 @@ async def _try_autonomous_response(
     # リアクション先行実行（返信とは独立。LLM生成を待たない）
     if result.should_react:
         asyncio.create_task(
-            _send_reaction(message, result.reaction_emojis, record=False)
+            _send_reaction(message, result.reaction_emojis, record=False),
+            name="reaction_task",
         )
 
     if result.score >= config.JUDGE_LLM_THRESHOLD_HIGH:
-        # 高スコア: 即応答（react_onlyはリアクション済みのためスキップ）
-        if result.response_type != "react_only":
+        # 高スコア: 即応答
+        # react_only かつリアクション済みの場合のみスキップ（ダブルリアクション防止）
+        if result.response_type != "react_only" or not result.should_react:
             logger.info(
                 f"自律応答決定(高スコア): チャンネル={message.channel.id}, "
                 f"スコア={result.score}, 理由={result.reason}"
@@ -341,7 +343,8 @@ async def _try_autonomous_response(
         # LLMがリアクションを追加すべきと判定し、ルールベースでは未実行の場合
         if llm_should_react and not result.should_react:
             asyncio.create_task(
-                _send_reaction(message, llm_emojis, record=False)
+                _send_reaction(message, llm_emojis, record=False),
+                name="reaction_task",
             )
         if should_respond and llm_response_type != "none":
             logger.info(
@@ -398,16 +401,17 @@ async def _send_reaction(
 
     Args:
         message: リアクションを追加するDiscordメッセージ
-        emojis: 使用する絵文字リスト。Noneまたは空の場合はランダム選択
+        emojis: 使用する絵文字リスト。Noneまたは空の場合はランダム選択（最大2個まで使用）
         record: Trueの場合、クールダウンを記録する
     """
     from memory.judge import get_judge
 
     try:
-        emoji = emojis[0] if emojis else random.choice(_REACTION_EMOJIS)
-        await message.add_reaction(emoji)
+        selected = emojis[:2] if emojis else [random.choice(_REACTION_EMOJIS)]
+        for emoji in selected:
+            await message.add_reaction(emoji)
         logger.info(
-            f"リアクション応答: チャンネル={message.channel.id}, 絵文字={emoji}"
+            f"リアクション応答: チャンネル={message.channel.id}, 絵文字={selected}"
         )
         if record:
             get_judge().record_response(message.channel.id)

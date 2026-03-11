@@ -133,7 +133,7 @@ class RuleBasedJudge:
             reason=reason,
             response_type=response_type,
             should_react=should_react,
-            reaction_emojis=[],  # LLMJudge呼び出し後に埋まる
+            reaction_emojis=[],  # ルールベースはランダム絵文字を使用 (_send_reaction がフォールバック)
         )
 
     def record_response(self, channel_id: int) -> None:
