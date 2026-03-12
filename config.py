@@ -127,6 +127,7 @@ REFLECTION_MAX_BUFFER_MESSAGES: int = int(os.getenv("REFLECTION_MAX_BUFFER_MESSA
 # === Embedding設定 (Phase 3B) ===
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
 VECTOR_SEARCH_ENABLED: bool = os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
+HYBRID_ALPHA: float = float(os.getenv("HYBRID_ALPHA", "0.5"))  # ベクトル/キーワードスコアのバランス係数
 
 # === 自発的会話設定 (Phase 3A) ===
 PROACTIVE_CONVERSATION_ENABLED: bool = (

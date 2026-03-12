@@ -519,3 +519,29 @@ class TestFactStoreSearchHybrid:
             results = store.search(100, ["Rust"], limit=5, query_embedding=None)
 
         assert len(results) == 1
+
+    def test_negative_cosine_is_clipped_to_zero(self):
+        """逆方向embeddingのコサイン類似度は0.0にクリッピングされスコアが負にならないこと"""
+        store = FactStore()
+        fact_opposite = _make_fact(
+            fact_id="opp",
+            keywords=["Python"],
+            embedding=[-1.0, 0.0],
+        )
+        fact_ortho = _make_fact(
+            fact_id="ortho",
+            keywords=["Python"],
+            embedding=[0.0, 1.0],
+        )
+        store._facts[100] = [fact_opposite, fact_ortho]
+        store._loaded_channels.add(100)
+
+        with patch("config.VECTOR_SEARCH_ENABLED", True):
+            results = store.search(
+                100, ["Python"], limit=5, query_embedding=[1.0, 0.0]
+            )
+
+        # クリッピングにより opposite のコサインスコアは 0.0 → 負スコアで除外されないこと
+        result_ids = {f.fact_id for f in results}
+        assert "opp" in result_ids
+        assert "ortho" in result_ids

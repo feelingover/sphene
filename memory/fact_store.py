@@ -93,9 +93,6 @@ def _jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:
     return intersection / union
 
 
-HYBRID_ALPHA: float = 0.5  # ベクトル/キーワードスコアのバランス係数
-
-
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """2つのベクトルのコサイン類似度を返す"""
     dot = sum(x * y for x, y in zip(a, b))
@@ -181,9 +178,10 @@ class FactStore:
                 continue
 
             if config.VECTOR_SEARCH_ENABLED and query_embedding and fact.embedding:
-                cosine = _cosine_similarity(query_embedding, fact.embedding)
+                cosine = max(0.0, _cosine_similarity(query_embedding, fact.embedding))
                 jaccard = _jaccard_similarity(query_set, set(fact.keywords))
-                score = (HYBRID_ALPHA * cosine + (1 - HYBRID_ALPHA) * jaccard) * decay
+                alpha = config.HYBRID_ALPHA
+                score = (alpha * cosine + (1 - alpha) * jaccard) * decay
             else:
                 score = _jaccard_similarity(query_set, set(fact.keywords)) * decay
 

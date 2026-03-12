@@ -198,14 +198,17 @@ class ReflectionEngine:
         now = datetime.now(timezone.utc)
         saved_count = 0
 
-        for item in raw_facts:
-            if not isinstance(item, dict):
-                continue
-            content = item.get("content", "").strip()
-            if not content:
-                continue
+        valid_items = [
+            item for item in raw_facts
+            if isinstance(item, dict) and item.get("content", "").strip()
+        ]
 
-            embedding = await asyncio.to_thread(generate_embedding, content)
+        embeddings = await asyncio.gather(
+            *[asyncio.to_thread(generate_embedding, item["content"].strip()) for item in valid_items]
+        )
+
+        for item, embedding in zip(valid_items, embeddings):
+            content = item["content"].strip()
             logger.debug(
                 f"Embedding生成: channel_id={channel_id}, "
                 f"content={content[:30]!r}, embedding={'あり' if embedding else 'なし'}"
