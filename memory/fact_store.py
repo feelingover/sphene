@@ -37,6 +37,7 @@ class Fact:
     source_user_ids: list[int]
     created_at: datetime
     shareable: bool = False
+    embedding: list[float] | None = None
 
     def decay_factor(self, half_life_days: int) -> float:
         """経過日数から指数減衰係数を返す（半減期でスコアが0.5になる）"""
@@ -57,6 +58,7 @@ class Fact:
             "source_user_ids": self.source_user_ids,
             "created_at": self.created_at.isoformat(),
             "shareable": self.shareable,
+            "embedding": self.embedding,
         }
 
     @classmethod
@@ -76,6 +78,7 @@ class Fact:
             source_user_ids=data.get("source_user_ids", []),
             created_at=created_at,
             shareable=data.get("shareable", False),
+            embedding=data.get("embedding", None),
         )
 
 
@@ -88,6 +91,16 @@ def _jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:
     if union == 0:
         return 0.0
     return intersection / union
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """2つのベクトルのコサイン類似度を返す"""
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
 
 
 def extract_keywords(text: str) -> list[str]:
@@ -138,14 +151,16 @@ class FactStore:
         keywords: list[str],
         user_ids: list[int] | None = None,
         limit: int = 5,
+        query_embedding: list[float] | None = None,
     ) -> list[Fact]:
-        """Jaccard × decay_factor でランキングして返す
+        """Jaccard × decay_factor でランキングして返す。VECTOR_SEARCH_ENABLED 時はハイブリッド検索。
 
         Args:
             channel_id: 検索対象チャンネルID
             keywords: 検索キーワードリスト
             user_ids: このユーザーIDに関連するファクトをブースト（任意）
             limit: 返す最大件数
+            query_embedding: クエリのEmbeddingベクトル（ハイブリッド検索用、任意）
         """
         self._load_channel(channel_id)
         with self._lock:
@@ -162,10 +177,13 @@ class FactStore:
             if decay == 0:
                 continue
 
-            keyword_set = set(fact.keywords)
-            jaccard = _jaccard_similarity(query_set, keyword_set)
-
-            score = jaccard * decay
+            if config.VECTOR_SEARCH_ENABLED and query_embedding and fact.embedding:
+                cosine = max(0.0, _cosine_similarity(query_embedding, fact.embedding))
+                jaccard = _jaccard_similarity(query_set, set(fact.keywords))
+                alpha = config.HYBRID_ALPHA
+                score = (alpha * cosine + (1 - alpha) * jaccard) * decay
+            else:
+                score = _jaccard_similarity(query_set, set(fact.keywords)) * decay
 
             # user_id ブースト
             if user_ids and any(uid in fact.source_user_ids for uid in user_ids):

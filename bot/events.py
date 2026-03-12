@@ -126,14 +126,23 @@ async def _collect_ai_context(
         ]))
 
     if config.REFLECTION_ENABLED:
+        from ai.client import generate_embedding
         from memory.fact_store import extract_keywords, get_fact_store
 
         keywords = extract_keywords(message.content or "")
+        query_embedding = None
+        if config.VECTOR_SEARCH_ENABLED and message.content:
+            query_embedding = await asyncio.to_thread(generate_embedding, message.content)
         facts = get_fact_store().search(
             channel_id=message.channel.id,
             keywords=keywords,
             user_ids=[message.author.id],
             limit=3,
+            query_embedding=query_embedding,
+        )
+        logger.debug(
+            f"関連ファクト検索: channel_id={message.channel.id}, "
+            f"keywords={keywords}, vector={'あり' if query_embedding else 'なし'}, hits={len(facts)}"
         )
         if facts:
             lines = ["【関連する過去の記憶】"] + [f"- {f.content}" for f in facts]

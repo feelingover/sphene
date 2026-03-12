@@ -2,6 +2,7 @@
 memory 関連の追加テスト
 """
 
+import asyncio
 import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
@@ -107,7 +108,8 @@ class TestMemoryAdditional:
         ):
             mock_store = MagicMock()
             mock_store_fn.return_value = mock_store
-            engine._apply_facts(123, raw_facts, [])
+            with patch("ai.client.generate_embedding", return_value=None):
+                asyncio.run(engine._apply_facts(123, raw_facts, []))
             mock_store.add_fact.assert_called_once()
             fact = mock_store.add_fact.call_args[0][0]
             assert fact.source_user_ids == [123]
