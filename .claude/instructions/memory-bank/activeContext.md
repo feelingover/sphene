@@ -6,7 +6,8 @@ applyTo: "**"
 ## Current State (2026/3)
 
 - 記憶システム「リビングメモリー (Living Memory)」の仕様を `docs/living-memory.md` に集約。
-- 全テスト通過（639件）、カバレッジ 90%、mypy 72ファイル no issues
+- 全テスト通過（655件）、カバレッジ 90%、mypy 72ファイル no issues
+- 記憶機能 Phase 3B（Vertex AI Embeddings + ハイブリッド検索）実装済み。`VECTOR_SEARCH_ENABLED` で後方互換フラグ制御。
 - リアクション機能の抜本的な見直し（issue #97）実装済み。`should_react` フィールドによる独立制御、先行実行（asyncio.create_task）、LLM絵文字選択に対応。
 - 記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）実装済み。
 - Vertex AI Native SDK (`google-genai`) への完全移行完了。OpenAI互換APIを廃止し、Gemini 3等の最新モデルに完全対応。
@@ -18,6 +19,23 @@ applyTo: "**"
 - コードレビュー Medium/Low 全課題対応完了（Group A〜E）。
 
 ## Recent Changes
+
+### 2026/3: 記憶機能 Phase 3B - Vertex AI Embeddings + ハイブリッド検索 (issue #77, #78)
+
+Jaccard検索にコサイン類似度を組み合わせたハイブリッド検索を実装。`VECTOR_SEARCH_ENABLED=false`（デフォルト）で既存動作を維持。
+
+#### 変更ファイル
+- **`ai/client.py`**: `generate_embedding(text)` 追加（失敗時 `None` を返しJaccardにフォールバック）
+- **`memory/fact_store.py`**: `Fact.embedding` フィールド追加、`_cosine_similarity()` ヘルパー追加、`search()` にハイブリッドスコアリング追加（コサインは `max(0, cosine)` でクリッピング）
+- **`memory/reflection.py`**: `_apply_facts()` を `async def` に変更、`asyncio.gather()` でEmbedding並列生成
+- **`bot/events.py`**: `VECTOR_SEARCH_ENABLED` 有効時にクエリEmbeddingを生成して `search()` に渡す
+- **`config.py`**: `EMBEDDING_MODEL`（デフォルト: `text-embedding-004`）、`VECTOR_SEARCH_ENABLED`、`HYBRID_ALPHA`（デフォルト: 0.5）追加
+- **`.env.sample`**: 新環境変数を追記
+
+#### 新規環境変数
+- `EMBEDDING_MODEL`: Embedding生成モデル名（デフォルト: `text-embedding-004`）
+- `VECTOR_SEARCH_ENABLED`: ハイブリッド検索有効化（デフォルト: false）
+- `HYBRID_ALPHA`: ベクトル/キーワードスコアのバランス係数（デフォルト: 0.5）
 
 ### 2026/3: リアクション機能の抜本的な見直し (issue #97)
 
@@ -323,4 +341,4 @@ requirements.txt/requirements-dev.txt → pyproject.toml + uv.lock。pytest.ini 
 1. **API制限**: 高負荷時のレート制限対応（基本リトライは実装済み）
 2. **コスト最適化**: モデル選択、プロンプト最適化、キャッシング
 3. **AsyncOpenAI移行**: フルasync化（中期候補）
-4. **記憶機能 Phase 3B**: ベクトル検索（Vertex AI Embeddings）+ リッチプロファイル（LLMタグ抽出）
+4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索のインフラ層への移譲（現状はin-memoryコサイン類似度）

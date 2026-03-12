@@ -41,7 +41,8 @@
      - 会話頻度や活動傾向。
   2. **Fact Store (`memory/fact_store.py`)**
      - 会話から抽出された「面白い事実」や「重要な情報」。
-     - キーワード（Jaccard類似度）またはベクトル検索による呼び出し。
+     - キーワード（Jaccard類似度）またはベクトル検索（Vertex AI Embeddings）による呼び出し。
+     - `VECTOR_SEARCH_ENABLED=true` 時はコサイン類似度 × Jaccard のハイブリッドスコアリング。
 
 ---
 
@@ -115,6 +116,11 @@
 - `FACT_DECAY_HALF_LIFE_DAYS`: ファクトのスコア減衰の半減期（日数） (デフォルト: 30)
 - `FACT_USER_BOOST_FACTOR`: 発言ユーザーIDが一致するファクトの検索スコアブースト倍率 (デフォルト: 1.5)
 
+### 長期記憶: ベクトル検索 (Vector Search)
+- `VECTOR_SEARCH_ENABLED`: ハイブリッド検索（キーワード + コサイン類似度）を有効にするか。`REFLECTION_ENABLED=true`が必要 (デフォルト: false)
+- `EMBEDDING_MODEL`: Embedding生成に使用するモデル名 (デフォルト: text-embedding-004)
+- `HYBRID_ALPHA`: ハイブリッドスコアのバランス係数。0=Jaccardのみ、1=ベクトルのみ (デフォルト: 0.5)
+
 ### 自発的会話 (Proactive Conversation)
 - `PROACTIVE_CONVERSATION_ENABLED`: 沈黙時に自発的に会話を始める機能を有効にするか。`REFLECTION_ENABLED=true`が必要 (デフォルト: false)
 - `PROACTIVE_SILENCE_MINUTES`: 自発会話をトリガーする沈黙時間（分）。REFLECTION_LULL_MINUTESと独立 (デフォルト: 10)
@@ -123,6 +129,6 @@
 
 ## 6. 今後の拡張 (Roadmap)
 
-- **ベクトル検索 (Phase 3B):** Vertex AI Embeddings を利用し、「あの時、こんな話してたよね」といった曖昧な文脈からの想起を実現。 ([#77](https://github.com/feelingover/sphene/issues/77), [#78](https://github.com/feelingover/sphene/issues/78))
 - **忘却機能:** 関連性の低い古いファクトを自然に減衰・削除する仕組みの実装。 ([#80](https://github.com/feelingover/sphene/issues/80))
 - **リッチプロファイル:** LLMによるユーザー性格のタグ付け、特別な呼び名の記憶。 ([#79](https://github.com/feelingover/sphene/issues/79))
+- **Firestore Native Vector Search:** `find_nearest()` を使ったベクトル検索のインフラ層への移譲（現状はin-memoryコサイン類似度）。

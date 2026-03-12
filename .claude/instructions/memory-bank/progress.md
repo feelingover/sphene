@@ -5,6 +5,12 @@ applyTo: "**"
 
 ## Completed Features
 
+- **記憶機能 Phase 3B - Vertex AI Embeddings + ハイブリッド検索 (issue #77, #78)**:
+  - `Fact.embedding` フィールド追加、`_cosine_similarity()` ヘルパー、`search()` にハイブリッドスコアリング（コサインは `max(0, cosine)` クリッピング）
+  - `generate_embedding()` 追加（失敗時 `None` でJaccardフォールバック）
+  - `_apply_facts()` を async化、`asyncio.gather()` でEmbedding並列生成
+  - 新規環境変数3個: `EMBEDDING_MODEL`, `VECTOR_SEARCH_ENABLED`, `HYBRID_ALPHA`
+  - `VECTOR_SEARCH_ENABLED=false`（デフォルト）で後方互換性維持
 - **リアクション機能の独立制御 (issue #97)**:
   - `JudgeResult.should_react` / `reaction_emojis` フィールドで返信とリアクションを独立管理
   - `REACTION_ENABLED` / `JUDGE_REACT_THRESHOLD` 環境変数でしきい値チューニング可能
@@ -59,7 +65,6 @@ applyTo: "**"
 - 統合テストのSDK対応
 
 ### Mid-term
-- 記憶機能 Phase 3B: ベクトル検索（Vertex AI Embeddings）+ リッチプロファイル（LLMタグ抽出）
 - チャンネル固有プロンプト
 - 使用統計・モニタリング
 - CI/CD強化
