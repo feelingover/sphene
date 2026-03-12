@@ -124,6 +124,10 @@ REFLECTION_MIN_MESSAGES: int = int(os.getenv("REFLECTION_MIN_MESSAGES", "10"))
 # CHANNEL_BUFFER_SIZE 以下の値を設定すること（それを超えると絶対に発動しない）。
 REFLECTION_MAX_BUFFER_MESSAGES: int = int(os.getenv("REFLECTION_MAX_BUFFER_MESSAGES", "30"))
 
+# === Embedding設定 (Phase 3B) ===
+EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
+VECTOR_SEARCH_ENABLED: bool = os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
+
 # === 自発的会話設定 (Phase 3A) ===
 PROACTIVE_CONVERSATION_ENABLED: bool = (
     os.getenv("PROACTIVE_CONVERSATION_ENABLED", "false").lower() == "true"

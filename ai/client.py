@@ -68,6 +68,29 @@ def get_genai_client() -> genai.Client:
     return _get_genai_client()
 
 
+def generate_embedding(text: str) -> list[float] | None:
+    """テキストからEmbeddingベクトルを生成する。
+
+    Args:
+        text: 埋め込みを生成するテキスト
+
+    Returns:
+        Embeddingベクトル。エラー時はNone。
+    """
+    try:
+        client = get_genai_client()
+        result = client.models.embed_content(
+            model=config.EMBEDDING_MODEL,
+            contents=text,
+        )
+        if not result.embeddings:
+            return None
+        return result.embeddings[0].values
+    except Exception:
+        logger.warning("Embedding生成に失敗しました", exc_info=True)
+        return None
+
+
 def reset_client() -> None:
     """クライアントの状態をリセットする（テスト用）"""
     global _client

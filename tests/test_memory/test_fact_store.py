@@ -24,6 +24,7 @@ def _make_fact(
     shareable: bool = False,
     days_ago: float = 0,
     fact_id: str | None = None,
+    embedding: list[float] | None = None,
 ) -> Fact:
     """テスト用Factファクトリ"""
     created_at = datetime.now(timezone.utc) - timedelta(days=days_ago)
@@ -35,6 +36,7 @@ def _make_fact(
         source_user_ids=source_user_ids or [12345],
         created_at=created_at,
         shareable=shareable,
+        embedding=embedding,
     )
 
 
@@ -382,3 +384,138 @@ class TestGetFactStore:
             assert s1 is s2
         finally:
             fs_module._fact_store = original
+
+
+class TestCosineSimilarity:
+    """_cosine_similarity のテスト"""
+
+    def test_identical_vectors(self):
+        """同一ベクトルの類似度は1.0であること"""
+        from memory.fact_store import _cosine_similarity
+
+        v = [1.0, 0.0, 0.0]
+        assert _cosine_similarity(v, v) == pytest.approx(1.0)
+
+    def test_orthogonal_vectors(self):
+        """直交ベクトルの類似度は0.0であること"""
+        from memory.fact_store import _cosine_similarity
+
+        assert _cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+    def test_opposite_vectors(self):
+        """逆方向ベクトルの類似度は-1.0であること"""
+        from memory.fact_store import _cosine_similarity
+
+        assert _cosine_similarity([1.0, 0.0], [-1.0, 0.0]) == pytest.approx(-1.0)
+
+    def test_zero_vector_returns_zero(self):
+        """ゼロベクトルを含む場合は0.0を返すこと"""
+        from memory.fact_store import _cosine_similarity
+
+        assert _cosine_similarity([0.0, 0.0], [1.0, 2.0]) == 0.0
+        assert _cosine_similarity([1.0, 2.0], [0.0, 0.0]) == 0.0
+
+
+class TestFactEmbeddingSerialization:
+    """Fact の embedding フィールドのシリアライズ/デシリアライズ"""
+
+    def test_to_dict_includes_embedding(self):
+        """to_dict に embedding が含まれること"""
+        fact = _make_fact()
+        fact.embedding = [0.1, 0.2, 0.3]
+        d = fact.to_dict()
+        assert d["embedding"] == [0.1, 0.2, 0.3]
+
+    def test_to_dict_embedding_none(self):
+        """embedding=None の場合も to_dict に含まれること"""
+        fact = _make_fact()
+        d = fact.to_dict()
+        assert "embedding" in d
+        assert d["embedding"] is None
+
+    def test_from_dict_restores_embedding(self):
+        """from_dict で embedding が復元されること"""
+        data = {
+            "fact_id": "abc",
+            "channel_id": 100,
+            "content": "テスト",
+            "keywords": ["kw"],
+            "source_user_ids": [1],
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "shareable": False,
+            "embedding": [0.5, 0.6, 0.7],
+        }
+        fact = Fact.from_dict(data)
+        assert fact.embedding == [0.5, 0.6, 0.7]
+
+    def test_from_dict_missing_embedding_defaults_none(self):
+        """embedding キーがない古いデータは None になること"""
+        data = {
+            "fact_id": "abc",
+            "channel_id": 100,
+            "content": "テスト",
+            "keywords": [],
+            "source_user_ids": [],
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "shareable": False,
+        }
+        fact = Fact.from_dict(data)
+        assert fact.embedding is None
+
+
+class TestFactStoreSearchHybrid:
+    """FactStore.search のハイブリッド検索テスト"""
+
+    def test_hybrid_search_uses_vector_score(self):
+        """VECTOR_SEARCH_ENABLED=True 時にベクトルスコアが使われること"""
+        store = FactStore()
+        # ベクトル的に近いファクト（embedding が query と同一方向）
+        fact_near = _make_fact(
+            fact_id="near",
+            keywords=["無関係"],
+            embedding=[1.0, 0.0, 0.0],
+        )
+        # ベクトル的に遠いファクト
+        fact_far = _make_fact(
+            fact_id="far",
+            keywords=["無関係"],
+            embedding=[0.0, 1.0, 0.0],
+        )
+        store._facts[100] = [fact_far, fact_near]
+        store._loaded_channels.add(100)
+
+        query_embedding = [1.0, 0.0, 0.0]
+        with patch("config.VECTOR_SEARCH_ENABLED", True):
+            results = store.search(
+                100, ["無関係"], limit=5, query_embedding=query_embedding
+            )
+
+        assert results[0].fact_id == "near"
+
+    def test_fallback_to_jaccard_when_fact_has_no_embedding(self):
+        """fact.embedding が None の場合は Jaccard にフォールバックすること"""
+        store = FactStore()
+        fact = _make_fact(fact_id="no-emb", keywords=["Python"])
+        assert fact.embedding is None
+        store._facts[100] = [fact]
+        store._loaded_channels.add(100)
+
+        with patch("config.VECTOR_SEARCH_ENABLED", True):
+            results = store.search(
+                100, ["Python"], limit=5, query_embedding=[1.0, 0.0]
+            )
+
+        assert len(results) == 1
+        assert results[0].fact_id == "no-emb"
+
+    def test_without_query_embedding_uses_jaccard(self):
+        """query_embedding=None の場合は既存の Jaccard 検索が使われること"""
+        store = FactStore()
+        fact = _make_fact(fact_id="jac", keywords=["Rust"])
+        store._facts[100] = [fact]
+        store._loaded_channels.add(100)
+
+        with patch("config.VECTOR_SEARCH_ENABLED", True):
+            results = store.search(100, ["Rust"], limit=5, query_embedding=None)
+
+        assert len(results) == 1

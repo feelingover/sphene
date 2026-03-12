@@ -119,7 +119,7 @@ class ReflectionEngine:
         try:
             raw_facts = await asyncio.to_thread(self._call_reflection_llm, messages)
             if raw_facts is not None:
-                self._apply_facts(channel_id, raw_facts, messages)
+                await self._apply_facts(channel_id, raw_facts, messages)
                 logger.info(
                     f"反省会完了: channel_id={channel_id}, "
                     f"facts={len(raw_facts)}"
@@ -181,14 +181,16 @@ class ReflectionEngine:
             logger.warning(f"反省会LLM呼び出し失敗: {e}")
             return None
 
-    def _apply_facts(
+    async def _apply_facts(
         self,
         channel_id: int,
         raw_facts: list[dict],
         messages: list[ChannelMessage],
     ) -> None:
         """LLM結果をFactオブジェクトに変換しFactStore.add_fact()で保存。
-        ファクト保存が成功した場合のみ buffer.mark_reflected(channel_id) を呼ぶ"""
+        ファクト保存が成功した場合のみ buffer.mark_reflected(channel_id) を呼ぶ
+        """
+        from ai.client import generate_embedding
         from memory.fact_store import Fact, get_fact_store
         from memory.short_term import get_channel_buffer
 
@@ -203,6 +205,11 @@ class ReflectionEngine:
             if not content:
                 continue
 
+            embedding = await asyncio.to_thread(generate_embedding, content)
+            logger.debug(
+                f"Embedding生成: channel_id={channel_id}, "
+                f"content={content[:30]!r}, embedding={'あり' if embedding else 'なし'}"
+            )
             fact = Fact(
                 fact_id=str(uuid.uuid4()),
                 channel_id=channel_id,
@@ -214,6 +221,7 @@ class ReflectionEngine:
                 ],
                 created_at=now,
                 shareable=bool(item.get("shareable", False)),
+                embedding=embedding,
             )
             store.add_fact(fact)
             saved_count += 1

@@ -196,7 +196,8 @@ class TestApplyFacts:
 
         with patch("memory.fact_store.get_fact_store", return_value=mock_store):
             with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
-                engine._apply_facts(100, raw_facts, messages)
+                with patch("ai.client.generate_embedding", return_value=None):
+                    asyncio.run(engine._apply_facts(100, raw_facts, messages))
 
         assert mock_store.add_fact.call_count == 2
 
@@ -214,7 +215,8 @@ class TestApplyFacts:
 
         with patch("memory.fact_store.get_fact_store", return_value=mock_store):
             with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
-                engine._apply_facts(100, raw_facts, messages)
+                with patch("ai.client.generate_embedding", return_value=None):
+                    asyncio.run(engine._apply_facts(100, raw_facts, messages))
 
         assert mock_store.add_fact.call_count == 1
 
@@ -231,7 +233,8 @@ class TestApplyFacts:
 
         with patch("memory.fact_store.get_fact_store", return_value=mock_store):
             with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
-                engine._apply_facts(100, raw_facts, messages)
+                with patch("ai.client.generate_embedding", return_value=None):
+                    asyncio.run(engine._apply_facts(100, raw_facts, messages))
 
         mock_buffer.mark_reflected.assert_called_once_with(100)
 
@@ -246,9 +249,53 @@ class TestApplyFacts:
 
         with patch("memory.fact_store.get_fact_store", return_value=mock_store):
             with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
-                engine._apply_facts(100, raw_facts, messages)
+                with patch("ai.client.generate_embedding", return_value=None):
+                    asyncio.run(engine._apply_facts(100, raw_facts, messages))
 
         assert mock_store.add_fact.call_count == 1
+
+class TestApplyFactsWithEmbedding:
+    """_apply_facts の Embedding 生成テスト"""
+
+    def test_embedding_stored_in_fact(self):
+        """generate_embedding の戻り値が fact.embedding に保存されること"""
+        engine = ReflectionEngine()
+        messages = [_make_message()]
+        raw_facts = [
+            {"content": "ファクト", "keywords": ["kw"], "source_user_ids": [1], "shareable": False},
+        ]
+
+        mock_store = MagicMock()
+        mock_buffer = MagicMock()
+        fake_embedding = [0.1, 0.2, 0.3]
+
+        with patch("memory.fact_store.get_fact_store", return_value=mock_store):
+            with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+                with patch("ai.client.generate_embedding", return_value=fake_embedding):
+                    asyncio.run(engine._apply_facts(100, raw_facts, messages))
+
+        saved_fact = mock_store.add_fact.call_args[0][0]
+        assert saved_fact.embedding == fake_embedding
+
+    def test_embedding_none_on_failure(self):
+        """generate_embedding が None を返した場合も fact が保存されること"""
+        engine = ReflectionEngine()
+        messages = [_make_message()]
+        raw_facts = [
+            {"content": "ファクト", "keywords": [], "source_user_ids": [], "shareable": False},
+        ]
+
+        mock_store = MagicMock()
+        mock_buffer = MagicMock()
+
+        with patch("memory.fact_store.get_fact_store", return_value=mock_store):
+            with patch("memory.short_term.get_channel_buffer", return_value=mock_buffer):
+                with patch("ai.client.generate_embedding", return_value=None):
+                    asyncio.run(engine._apply_facts(100, raw_facts, messages))
+
+        assert mock_store.add_fact.call_count == 1
+        saved_fact = mock_store.add_fact.call_args[0][0]
+        assert saved_fact.embedding is None
 
 
 class TestGetReflectionEngine:
