@@ -237,8 +237,8 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
 
         instruction = (
             f"{system_prompt}\n\n"
-            f"以下の会話の流れを読んで、短い自然な相槌を返してね。"
-            f"1〜2文程度で、感情や共感を少し込めてもOK。長い説明は不要。\n\n"
+            f"以下の会話の流れを読んで、短い自然な相槌を返してね。\n"
+            f"必ず1〜2文以内に収めること。長い説明・解説・提案は絶対に不要。感情や共感を少し込めるだけでOK。\n\n"
             f"--- チャンネルの直近の会話 ---\n{channel_context}\n---"
         )
 
@@ -255,7 +255,7 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=instruction,
-                max_output_tokens=100,
+                max_output_tokens=1000,
             ),
         )
 
@@ -324,7 +324,7 @@ def generate_proactive_message(
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=instruction,
-                max_output_tokens=150,
+                max_output_tokens=1000,
             ),
         )
 
