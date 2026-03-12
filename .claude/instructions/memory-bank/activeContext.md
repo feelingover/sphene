@@ -20,6 +20,14 @@ applyTo: "**"
 
 ## Recent Changes
 
+### 2026/3: 相槌生成の MAX_TOKENS エラー修正
+
+`generate_short_ack()` で `finish_reason=MAX_TOKENS` になり相槌が生成されない問題を修正。
+
+- **原因**: `max_output_tokens=100` が小さすぎ、thinking ありモデル（gemini-2.5-flash 等）で thinking トークンが先に消費され、実テキスト出力分が残らなかった
+- **修正**: `max_output_tokens=1000` に引き上げ（thinking トークン分を考慮したモデル非依存な値）。`generate_proactive_message()` も同様に修正。プロンプトも強化。
+- **変更ファイル**: `ai/conversation.py`（`generate_short_ack()` / `generate_proactive_message()` の `GenerateContentConfig` と instruction 文字列）
+
 ### 2026/3: 記憶機能 Phase 3B - Vertex AI Embeddings + ハイブリッド検索 (issue #77, #78)
 
 Jaccard検索にコサイン類似度を組み合わせたハイブリッド検索を実装。`VECTOR_SEARCH_ENABLED=false`（デフォルト）で既存動作を維持。
@@ -235,7 +243,7 @@ PR #76 のコードレビュー指摘を解消。
 
 #### 応答多様性（3段階）
 - `react_only`: ランダム絵文字リアクション（👀😊👍🤔✨💡）
-- `short_ack`: 軽量相槌生成（`generate_short_ack()`, `max_output_tokens=50`）
+- `short_ack`: 軽量相槌生成（`generate_short_ack()`、プロンプトで長さ制御）
 - `full_response`: 既存の自律応答（チャンネル要約注入対応追加）
 - `bot/events.py`: `_dispatch_response()` で3タイプを統一ディスパッチ
 
