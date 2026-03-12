@@ -255,6 +255,7 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=instruction,
+                max_output_tokens=1000,
             ),
         )
 
@@ -323,7 +324,7 @@ def generate_proactive_message(
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=instruction,
-                max_output_tokens=150,
+                max_output_tokens=1000,
             ),
         )
 
