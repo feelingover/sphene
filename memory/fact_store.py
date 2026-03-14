@@ -221,11 +221,12 @@ class FactStore:
         scored.sort(key=lambda x: x[0], reverse=True)
         results = [f for _, f in scored[:limit]]
 
-        # ヒットしたファクトの参照頻度を更新
+        # ヒットしたファクトの参照頻度を更新（ロック内でアトミックに更新）
         now = datetime.now(timezone.utc)
-        for fact in results:
-            fact.access_count += 1
-            fact.last_accessed_at = now
+        with self._lock:
+            for fact in results:
+                fact.access_count += 1
+                fact.last_accessed_at = now
 
         return results
 
@@ -373,33 +374,34 @@ class FactStore:
             with self._lock:
                 facts = list(self._facts.get(channel_id, []))
 
-            keep: list[Fact] = []
-            remove: list[Fact] = []
+            remove: list[tuple[float, Fact]] = []
             for fact in facts:
                 score = fact.effective_relevance_score(half_life, access_boost_weight)
                 if score < threshold:
-                    remove.append(fact)
-                else:
-                    keep.append(fact)
+                    remove.append((score, fact))
 
             if not remove:
                 continue
 
             self._archive_facts(channel_id, remove)
 
+            # fact_id 差分削除: 読み取り後に追加された新ファクトを失わないよう
+            # keep リストではなく remove_ids で絞り込む
+            remove_ids = {f.fact_id for _, f in remove}
             with self._lock:
-                self._facts[channel_id] = keep
+                remaining = [f for f in self._facts.get(channel_id, []) if f.fact_id not in remove_ids]
+                self._facts[channel_id] = remaining
 
             self.persist_channel(channel_id)
             removed_counts[channel_id] = len(remove)
             logger.info(
                 f"ファクト忘却クリーンアップ: channel_id={channel_id}, "
-                f"削除数={len(remove)}, 残存={len(keep)}, threshold={threshold}"
+                f"削除数={len(remove)}, 残存={len(remaining)}, threshold={threshold}"
             )
 
         return removed_counts
 
-    def _archive_facts(self, channel_id: int, facts: list[Fact]) -> None:
+    def _archive_facts(self, channel_id: int, scored_facts: list[tuple[float, Fact]]) -> None:
         """削除ファクトをアーカイブする。
 
         常にログ出力を行い、FACT_STORE_ARCHIVE_ENABLED=true の場合は
@@ -407,12 +409,9 @@ class FactStore:
 
         Args:
             channel_id: チャンネルID
-            facts: アーカイブするファクトのリスト
+            scored_facts: (effective_relevance_score, fact) のペアリスト
         """
-        half_life = config.FACT_DECAY_HALF_LIFE_DAYS
-        access_boost_weight = config.FACT_ACCESS_BOOST_WEIGHT
-        for fact in facts:
-            score = fact.effective_relevance_score(half_life, access_boost_weight)
+        for score, fact in scored_facts:
             logger.info(
                 f"ファクト削除: channel_id={channel_id}, fact_id={fact.fact_id}, "
                 f"score={score:.4f}, access_count={fact.access_count}, "
@@ -422,6 +421,7 @@ class FactStore:
         if not config.FACT_STORE_ARCHIVE_ENABLED:
             return
 
+        facts = [f for _, f in scored_facts]
         storage_type = config.STORAGE_TYPE
         if storage_type == "local":
             self._append_to_local_archive(channel_id, facts)
@@ -445,6 +445,11 @@ class FactStore:
                 entry = fact.to_dict()
                 entry["archived_at"] = archived_at
                 existing.append(entry)
+
+            # 上限を超えた分は古い順に切り捨て
+            max_entries = config.FACT_ARCHIVE_MAX_ENTRIES
+            if len(existing) > max_entries:
+                existing = existing[-max_entries:]
 
             atomic_write_json(file_path, {"channel_id": channel_id, "archived_facts": existing})
         except Exception as e:
@@ -471,6 +476,11 @@ class FactStore:
                 entry = fact.to_dict()
                 entry["archived_at"] = archived_at
                 existing.append(entry)
+
+            # Firestore ドキュメント上限（1MB）対策: 古い順に切り捨て
+            max_entries = config.FACT_ARCHIVE_MAX_ENTRIES
+            if len(existing) > max_entries:
+                existing = existing[-max_entries:]
 
             doc_ref.set({"channel_id": channel_id, "archived_facts": existing})
         except Exception as e:

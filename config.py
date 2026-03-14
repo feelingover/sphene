@@ -123,6 +123,8 @@ FACT_STORE_CLEANUP_THRESHOLD: float = float(os.getenv("FACT_STORE_CLEANUP_THRESH
 FACT_ACCESS_BOOST_WEIGHT: float = float(os.getenv("FACT_ACCESS_BOOST_WEIGHT", "0.1"))
 # 削除ファクトをアーカイブストレージに保存するか否か（デフォルト: ログ記録のみ）
 FACT_STORE_ARCHIVE_ENABLED: bool = os.getenv("FACT_STORE_ARCHIVE_ENABLED", "false").lower() == "true"
+# アーカイブの最大保持件数（古い順に切り捨て。Firestore 1MB 上限対策）
+FACT_ARCHIVE_MAX_ENTRIES: int = int(os.getenv("FACT_ARCHIVE_MAX_ENTRIES", "500"))
 
 # === 反省会エンジン設定 (Phase 3A) ===
 REFLECTION_ENABLED: bool = os.getenv("REFLECTION_ENABLED", "false").lower() == "true"

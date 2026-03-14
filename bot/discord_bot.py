@@ -135,7 +135,8 @@ class SpheneBot:
 
                 removed = get_fact_store().cleanup_low_relevance_facts()
                 if removed:
-                    logger.info(f"ファクト忘却クリーンアップ完了: {removed}")
+                    total = sum(removed.values())
+                    logger.info(f"ファクト忘却クリーンアップ完了: 合計{total}件削除 {removed}")
             except Exception as e:
                 logger.error(
                     f"反省会チェック/ファクトストア永続化でエラー: {str(e)}", exc_info=True
