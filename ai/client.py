@@ -85,7 +85,10 @@ def generate_embedding(text: str) -> list[float] | None:
         )
         if not result.embeddings:
             return None
-        return list(result.embeddings[0].values)
+        values = result.embeddings[0].values
+        if values is None:
+            return None
+        return list(values)
     except Exception:
         logger.warning("Embedding生成に失敗しました", exc_info=True)
         return None
