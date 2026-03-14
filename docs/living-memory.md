@@ -43,6 +43,8 @@
      - 会話から抽出された「面白い事実」や「重要な情報」。
      - キーワード（Jaccard類似度）またはベクトル検索（Vertex AI Embeddings）による呼び出し。
      - `VECTOR_SEARCH_ENABLED=true` 時はコサイン類似度 × Jaccard のハイブリッドスコアリング。
+     - 参照頻度（`access_count`）を記録し、`effective_relevance_score`（時間減衰 + 参照頻度ブースト）で重要度を評価。
+     - スコアが閾値を下回ると15分ごとに自動削除（忘却）。頻繁に参照されたファクトは閾値を超えやすく長く残る。
 
 ---
 
@@ -116,6 +118,11 @@
 - `FACT_DECAY_HALF_LIFE_DAYS`: ファクトのスコア減衰の半減期（日数） (デフォルト: 30)
 - `FACT_USER_BOOST_FACTOR`: 発言ユーザーIDが一致するファクトの検索スコアブースト倍率 (デフォルト: 1.5)
 
+### 長期記憶: ファクト忘却クリーンアップ (Fact Decay Cleanup)
+- `FACT_STORE_CLEANUP_THRESHOLD`: この値を下回る `effective_relevance_score` のファクトを15分ごとに削除 (デフォルト: 0.05)
+- `FACT_ACCESS_BOOST_WEIGHT`: 参照頻度ブーストの重み係数。`log1p(access_count) * weight` がスコアに加算される (デフォルト: 0.1)
+- `FACT_STORE_ARCHIVE_ENABLED`: `true` にすると削除ファクトをアーカイブストレージに保存する。`false` の場合はログ出力のみ (デフォルト: false)
+
 ### 長期記憶: ベクトル検索 (Vector Search)
 - `VECTOR_SEARCH_ENABLED`: ハイブリッド検索（キーワード + コサイン類似度）を有効にするか。`REFLECTION_ENABLED=true`が必要 (デフォルト: false)
 - `EMBEDDING_MODEL`: Embedding生成に使用するモデル名 (デフォルト: text-embedding-004)
@@ -129,6 +136,5 @@
 
 ## 6. 今後の拡張 (Roadmap)
 
-- **忘却機能:** 関連性の低い古いファクトを自然に減衰・削除する仕組みの実装。 ([#80](https://github.com/feelingover/sphene/issues/80))
 - **リッチプロファイル:** LLMによるユーザー性格のタグ付け、特別な呼び名の記憶。 ([#79](https://github.com/feelingover/sphene/issues/79))
 - **Firestore Native Vector Search:** `find_nearest()` を使ったベクトル検索のインフラ層への移譲（現状はin-memoryコサイン類似度）。

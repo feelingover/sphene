@@ -5,6 +5,14 @@ applyTo: "**"
 
 ## Completed Features
 
+- **ファクトストア忘却機能 (issue #80)**:
+  - `Fact` に `access_count: int` / `last_accessed_at: datetime | None` フィールド追加
+  - `effective_relevance_score()`: 時間減衰 + 参照頻度ブースト（`min(1.0, decay + log1p(count) * weight)`）
+  - `search()` でヒットしたファクトの `access_count` を自動インクリメント
+  - `cleanup_low_relevance_facts()`: 閾値未満のファクトを15分ごとに削除
+  - `_archive_facts()` / `_append_to_local_archive()` / `_append_to_firestore_archive()`: アーカイブ機能
+  - 新規環境変数3個: `FACT_STORE_CLEANUP_THRESHOLD`(0.05)、`FACT_ACCESS_BOOST_WEIGHT`(0.1)、`FACT_STORE_ARCHIVE_ENABLED`(false)
+  - `FIRESTORE_COLLECTION_FACTS_ARCHIVE` 定数追加
 - **記憶機能 Phase 3B - Vertex AI Embeddings + ハイブリッド検索 (issue #77, #78)**:
   - `Fact.embedding` フィールド追加、`_cosine_similarity()` ヘルパー、`search()` にハイブリッドスコアリング（コサインは `max(0, cosine)` クリッピング）
   - `generate_embedding()` 追加（失敗時 `None` でJaccardフォールバック）
