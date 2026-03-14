@@ -6,7 +6,8 @@ applyTo: "**"
 ## Current State (2026/3)
 
 - 記憶システム「リビングメモリー (Living Memory)」の仕様を `docs/living-memory.md` に集約。
-- 全テスト通過（655件）、カバレッジ 90%、mypy 72ファイル no issues
+- 全テスト通過（674件）、カバレッジ 89%、mypy 72ファイル no issues
+- ファクトストア忘却機能（issue #80）実装済み。`FACT_STORE_CLEANUP_THRESHOLD` / `FACT_ACCESS_BOOST_WEIGHT` / `FACT_STORE_ARCHIVE_ENABLED` で制御。
 - 記憶機能 Phase 3B（Vertex AI Embeddings + ハイブリッド検索）実装済み。`VECTOR_SEARCH_ENABLED` で後方互換フラグ制御。
 - リアクション機能の抜本的な見直し（issue #97）実装済み。`should_react` フィールドによる独立制御、先行実行（asyncio.create_task）、LLM絵文字選択に対応。
 - 記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）実装済み。
@@ -19,6 +20,24 @@ applyTo: "**"
 - コードレビュー Medium/Low 全課題対応完了（Group A〜E）。
 
 ## Recent Changes
+
+### 2026/3: ファクトストア忘却機能 (issue #80)
+
+参照頻度を考慮した自然な忘却（自動クリーンアップ）を実装。`FACT_STORE_CLEANUP_THRESHOLD` で閾値を制御。
+
+#### 変更ファイル
+- **`memory/fact_store.py`**: `Fact` に `access_count`/`last_accessed_at` 追加。`effective_relevance_score()`（時間減衰+参照頻度ブースト）、`search()` でのアクセス記録、`cleanup_low_relevance_facts()`、アーカイブメソッド群を追加
+- **`config.py`**: `FACT_STORE_CLEANUP_THRESHOLD`、`FACT_ACCESS_BOOST_WEIGHT`、`FACT_STORE_ARCHIVE_ENABLED`、`FIRESTORE_COLLECTION_FACTS_ARCHIVE` 追加
+- **`bot/discord_bot.py`**: `_cleanup_task` に `cleanup_low_relevance_facts()` 呼び出し追加（15分ごと）
+- **`docs/living-memory.md`**: ファクトストアの説明・env vars・Roadmapを更新
+- **`.env.sample`**: 忘却クリーンアップ関連の環境変数を追記
+
+#### スコア計算式
+`effective_relevance_score = min(1.0, decay_factor(days) + log1p(access_count) * FACT_ACCESS_BOOST_WEIGHT)`
+
+#### アーカイブ方針
+- デフォルト: ログ出力のみ（INFO level、fact_id / score / content を記録）
+- `FACT_STORE_ARCHIVE_ENABLED=true`: local → `storage/facts_archive.{channel_id}.json`、firestore → `{namespace}_facts_archive`
 
 ### 2026/3: 相槌生成の MAX_TOKENS エラー修正
 

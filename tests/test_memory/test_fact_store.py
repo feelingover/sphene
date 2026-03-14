@@ -545,3 +545,244 @@ class TestFactStoreSearchHybrid:
         result_ids = {f.fact_id for f in results}
         assert "opp" in result_ids
         assert "ortho" in result_ids
+
+
+class TestFactAccessCount:
+    """access_count / last_accessed_at フィールドのテスト"""
+
+    def test_default_access_count_is_zero(self):
+        """デフォルトの access_count は 0 であること"""
+        fact = _make_fact()
+        assert fact.access_count == 0
+
+    def test_default_last_accessed_at_is_none(self):
+        """デフォルトの last_accessed_at は None であること"""
+        fact = _make_fact()
+        assert fact.last_accessed_at is None
+
+    def test_to_dict_includes_access_count(self):
+        """to_dict に access_count と last_accessed_at が含まれること"""
+        fact = _make_fact()
+        fact.access_count = 3
+        fact.last_accessed_at = datetime(2024, 6, 1, tzinfo=timezone.utc)
+        d = fact.to_dict()
+        assert d["access_count"] == 3
+        assert d["last_accessed_at"] == "2024-06-01T00:00:00+00:00"
+
+    def test_to_dict_last_accessed_at_none(self):
+        """last_accessed_at が None の場合も to_dict に含まれること"""
+        fact = _make_fact()
+        d = fact.to_dict()
+        assert "last_accessed_at" in d
+        assert d["last_accessed_at"] is None
+
+    def test_from_dict_restores_access_count(self):
+        """from_dict で access_count と last_accessed_at が復元されること"""
+        data = {
+            "fact_id": "abc",
+            "channel_id": 100,
+            "content": "テスト",
+            "keywords": [],
+            "source_user_ids": [],
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "shareable": False,
+            "access_count": 5,
+            "last_accessed_at": "2024-06-01T12:00:00+00:00",
+        }
+        fact = Fact.from_dict(data)
+        assert fact.access_count == 5
+        assert fact.last_accessed_at == datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_from_dict_missing_access_count_defaults_zero(self):
+        """access_count キーがない古いデータはデフォルト 0 になること"""
+        data = {
+            "fact_id": "abc",
+            "channel_id": 100,
+            "content": "テスト",
+            "keywords": [],
+            "source_user_ids": [],
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "shareable": False,
+        }
+        fact = Fact.from_dict(data)
+        assert fact.access_count == 0
+        assert fact.last_accessed_at is None
+
+
+class TestEffectiveRelevanceScore:
+    """Fact.effective_relevance_score のテスト"""
+
+    def test_without_access_equals_decay_factor(self):
+        """参照なし（access_count=0）の場合は decay_factor と一致すること"""
+        fact = _make_fact(days_ago=30)
+        half_life = 30
+        expected = fact.decay_factor(half_life)
+        result = fact.effective_relevance_score(half_life, access_boost_weight=0.1)
+        assert abs(result - expected) < 1e-9
+
+    def test_with_access_boosts_score(self):
+        """参照あり（access_count > 0）の場合は decay_factor より高いこと"""
+        fact = _make_fact(days_ago=30)
+        fact.access_count = 5
+        half_life = 30
+        base = fact.decay_factor(half_life)
+        result = fact.effective_relevance_score(half_life, access_boost_weight=0.1)
+        assert result > base
+
+    def test_score_matches_formula(self):
+        """スコアが min(1.0, decay + log1p(count) * weight) と一致すること"""
+        fact = _make_fact(days_ago=30)
+        fact.access_count = 10
+        half_life = 30
+        weight = 0.2
+        expected = min(1.0, fact.decay_factor(half_life) + math.log1p(10) * weight)
+        result = fact.effective_relevance_score(half_life, access_boost_weight=weight)
+        assert abs(result - expected) < 1e-9
+
+    def test_score_capped_at_one(self):
+        """スコアは 1.0 を超えないこと"""
+        # 作成直後 (decay ≈ 1.0) + 大量アクセス → 1.0 に丸められる
+        fact = _make_fact(days_ago=0)
+        fact.access_count = 1000
+        result = fact.effective_relevance_score(30, access_boost_weight=1.0)
+        assert result <= 1.0
+
+    def test_highly_accessed_fact_survives_time_decay(self):
+        """大量参照ファクトは時間経過しても低スコアにならないこと"""
+        fact = _make_fact(days_ago=90)  # 3倍の半減期 → decay ≈ 0.125
+        fact.access_count = 50
+        base_decay = fact.decay_factor(30)
+        assert base_decay < 0.15  # ほぼ忘れかけている
+        result = fact.effective_relevance_score(30, access_boost_weight=0.1)
+        # アクセスブーストで base_decay より大きくなること
+        assert result > base_decay
+
+
+class TestSearchUpdatesAccessCount:
+    """search() が access_count / last_accessed_at を更新するテスト"""
+
+    def test_search_increments_access_count(self):
+        """search で返されたファクトの access_count がインクリメントされること"""
+        store = FactStore()
+        fact = _make_fact(fact_id="f1", keywords=["Python"])
+        store._facts[100] = [fact]
+        store._loaded_channels.add(100)
+
+        assert fact.access_count == 0
+        store.search(100, ["Python"], limit=5)
+        assert fact.access_count == 1
+
+    def test_search_sets_last_accessed_at(self):
+        """search で返されたファクトの last_accessed_at が設定されること"""
+        store = FactStore()
+        fact = _make_fact(fact_id="f2", keywords=["Rust"])
+        store._facts[100] = [fact]
+        store._loaded_channels.add(100)
+
+        assert fact.last_accessed_at is None
+        store.search(100, ["Rust"], limit=5)
+        assert fact.last_accessed_at is not None
+
+    def test_unmatched_facts_not_updated(self):
+        """スコア0で返されなかったファクトの access_count は更新されないこと"""
+        store = FactStore()
+        fact = _make_fact(fact_id="no-match", keywords=["Rust"])
+        store._facts[100] = [fact]
+        store._loaded_channels.add(100)
+
+        store.search(100, ["Python"], limit=5)
+        assert fact.access_count == 0
+
+
+class TestCleanupLowRelevanceFacts:
+    """FactStore.cleanup_low_relevance_facts のテスト"""
+
+    def test_removes_below_threshold(self):
+        """effective_relevance_score が閾値未満のファクトが削除されること"""
+        store = FactStore()
+        # 非常に古いファクト（decay ≈ 0） → 閾値 0.05 未満
+        fact_old = _make_fact(fact_id="old", days_ago=500)
+        # 新しいファクト（decay ≈ 1.0） → 閾値以上
+        fact_new = _make_fact(fact_id="new", days_ago=0)
+        store._facts[100] = [fact_old, fact_new]
+        store._loaded_channels.add(100)
+
+        with patch("config.FACT_STORE_CLEANUP_THRESHOLD", 0.05):
+            with patch("config.FACT_DECAY_HALF_LIFE_DAYS", 30):
+                with patch("config.FACT_ACCESS_BOOST_WEIGHT", 0.1):
+                    with patch("config.FACT_STORE_ARCHIVE_ENABLED", False):
+                        with patch.object(store, "persist_channel") as mock_persist:
+                            removed = store.cleanup_low_relevance_facts()
+
+        ids = [f.fact_id for f in store._facts[100]]
+        assert "old" not in ids
+        assert "new" in ids
+        assert removed == {100: 1}
+        mock_persist.assert_called_once_with(100)
+
+    def test_keeps_above_threshold(self):
+        """全ファクトが閾値以上の場合は何も削除されないこと"""
+        store = FactStore()
+        fact = _make_fact(fact_id="fresh", days_ago=1)
+        store._facts[100] = [fact]
+        store._loaded_channels.add(100)
+
+        with patch("config.FACT_STORE_CLEANUP_THRESHOLD", 0.05):
+            with patch("config.FACT_DECAY_HALF_LIFE_DAYS", 30):
+                with patch("config.FACT_ACCESS_BOOST_WEIGHT", 0.1):
+                    with patch("config.FACT_STORE_ARCHIVE_ENABLED", False):
+                        with patch.object(store, "persist_channel") as mock_persist:
+                            removed = store.cleanup_low_relevance_facts()
+
+        assert removed == {}
+        mock_persist.assert_not_called()
+
+    def test_access_boost_saves_borderline_fact(self):
+        """閾値ギリギリでも参照頻度が高いファクトは削除されないこと"""
+        store = FactStore()
+        # 古いがよく参照されているファクト
+        fact = _make_fact(fact_id="accessed", days_ago=300)
+        fact.access_count = 100  # 大量参照
+        store._facts[100] = [fact]
+        store._loaded_channels.add(100)
+
+        # access_boost_weight=0.5 で log1p(100)*0.5 ≈ 2.3 がブーストされる
+        with patch("config.FACT_STORE_CLEANUP_THRESHOLD", 0.05):
+            with patch("config.FACT_DECAY_HALF_LIFE_DAYS", 30):
+                with patch("config.FACT_ACCESS_BOOST_WEIGHT", 0.5):
+                    with patch("config.FACT_STORE_ARCHIVE_ENABLED", False):
+                        removed = store.cleanup_low_relevance_facts()
+
+        assert removed == {}
+        assert len(store._facts[100]) == 1
+
+    def test_archive_enabled_calls_local_archive(self):
+        """FACT_STORE_ARCHIVE_ENABLED=True 時にローカルアーカイブが呼ばれること"""
+        store = FactStore()
+        fact_old = _make_fact(fact_id="old", days_ago=500)
+        store._facts[100] = [fact_old]
+        store._loaded_channels.add(100)
+
+        with patch("config.FACT_STORE_CLEANUP_THRESHOLD", 0.05):
+            with patch("config.FACT_DECAY_HALF_LIFE_DAYS", 30):
+                with patch("config.FACT_ACCESS_BOOST_WEIGHT", 0.1):
+                    with patch("config.FACT_STORE_ARCHIVE_ENABLED", True):
+                        with patch("config.STORAGE_TYPE", "local"):
+                            with patch.object(store, "persist_channel"):
+                                with patch.object(store, "_append_to_local_archive") as mock_arch:
+                                    store.cleanup_low_relevance_facts()
+
+        mock_arch.assert_called_once_with(100, [fact_old])
+
+    def test_no_removal_when_no_loaded_facts(self):
+        """ファクトが存在しないチャンネルではクリーンアップが実行されないこと"""
+        store = FactStore()
+        # _facts は空
+
+        with patch("config.FACT_STORE_CLEANUP_THRESHOLD", 0.05):
+            with patch("config.FACT_DECAY_HALF_LIFE_DAYS", 30):
+                with patch("config.FACT_ACCESS_BOOST_WEIGHT", 0.1):
+                    with patch("config.FACT_STORE_ARCHIVE_ENABLED", False):
+                        removed = store.cleanup_low_relevance_facts()
+
+        assert removed == {}

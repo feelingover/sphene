@@ -38,6 +38,8 @@ class Fact:
     created_at: datetime
     shareable: bool = False
     embedding: list[float] | None = None
+    access_count: int = 0
+    last_accessed_at: datetime | None = None
 
     def decay_factor(self, half_life_days: int) -> float:
         """経過日数から指数減衰係数を返す（半減期でスコアが0.5になる）"""
@@ -47,6 +49,20 @@ class Fact:
             created = created.replace(tzinfo=timezone.utc)
         elapsed_days = (now - created).total_seconds() / 86400
         return math.pow(0.5, elapsed_days / half_life_days)
+
+    def effective_relevance_score(self, half_life_days: int, access_boost_weight: float = 0.1) -> float:
+        """時間減衰 + 参照頻度ブーストを組み合わせたスコア（クリーンアップ閾値判定用）
+
+        Args:
+            half_life_days: 半減期（日）
+            access_boost_weight: 参照頻度ブーストの重み係数
+
+        Returns:
+            0.0〜1.0のスコア。頻繁に参照されたファクトほど高くなる。
+        """
+        time_decay = self.decay_factor(half_life_days)
+        access_boost = math.log1p(self.access_count) * access_boost_weight
+        return min(1.0, time_decay + access_boost)
 
     def to_dict(self) -> dict:
         """シリアライゼーション用の辞書を返す"""
@@ -59,6 +75,8 @@ class Fact:
             "created_at": self.created_at.isoformat(),
             "shareable": self.shareable,
             "embedding": self.embedding,
+            "access_count": self.access_count,
+            "last_accessed_at": self.last_accessed_at.isoformat() if self.last_accessed_at else None,
         }
 
     @classmethod
@@ -70,6 +88,12 @@ class Fact:
         elif created_at is None:
             created_at = datetime.now(timezone.utc)
 
+        last_accessed_at = data.get("last_accessed_at")
+        if isinstance(last_accessed_at, str):
+            last_accessed_at = datetime.fromisoformat(last_accessed_at)
+        else:
+            last_accessed_at = None
+
         return cls(
             fact_id=data.get("fact_id", str(uuid.uuid4())),
             channel_id=data["channel_id"],
@@ -79,6 +103,8 @@ class Fact:
             created_at=created_at,
             shareable=data.get("shareable", False),
             embedding=data.get("embedding", None),
+            access_count=data.get("access_count", 0),
+            last_accessed_at=last_accessed_at,
         )
 
 
@@ -193,7 +219,16 @@ class FactStore:
                 scored.append((score, fact))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [f for _, f in scored[:limit]]
+        results = [f for _, f in scored[:limit]]
+
+        # ヒットしたファクトの参照頻度を更新（ロック内でアトミックに更新）
+        now = datetime.now(timezone.utc)
+        with self._lock:
+            for fact in results:
+                fact.access_count += 1
+                fact.last_accessed_at = now
+
+        return results
 
     def get_shareable_facts(self, channel_id: int) -> list[Fact]:
         """shareable=True のファクトを decay_factor 降順で返す"""
@@ -320,6 +355,136 @@ class FactStore:
         except Exception as e:
             logger.error(f"ファクトのFirestore読み込みエラー: {e}", exc_info=True)
         return None
+
+    def cleanup_low_relevance_facts(self) -> dict[int, int]:
+        """全チャンネルで effective_relevance_score が閾値以下のファクトを削除する。
+
+        Returns:
+            {channel_id: 削除数} の辞書（削除が発生したチャンネルのみ含む）
+        """
+        threshold = config.FACT_STORE_CLEANUP_THRESHOLD
+        half_life = config.FACT_DECAY_HALF_LIFE_DAYS
+        access_boost_weight = config.FACT_ACCESS_BOOST_WEIGHT
+        removed_counts: dict[int, int] = {}
+
+        with self._lock:
+            channel_ids = list(self._facts.keys())
+
+        for channel_id in channel_ids:
+            with self._lock:
+                facts = list(self._facts.get(channel_id, []))
+
+            remove: list[tuple[float, Fact]] = []
+            for fact in facts:
+                score = fact.effective_relevance_score(half_life, access_boost_weight)
+                if score < threshold:
+                    remove.append((score, fact))
+
+            if not remove:
+                continue
+
+            self._archive_facts(channel_id, remove)
+
+            # fact_id 差分削除: 読み取り後に追加された新ファクトを失わないよう
+            # keep リストではなく remove_ids で絞り込む
+            remove_ids = {f.fact_id for _, f in remove}
+            with self._lock:
+                remaining = [f for f in self._facts.get(channel_id, []) if f.fact_id not in remove_ids]
+                self._facts[channel_id] = remaining
+
+            self.persist_channel(channel_id)
+            removed_counts[channel_id] = len(remove)
+            logger.info(
+                f"ファクト忘却クリーンアップ: channel_id={channel_id}, "
+                f"削除数={len(remove)}, 残存={len(remaining)}, threshold={threshold}"
+            )
+
+        return removed_counts
+
+    def _archive_facts(self, channel_id: int, scored_facts: list[tuple[float, Fact]]) -> None:
+        """削除ファクトをアーカイブする。
+
+        常にログ出力を行い、FACT_STORE_ARCHIVE_ENABLED=true の場合は
+        ストレージにも書き出す。
+
+        Args:
+            channel_id: チャンネルID
+            scored_facts: (effective_relevance_score, fact) のペアリスト
+        """
+        for score, fact in scored_facts:
+            logger.info(
+                f"ファクト削除: channel_id={channel_id}, fact_id={fact.fact_id}, "
+                f"score={score:.4f}, access_count={fact.access_count}, "
+                f"content={fact.content[:50]!r}"
+            )
+
+        if not config.FACT_STORE_ARCHIVE_ENABLED:
+            return
+
+        facts = [f for _, f in scored_facts]
+        storage_type = config.STORAGE_TYPE
+        if storage_type == "local":
+            self._append_to_local_archive(channel_id, facts)
+        elif storage_type == "firestore":
+            self._append_to_firestore_archive(channel_id, facts)
+
+    def _append_to_local_archive(self, channel_id: int, facts: list[Fact]) -> None:
+        """ローカルアーカイブファイルにファクトを追記する"""
+        from utils.file_utils import atomic_write_json
+
+        file_path = f"storage/facts_archive.{channel_id}.json"
+        try:
+            existing: list[dict] = []
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                existing = data.get("archived_facts", [])
+
+            archived_at = datetime.now(timezone.utc).isoformat()
+            for fact in facts:
+                entry = fact.to_dict()
+                entry["archived_at"] = archived_at
+                existing.append(entry)
+
+            # 上限を超えた分は古い順に切り捨て
+            max_entries = config.FACT_ARCHIVE_MAX_ENTRIES
+            if len(existing) > max_entries:
+                existing = existing[-max_entries:]
+
+            atomic_write_json(file_path, {"channel_id": channel_id, "archived_facts": existing})
+        except Exception as e:
+            logger.error(f"ファクトローカルアーカイブエラー: {e}", exc_info=True)
+
+    def _append_to_firestore_archive(self, channel_id: int, facts: list[Fact]) -> None:
+        """Firestoreアーカイブコレクションにファクトを追加する"""
+        try:
+            from utils.firestore_client import get_firestore_client
+
+            db = get_firestore_client()
+            doc_ref = db.collection(config.FIRESTORE_COLLECTION_FACTS_ARCHIVE).document(
+                str(channel_id)
+            )
+            doc = doc_ref.get()
+            existing: list[dict] = []
+            if doc.exists:  # type: ignore[union-attr]
+                data = doc.to_dict()  # type: ignore[union-attr]
+                if data:
+                    existing = data.get("archived_facts", [])
+
+            archived_at = datetime.now(timezone.utc).isoformat()
+            for fact in facts:
+                entry = fact.to_dict()
+                entry["archived_at"] = archived_at
+                existing.append(entry)
+
+            # Firestore ドキュメント上限（1MB）対策: 古い順に切り捨て
+            max_entries = config.FACT_ARCHIVE_MAX_ENTRIES
+            if len(existing) > max_entries:
+                existing = existing[-max_entries:]
+
+            doc_ref.set({"channel_id": channel_id, "archived_facts": existing})
+        except Exception as e:
+            logger.error(f"ファクトFirestoreアーカイブエラー: {e}", exc_info=True)
 
 
 # シングルトン

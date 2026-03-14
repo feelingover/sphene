@@ -50,6 +50,7 @@ FIRESTORE_COLLECTION_CHANNEL_CONFIGS: str = get_collection_name("channel_configs
 FIRESTORE_COLLECTION_USER_PROFILES: str = get_collection_name("user_profiles")
 FIRESTORE_COLLECTION_CHANNEL_CONTEXTS: str = get_collection_name("channel_contexts")
 FIRESTORE_COLLECTION_FACTS: str = get_collection_name("facts")
+FIRESTORE_COLLECTION_FACTS_ARCHIVE: str = get_collection_name("facts_archive")
 
 # === AI会話設定 ===
 MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "5"))
@@ -115,6 +116,15 @@ FACT_STORE_MAX_FACTS_PER_CHANNEL: int = int(os.getenv("FACT_STORE_MAX_FACTS_PER_
 FACT_DECAY_HALF_LIFE_DAYS: int = int(os.getenv("FACT_DECAY_HALF_LIFE_DAYS", "30"))
 # ユーザーIDが一致するファクトのスコアブースト倍率
 FACT_USER_BOOST_FACTOR: float = float(os.getenv("FACT_USER_BOOST_FACTOR", "1.5"))
+# ファクト忘却クリーンアップ設定 (Phase 3B)
+# effective_relevance_score がこの値を下回るファクトを定期削除する
+FACT_STORE_CLEANUP_THRESHOLD: float = float(os.getenv("FACT_STORE_CLEANUP_THRESHOLD", "0.05"))
+# 参照頻度ブーストの重み係数（log1p(access_count) * weight がスコアに加算される）
+FACT_ACCESS_BOOST_WEIGHT: float = float(os.getenv("FACT_ACCESS_BOOST_WEIGHT", "0.1"))
+# 削除ファクトをアーカイブストレージに保存するか否か（デフォルト: ログ記録のみ）
+FACT_STORE_ARCHIVE_ENABLED: bool = os.getenv("FACT_STORE_ARCHIVE_ENABLED", "false").lower() == "true"
+# アーカイブの最大保持件数（古い順に切り捨て。Firestore 1MB 上限対策）
+FACT_ARCHIVE_MAX_ENTRIES: int = int(os.getenv("FACT_ARCHIVE_MAX_ENTRIES", "500"))
 
 # === 反省会エンジン設定 (Phase 3A) ===
 REFLECTION_ENABLED: bool = os.getenv("REFLECTION_ENABLED", "false").lower() == "true"
