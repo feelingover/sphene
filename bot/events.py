@@ -596,9 +596,6 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
 
         buffer = get_channel_buffer()
 
-        # バッファ追加前に最終メッセージ時刻を取得（再活性化チェック用）
-        pre_add_last_time = buffer.get_last_message_time(message.channel.id)
-
         buffer.add_message(
             ChannelMessage(
                 message_id=message.id,
@@ -670,85 +667,9 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         if config.AUTONOMOUS_RESPONSE_ENABLED:
             await _try_autonomous_response(bot, message, images)
 
-        # 自発的会話: 沈黙後の再活性化チェック
-        if config.PROACTIVE_CONVERSATION_ENABLED and pre_add_last_time is not None:
-            await _try_proactive_conversation(bot, message, pre_add_last_time)
-
     except Exception as e:
         logger.error(f"メッセージ処理中にエラー発生: {str(e)}", exc_info=True)
         await message.channel.send("ごめん！メッセージ処理中にエラーが発生しちゃった...😢")
-
-
-async def _try_proactive_conversation(
-    bot: commands.Bot,
-    message: discord.Message,
-    pre_add_last_time: datetime,
-) -> None:
-    """沈黙後の再活性化時、shareable ファクトで自発会話を試みる
-
-    Args:
-        bot: Discordクライアント
-        message: トリガーとなったDiscordメッセージ
-        pre_add_last_time: バッファ追加前の最終メッセージ時刻（UTC）
-    """
-    from memory.fact_store import get_fact_store
-    from memory.judge import get_judge
-
-    # 再活性化チェック（前のメッセージからの沈黙時間）
-    msg_time = message.created_at
-    if msg_time.tzinfo is None:
-        msg_time = msg_time.replace(tzinfo=timezone.utc)
-    silence_minutes = (msg_time - pre_add_last_time).total_seconds() / 60
-    if silence_minutes < config.PROACTIVE_SILENCE_MINUTES:
-        return
-
-    # クールダウンチェック
-    if get_judge().is_in_cooldown(message.channel.id):
-        return
-
-    # shareable ファクト取得
-    facts = get_fact_store().get_shareable_facts(message.channel.id)
-    if not facts:
-        return
-
-    # 最上位のファクトで自発会話メッセージを生成・送信
-    fact = facts[0]
-    await _dispatch_proactive_message(bot, message, fact)
-
-
-async def _dispatch_proactive_message(
-    bot: commands.Bot,
-    message: discord.Message,
-    fact: "Fact",
-) -> None:
-    """shareable ファクトをもとに自発会話メッセージを生成して送信する。
-
-    Sphene の会話履歴を汚染しないよう generate_proactive_message を使う。
-
-    Args:
-        bot: Discordクライアント
-        message: トリガーとなったDiscordメッセージ
-        fact: 話題にするファクト
-    """
-    from ai.conversation import generate_proactive_message
-    from memory.judge import get_judge
-    from memory.short_term import get_channel_buffer
-
-    channel_context = get_channel_buffer().get_context_string(message.channel.id, limit=10) or None
-
-    answer = await asyncio.to_thread(
-        generate_proactive_message,
-        fact_content=fact.content,
-        channel_context=channel_context,
-    )
-
-    if answer:
-        await _send_chunks(message, split_message(answer), is_reply=False)
-        logger.info(
-            f"自発会話送信: チャンネル={message.channel.id}, "
-            f"fact={fact.content[:50]}"
-        )
-        get_judge().record_response(message.channel.id)
 
 
 async def _handle_on_ready(

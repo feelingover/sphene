@@ -9,7 +9,6 @@ import requests
 from google.genai import types
 from ai.conversation import (
     Sphene,
-    generate_proactive_message,
     _load_prompt_from_local,
     MAX_IMAGE_BYTES,
     MAX_CONVERSATION_TURNS,
@@ -27,44 +26,6 @@ async def test_async_input_message():
         
         assert result == "Async response"
         mock_call.assert_called_once()
-
-def test_generate_proactive_message_success():
-    """generate_proactive_message の成功テスト"""
-    with (
-        patch("ai.conversation._get_genai_client") as mock_client_fn,
-        patch("ai.conversation.get_model_name", return_value="test-model"),
-        patch("ai.conversation.load_system_prompt", return_value="System"),
-    ):
-        
-        mock_part = MagicMock()
-        mock_part.text = "そういえば、最近どう？"
-        
-        mock_content = MagicMock()
-        mock_content.parts = [mock_part]
-        
-        mock_candidate = MagicMock()
-        mock_candidate.content = mock_content
-        
-        mock_response = MagicMock()
-        mock_response.candidates = [mock_candidate]
-        
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
-        mock_client_fn.return_value = mock_client
-        
-        result = generate_proactive_message("最近の話題", channel_context="User: Hello")
-        
-        assert result == "そういえば、最近どう？"
-
-def test_generate_proactive_message_error():
-    """generate_proactive_message のエラーテスト"""
-    with patch("ai.conversation._get_genai_client") as mock_client_fn:
-        mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception("API error")
-        mock_client_fn.return_value = mock_client
-        
-        result = generate_proactive_message("Fact")
-        assert result is None
 
 def test_load_prompt_from_local_fail_on_error():
     """_load_prompt_from_local の fail_on_error=True のテスト"""
