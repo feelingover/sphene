@@ -474,6 +474,7 @@ def search_recipe(query: str = "", craft_type: str = "", level_min: int | None =
                 continue
         return json.dumps({"found": True, "query": query, "recipes": recipes}, ensure_ascii=False)
     except Exception as e:
+        logger.error(f"レシピ検索エラー: query={query}: {e}", exc_info=True)
         return _build_error_response(query, "レシピ検索中にエラーが発生しました")
 
 
@@ -531,4 +532,5 @@ def search_game_content(query: str = "", category: str = "", level_min: int | No
         contents = [_parse_game_content_result(r, config) for r in results]
         return json.dumps({"found": True, "query": query, "contents": contents}, ensure_ascii=False)
     except Exception as e:
+        logger.error(f"コンテンツ検索エラー: query={query}, category={category}: {e}", exc_info=True)
         return _build_error_response(query, "コンテンツ検索中にエラーが発生しました")

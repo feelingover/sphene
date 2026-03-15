@@ -1,6 +1,7 @@
 """Router LLM: ユーザーの意図を判定し、適切なツールモードを動的に選択する (issue #94)"""
 
 import json
+from html import escape
 from typing import Literal, cast
 
 from google.genai import types
@@ -61,8 +62,10 @@ def _call_router_llm(message: str, context: str | None) -> ToolMode:
 
     prompt_parts = [_ROUTER_PROMPT]
     if context:
-        prompt_parts.append(f"\n\n--- チャンネルの直近の会話 ---\n{context}\n---")
-    prompt_parts.append(f"\n\nユーザーのメッセージ:\n{message}")
+        safe_context = f"<context>{escape(context)}</context>"
+        prompt_parts.append(f"\n\n--- チャンネルの直近の会話 ---\n{safe_context}\n---")
+    safe_message = f"<message>{escape(message)}</message>"
+    prompt_parts.append(f"\n\nユーザーのメッセージ:\n{safe_message}")
     prompt = "".join(prompt_parts)
 
     logger.debug(f"Router LLM呼び出し: model={model_name}")

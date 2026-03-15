@@ -53,7 +53,7 @@ class ChannelConfigManager:
         self.debug_mode = debug_mode
         self.guild_configs: dict[str, "ChannelConfig"] = {}  # {guild_id: ChannelConfig}
 
-    def get_config(self, guild_id: Any) -> "ChannelConfig":
+    def get_config(self, guild_id: int | str) -> "ChannelConfig":
         """
         指定ギルドの設定を取得（なければ作成）
 

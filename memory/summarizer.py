@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import threading
+from html import escape
 
 from google.genai import types
 
@@ -32,6 +34,7 @@ class Summarizer:
 
     def __init__(self) -> None:
         self._running: set[int] = set()
+        self._running_lock = threading.Lock()
 
     def maybe_summarize(
         self, channel_id: int, recent_messages: list[ChannelMessage]
@@ -48,18 +51,22 @@ class Summarizer:
         if not ctx.should_summarize():
             return
 
-        if channel_id in self._running:
-            logger.debug(f"要約が既に実行中: channel_id={channel_id}")
-            return
+        with self._running_lock:
+            if channel_id in self._running:
+                logger.debug(f"要約が既に実行中: channel_id={channel_id}")
+                return
+            # create_task の前に追加することで、次のイベントループ反復で
+            # maybe_summarize が再度呼ばれても二重スケジュールされない
+            self._running.add(channel_id)
 
         logger.info(
             f"要約トリガー: channel_id={channel_id}, "
             f"count={ctx.message_count_since_update}"
         )
-        # ensure_future の前に追加することで、次のイベントループ反復で
-        # maybe_summarize が再度呼ばれても二重スケジュールされない
-        self._running.add(channel_id)
-        asyncio.ensure_future(self._run_summarize(channel_id, ctx, recent_messages))
+        asyncio.create_task(
+            self._run_summarize(channel_id, ctx, recent_messages),
+            name=f"summarize_{channel_id}",
+        )
 
     async def _run_summarize(
         self,
@@ -85,7 +92,8 @@ class Summarizer:
         except Exception as e:
             logger.error(f"要約実行エラー: channel_id={channel_id}: {e}", exc_info=True)
         finally:
-            self._running.discard(channel_id)
+            with self._running_lock:
+                self._running.discard(channel_id)
 
     def _call_summarize_llm(
         self, context: ChannelContext, messages: list[ChannelMessage]
@@ -148,13 +156,18 @@ class Summarizer:
 
 
 def _format_messages_for_summary(messages: list[ChannelMessage]) -> str:
-    """メッセージを要約用にフォーマットする"""
+    """メッセージを要約用にフォーマットする（XMLタグでプロンプトインジェクション対策）"""
     if not messages:
         return ""
     lines = []
     for msg in messages:
-        role = "[BOT]" if msg.is_bot else ""
-        lines.append(f"{msg.author_name}{role}: {msg.content}")
+        role = ' bot="true"' if msg.is_bot else ""
+        safe_name = escape(msg.author_name, quote=True)
+        lines.append(
+            f'<message user="{safe_name}"{role}>'
+            f'{escape(msg.content)}'
+            f'</message>'
+        )
     return "\n".join(lines)
 
 

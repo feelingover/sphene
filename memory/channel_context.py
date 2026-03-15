@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -191,14 +192,17 @@ class ChannelContextStore:
 
 # シングルトン
 _store: ChannelContextStore | None = None
+_store_lock = threading.Lock()
 
 
 def get_channel_context_store() -> ChannelContextStore:
     """ChannelContextStoreのシングルトンインスタンスを取得する"""
     global _store
     if _store is None:
-        _store = ChannelContextStore()
-        logger.info(
-            f"ChannelContextStore初期化: storage_type={config.STORAGE_TYPE}"
-        )
+        with _store_lock:
+            if _store is None:
+                _store = ChannelContextStore()
+                logger.info(
+                    f"ChannelContextStore初期化: storage_type={config.STORAGE_TYPE}"
+                )
     return _store

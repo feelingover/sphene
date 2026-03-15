@@ -31,11 +31,15 @@ class TestCommandsExtensive:
         mock_config = MagicMock()
         mock_config.set_behavior.return_value = True
         mock_config_manager.get_config.return_value = mock_config
-        
+
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
-        
+        mock_member = MagicMock(spec=discord.Member)
+        mock_member.guild_permissions = MagicMock()
+        mock_member.guild_permissions.administrator = True
+        interaction.user = mock_member
+
         select = ModeSelect(guild_id=123)
         with patch.object(ModeSelect, "values", new_callable=PropertyMock) as mock_values:
             mock_values.return_value = ["allow"]
@@ -52,11 +56,15 @@ class TestCommandsExtensive:
         mock_config = MagicMock()
         mock_config.set_translation_enabled.return_value = True
         mock_config_manager.get_config.return_value = mock_config
-        
+
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
-        
+        mock_member = MagicMock(spec=discord.Member)
+        mock_member.guild_permissions = MagicMock()
+        mock_member.guild_permissions.administrator = True
+        interaction.user = mock_member
+
         select = TranslationSelect(guild_id=123)
         with patch.object(TranslationSelect, "values", new_callable=PropertyMock) as mock_values:
             mock_values.return_value = ["true"]
@@ -73,11 +81,15 @@ class TestCommandsExtensive:
         mock_config = MagicMock()
         mock_config.clear_channels.return_value = True
         mock_config_manager.get_config.return_value = mock_config
-        
+
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
-        
+        mock_member = MagicMock(spec=discord.Member)
+        mock_member.guild_permissions = MagicMock()
+        mock_member.guild_permissions.administrator = True
+        interaction.user = mock_member
+
         view = ClearConfirmView(guild_id=123)
         
         # confirmボタンのコールバックを直接呼ぶ

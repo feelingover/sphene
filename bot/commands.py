@@ -36,6 +36,9 @@ class ModeSelect(ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """モード選択時の処理"""
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
+            return
         # 保存済みのguild_idを使用
         channel_config = config_manager.get_config(self.guild_id)
 
@@ -80,6 +83,9 @@ class TranslationSelect(ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """翻訳設定選択時の処理"""
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
+            return
         # 保存済みのguild_idを使用
         channel_config = config_manager.get_config(self.guild_id)
 
@@ -129,6 +135,9 @@ class ClearConfirmView(ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         """確認ボタンのコールバック"""
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
+            return
         # 保存済みのguild_idを使用
         channel_config = config_manager.get_config(self.guild_id)
 

@@ -53,7 +53,7 @@ async def translate_text(text: str, target_language: str = "english") -> str | N
         result = await asyncio.to_thread(_sync_translate)
         return result.text
     except Exception as e:
-        logger.error(f"翻訳エラー: {e}")
+        logger.error(f"翻訳エラー: {e}", exc_info=True)
         return None
 
 

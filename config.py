@@ -24,7 +24,9 @@ VERTEX_AI_LOCATION: str = os.getenv("VERTEX_AI_LOCATION", "asia-northeast1")
 # ユーザーの意図を軽量LLMで判定し、grounding/function_calling/noneを動的選択する
 ROUTER_ENABLED: bool = os.getenv("ROUTER_ENABLED", "true").lower() == "true"
 
-DISCORD_TOKEN: str = str(os.getenv("DISCORD_TOKEN"))
+DISCORD_TOKEN: str = os.getenv("DISCORD_TOKEN", "")
+if not DISCORD_TOKEN:
+    raise ValueError("DISCORD_TOKEN is required")
 BOT_NAME: str = str(os.getenv("BOT_NAME", "スフェーン"))
 COMMAND_GROUP_NAME: str = str(os.getenv("COMMAND_GROUP_NAME", INSTANCE_NAME))
 SYSTEM_PROMPT_FILENAME: str = str(os.getenv("SYSTEM_PROMPT_FILENAME", "system.txt"))
