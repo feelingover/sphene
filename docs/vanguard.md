@@ -1,0 +1,158 @@
+# VANGUARD システム
+
+> **VANGUARD_ENABLED** (デフォルト: `true`) で一括制御
+> 制御対象: 自律応答・LLM Judge・応答多様性・リアクション
+
+## アーキテクチャ
+
+```
+メッセージ受信
+│
+├─ @メンション / リプライ / 名前呼び → 即応答 + エンゲージメント記録
+│
+└─ それ以外 → RuleBasedJudge でスコアリング
+                  │
+                  ├─ should_react=True → asyncio.create_task でリアクション先行実行（返信と並列）
+                  │
+                  ├─ スコア >= LLM_THRESHOLD_HIGH → 即応答 (react_only 以外)
+                  ├─ スコア <= LLM_THRESHOLD_LOW  → スキップ（リアクション済みの場合あり）
+                  └─ 中間スコア → LLM Judge で二次判定
+                                    │
+                                    ├─ llm_should_react=True かつ ルールベースが未リアクション
+                                    │     → asyncio.create_task でリアクション発火
+                                    ├─ respond: true  → 応答 (タイプもLLMが決定)
+                                    └─ respond: false → スキップ
+```
+
+### スコアリングテーブル
+
+| 条件 | スコア | 備考 |
+|------|--------|------|
+| @メンション | 100 | 即応答（スコアリング不要） |
+| ボットへのリプライ | 100 | 即応答（スコアリング不要） |
+| 名前呼び（BOT_NAME） | 80 | 即応答（スコアリング不要） |
+| エンゲージメント中 | +ENGAGEMENT_BOOST | 応答後 ENGAGEMENT_DURATION_SECONDS 以内 |
+| 疑問符（? / ？）で終わる | +20 | |
+| キーワードマッチ | +15 | JUDGE_KEYWORDS のいずれか（1回のみ） |
+| **得意話題** | **+15** | 直近の会話にキーワードが含まれる場合 |
+| **沈黙後の発言** | **+10** | 直前の発言から10分以上経過 |
+| **2人会話** | **-20** | 直近の会話参加者が2名のみ（Bot除く） |
+| **ボット言及なし** | **-10** | 直近の会話でBotの名前が出ていない |
+| **高頻度会話** | **-10** | 直近10件が60秒以内に集中 |
+| **会話減衰** | **-10 ~ -15** | 直近の発言文字数が減少傾向 |
+| クールダウン中 | -50 | 応答後 COOLDOWN_SECONDS 以内 |
+
+最終スコアは 0-100 にクランプされる。
+
+### 応答多様性 (Response Diversity)
+
+`VANGUARD_ENABLED` が有効な場合、スコアやLLM判定に応じて応答の形式が変化する。
+
+| スコア / 状況 | 応答タイプ | 挙動 |
+|---------------|------------|------|
+| `JUDGE_SCORE_FULL_RESPONSE` (60) 以上 | `full_response` | 通常の文章による応答 |
+| `JUDGE_SCORE_SHORT_ACK` (30) 以上 | `short_ack` | 短い相槌や同意のみ |
+| それ未満 | `react_only` | リアクションのみ（`VANGUARD_ENABLED=true` 時は `should_react` で代替） |
+
+**注:** LLM Judgeが有効な場合、上記の閾値に関わらずLLMが最適な `response_type` (`full`, `short`, `react`) を選択し、その決定が優先される。
+
+### リアクション機能
+
+`VANGUARD_ENABLED=true` にすると、返信とは独立してリアクションを追加できる。
+
+| 特徴 | 説明 |
+|------|------|
+| **独立判定** | `should_react` は `should_respond` と別フィールドで管理。低スコアでも反応可能 |
+| **先行実行** | LLM 生成を待たず `asyncio.create_task` でリアクションを即時発火（「生きてる感」演出） |
+| **LLM絵文字** | LLM Judge 有効時、LLM が文脈に合う絵文字（最大2個）を選択して返す |
+| **クールダウンなし** | `record=False` で発火するため、リアクションはクールダウンカウントに含まれない |
+
+```
+VANGUARD_ENABLED=true
+JUDGE_REACT_THRESHOLD=5   # score >= 5 でリアクション実行（JUDGE_SCORE_THRESHOLD より低く設定）
+```
+
+## コンテキストの統合
+
+自律応答とトリガー応答（メンション等）は、以下の要素を共有して自然な会話を実現している。
+
+- **チャンネル会話履歴**: チャンネルごとの `Sphene` インスタンスに保存されたマルチターンの履歴（ボット自身の発言を含む）。
+- **短期記憶（Rawコンテキスト）**: チャンネルバッファにある直近10件の生の会話。
+- **チャンネル要約**: `Summarizer` によって生成された長期的な文脈の要約。
+
+これにより、自律応答で「さっき言ってたことだけど〜」と過去に言及したり、メンション時に直前の雑談を踏まえた回答をすることが可能。
+
+### エンゲージメント・タイムライン
+
+```
+ボット応答
+  │
+  ├─ [0 ~ COOLDOWN_SECONDS]              クールダウン(-50) + エンゲージメント(+boost)
+  ├─ [COOLDOWN_SECONDS ~ ENGAGEMENT_DURATION_SECONDS]  エンゲージメント(+boost) のみ
+  └─ [ENGAGEMENT_DURATION_SECONDS ~]      通常状態
+```
+
+- `_last_response_times` を共有し、クールダウンとエンゲージメントの両方を判定
+- クールダウン期間中もエンゲージメントブーストは加算される（相殺関係）
+- メンション/リプライ/名前呼びによる応答もエンゲージメントを記録する
+
+### LLM Judge
+
+中間スコア帯のメッセージに対して、安価なLLMで「自然に参加すべきか」「その形式」「リアクションするか」を二次判定する。
+直近15メッセージのコンテキストを渡し、JSON形式で以下を返す:
+
+```json
+{
+  "respond": true,
+  "response_type": "full"|"short"|"react"|"none",
+  "react": true,
+  "emojis": ["🤔", "💡"],
+  "reason": "判定理由"
+}
+```
+
+`react`・`emojis` フィールドは `VANGUARD_ENABLED=true` 時に利用される。ルールベースが未リアクションの場合のみ、LLM指定の絵文字でリアクションを発火する（重複防止）。
+
+## パラメータリファレンス
+
+### 短期記憶
+
+| 変数 | デフォルト | 説明 |
+|------|-----------|------|
+| `CHANNEL_BUFFER_SIZE` | `50` | チャンネルごとのバッファ保持メッセージ数 |
+| `CHANNEL_BUFFER_TTL_MINUTES` | `30` | バッファ内メッセージの有効期限（分） |
+
+### 自律応答（ルールベース）
+
+| 変数 | デフォルト | 説明 |
+|------|-----------|------|
+| `VANGUARD_ENABLED` | `true` | 自律応答・LLM Judge・応答多様性・リアクションの一括有効化 |
+| `JUDGE_SCORE_THRESHOLD` | `20` | ルールベース判定の最小応答閾値 |
+| `JUDGE_SCORE_FULL_RESPONSE` | `60` | 通常応答（full）を返すスコア閾値 |
+| `JUDGE_SCORE_SHORT_ACK` | `30` | 相槌（short）を返すスコア閾値 |
+| `COOLDOWN_SECONDS` | `120` | 応答後のクールダウン期間（秒）。-50 ペナルティ |
+| `ENGAGEMENT_DURATION_SECONDS` | `300` | エンゲージメント期間（秒）。応答後この期間中はブースト |
+| `ENGAGEMENT_BOOST` | `40` | エンゲージメント中のスコア加算値 |
+| `JUDGE_KEYWORDS` | `""` | カンマ区切りのキーワード。マッチで +15 |
+
+### LLM Judge（二次判定）
+
+| 変数 | デフォルト | 説明 |
+|------|-----------|------|
+| `JUDGE_MODEL` | `""` | 判定用モデル。空なら GEMINI_MODEL を使用 |
+| `JUDGE_LLM_THRESHOLD_LOW` | `20` | この値以下はLLM判定せずスキップ |
+| `JUDGE_LLM_THRESHOLD_HIGH` | `60` | この値以上はLLM判定せず即応答 |
+
+### リアクション機能
+
+| 変数 | デフォルト | 説明 |
+|------|-----------|------|
+| `JUDGE_REACT_THRESHOLD` | `5` | リアクション実行の最低スコア閾値（`JUDGE_SCORE_THRESHOLD` より低く設定推奨） |
+
+### チューニングガイド
+
+- **応答しすぎる場合**: `JUDGE_SCORE_THRESHOLD` を上げる / `ENGAGEMENT_BOOST` を下げる / `COOLDOWN_SECONDS` を伸ばす
+- **応答が少なすぎる場合**: `JUDGE_SCORE_THRESHOLD` を下げる / `ENGAGEMENT_BOOST` を上げる / `ENGAGEMENT_DURATION_SECONDS` を伸ばす
+- **LLM Judgeの判定範囲を広げたい場合**: `JUDGE_LLM_THRESHOLD_LOW` を下げる / `JUDGE_LLM_THRESHOLD_HIGH` を下げる
+- **リアクションが多すぎる場合**: `JUDGE_REACT_THRESHOLD` を上げる（スコアが高い会話のみリアクション）
+- **リアクションが少なすぎる場合**: `JUDGE_REACT_THRESHOLD` を下げる（デフォルト5、最低0まで下げられる）

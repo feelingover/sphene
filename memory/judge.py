@@ -119,7 +119,7 @@ class RuleBasedJudge:
         response_type = self._determine_response_type(score, is_engaged)
 
         # リアクション判定（返信とは独立）
-        should_react = config.REACTION_ENABLED and score >= config.JUDGE_REACT_THRESHOLD
+        should_react = config.VANGUARD_ENABLED and score >= config.JUDGE_REACT_THRESHOLD
 
         logger.debug(
             f"Judge評価: チャンネル={message.channel_id}, "
@@ -174,9 +174,6 @@ class RuleBasedJudge:
 
     def _determine_response_type(self, score: int, is_engaged: bool) -> str:
         """スコアに基づいて応答タイプを決定する"""
-        if not config.RESPONSE_DIVERSITY_ENABLED:
-            return "full_response"
-        
         full_threshold = config.JUDGE_SCORE_FULL_RESPONSE
         short_threshold = config.JUDGE_SCORE_SHORT_ACK
         

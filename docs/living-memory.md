@@ -80,13 +80,14 @@
 - `CHANNEL_BUFFER_TTL_MINUTES`: メッセージをバッファに保持する時間（分） (デフォルト: 30)
 
 ### 中期記憶 (Channel Context)
-- `CHANNEL_CONTEXT_ENABLED`: チャンネルコンテキスト（ローリング要約）機能を有効にするか (デフォルト: false)
+- `LIVING_MEMORY_ENABLED`: チャンネルコンテキスト・ユーザープロファイル・反省会を一括有効にするか (デフォルト: true)
 - `SUMMARIZE_EVERY_N_MESSAGES`: 何件のメッセージごとに要約を実行するか (デフォルト: 20)
 - `SUMMARIZE_EVERY_N_MINUTES`: 何分経過で要約を実行するか (デフォルト: 15)
 - `SUMMARIZE_MODEL`: 要約に使用するモデル名（空の場合はメインモデルを使用）
 
 ### 自律応答 (Autonomous Response) & LLM Judge
-- `AUTONOMOUS_RESPONSE_ENABLED`: ボットの自律的な応答（Judgeによる判定）を有効にするか (デフォルト: false)
+> 詳細は [docs/vanguard.md](./vanguard.md) を参照
+- `VANGUARD_ENABLED`: 自律応答・LLM Judge・応答多様性・リアクションを一括有効にするか (デフォルト: true)
 - `JUDGE_SCORE_THRESHOLD`: 応答するための最低スコア (デフォルト: 20)
 - `JUDGE_SCORE_FULL_RESPONSE`: フル応答するためのスコア閾値 (デフォルト: 60)
 - `JUDGE_SCORE_SHORT_ACK`: 相槌などの短い応答をするためのスコア閾値 (デフォルト: 30)
@@ -94,20 +95,16 @@
 - `ENGAGEMENT_DURATION_SECONDS`: 応答後のエンゲージメント（会話継続）とみなす期間（秒） (デフォルト: 300)
 - `ENGAGEMENT_BOOST`: エンゲージメント中のスコア加算値 (デフォルト: 40)
 - `JUDGE_KEYWORDS`: スコアをブーストするキーワード（カンマ区切り）
-- `LLM_JUDGE_ENABLED`: LLMによる二次判定を有効にするか。`AUTONOMOUS_RESPONSE_ENABLED=true`が必要 (デフォルト: false)
 - `JUDGE_MODEL`: LLM Judgeに使用するモデル名（空の場合はメインモデルを使用）
 - `JUDGE_LLM_THRESHOLD_LOW`: LLM Judgeが発動するスコアの下限 (デフォルト: 20)
 - `JUDGE_LLM_THRESHOLD_HIGH`: LLM Judgeが発動するスコアの上限 (デフォルト: 60)
-- `RESPONSE_DIVERSITY_ENABLED`: スコアに応じてリアクション/相槌/フル応答を使い分ける機能を有効にするか (デフォルト: false)
 
 ### ユーザープロファイル (User Profile)
-- `USER_PROFILE_ENABLED`: ユーザープロファイル機能を有効にするか (デフォルト: false)
 - `FAMILIARITY_THRESHOLD_ACQUAINTANCE`: 親密度がstrangerからacquaintanceに上がる会話回数 (デフォルト: 6)
 - `FAMILIARITY_THRESHOLD_REGULAR`: 親密度がacquaintanceからregularに上がる会話回数 (デフォルト: 31)
 - `FAMILIARITY_THRESHOLD_CLOSE`: 親密度がregularからcloseに上がる会話回数 (デフォルト: 101)
 
 ### 長期記憶: 反省会エンジン (Reflection)
-- `REFLECTION_ENABLED`: 反省会エンジン機能を有効にするか (デフォルト: false)
 - `REFLECTION_LULL_MINUTES`: 沈黙が何分続いたら反省会をトリガーするか (デフォルト: 10)
 - `REFLECTION_MIN_MESSAGES`: 反省会をトリガーするために必要な最低メッセージ数 (デフォルト: 10)
 - `REFLECTION_MAX_BUFFER_MESSAGES`: バッファ蓄積量での強制反省会トリガー件数 (デフォルト: 30)
@@ -124,7 +121,7 @@
 - `FACT_STORE_ARCHIVE_ENABLED`: `true` にすると削除ファクトをアーカイブストレージに保存する。`false` の場合はログ出力のみ (デフォルト: false)
 
 ### 長期記憶: ベクトル検索 (Vector Search)
-- `VECTOR_SEARCH_ENABLED`: ハイブリッド検索（キーワード + コサイン類似度）を有効にするか。`REFLECTION_ENABLED=true`が必要 (デフォルト: false)
+- `VECTOR_SEARCH_ENABLED`: ハイブリッド検索（キーワード + コサイン類似度）を有効にするか。`LIVING_MEMORY_ENABLED=true`が必要 (デフォルト: false)
 - `EMBEDDING_MODEL`: Embedding生成に使用するモデル名 (デフォルト: text-embedding-004)
 - `HYBRID_ALPHA`: ハイブリッドスコアのバランス係数。0=Jaccardのみ、1=ベクトルのみ (デフォルト: 0.5)
 

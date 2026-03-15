@@ -127,7 +127,7 @@ class ReflectionEngine:
             else:
                 logger.warning(f"反省会結果が空: channel_id={channel_id}")
 
-            if config.USER_PROFILE_TAGS_ENABLED:
+            if config.LIVING_MEMORY_ENABLED:
                 await asyncio.to_thread(self._call_user_profile_llm, messages)
         except Exception as e:
             logger.error(

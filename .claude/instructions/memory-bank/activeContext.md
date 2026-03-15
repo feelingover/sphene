@@ -5,7 +5,8 @@ applyTo: "**"
 
 ## Current State (2026/3)
 
-- 記憶システム「リビングメモリー (Living Memory)」の仕様を `docs/living-memory.md` に集約。
+- **機能グループフラグへの統合 (issue #108)**: 旧8フラグを `VANGUARD_ENABLED` / `LIVING_MEMORY_ENABLED` の2グループフラグに統合。デフォルト `true`。
+- 記憶システム「リビングメモリー (Living Memory)」の仕様を `docs/living-memory.md` に集約。`docs/vanguard.md` 新規追加。
 - 全テスト通過（668件）、カバレッジ 89%、mypy 72ファイル no issues
 - ファクトストア忘却機能（issue #80）実装済み。`FACT_STORE_CLEANUP_THRESHOLD` / `FACT_ACCESS_BOOST_WEIGHT` / `FACT_STORE_ARCHIVE_ENABLED` で制御。
 - 記憶機能 Phase 3B（Vertex AI Embeddings + ハイブリッド検索）実装済み。`VECTOR_SEARCH_ENABLED` で後方互換フラグ制御。
@@ -20,6 +21,17 @@ applyTo: "**"
 - コードレビュー Medium/Low 全課題対応完了（Group A〜E）。
 
 ## Recent Changes
+
+### 2026/3: 機能フラグをグループフラグに統合 (issue #108)
+
+旧8フラグが散在していた状態を2グループフラグに統合してデフォルト有効化。
+
+| 新フラグ | 旧フラグ（廃止） |
+|---------|---------------|
+| `VANGUARD_ENABLED` (default: true) | `AUTONOMOUS_RESPONSE_ENABLED`, `LLM_JUDGE_ENABLED`, `RESPONSE_DIVERSITY_ENABLED`, `REACTION_ENABLED` |
+| `LIVING_MEMORY_ENABLED` (default: true) | `CHANNEL_CONTEXT_ENABLED`, `USER_PROFILE_ENABLED`, `USER_PROFILE_TAGS_ENABLED`, `REFLECTION_ENABLED` |
+
+変更ファイル: `config.py`, `bot/events.py`, `bot/discord_bot.py`, `memory/judge.py`, `memory/reflection.py`, `docs/vanguard.md`(新規), `docs/living-memory.md`, `.env.sample`, `README.md`, テスト5ファイル
 
 ### 2026/3: 自発会話機能を削除 (issue #104)
 

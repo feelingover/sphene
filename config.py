@@ -61,11 +61,13 @@ MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "5"))
 CHANNEL_BUFFER_SIZE: int = int(os.getenv("CHANNEL_BUFFER_SIZE", "50"))
 CHANNEL_BUFFER_TTL_MINUTES: int = int(os.getenv("CHANNEL_BUFFER_TTL_MINUTES", "30"))
 
+# === 機能グループフラグ ===
+# VANGUARD: 自律応答・LLM Judge・応答多様性・リアクション を一括制御
+VANGUARD_ENABLED: bool = os.getenv("VANGUARD_ENABLED", "true").lower() == "true"
+# LIVING_MEMORY: チャンネルコンテキスト・ユーザープロファイル・ユーザープロファイルタグ・反省会 を一括制御
+LIVING_MEMORY_ENABLED: bool = os.getenv("LIVING_MEMORY_ENABLED", "true").lower() == "true"
+
 # 自律応答
-# 依存: LLM_JUDGE_ENABLED はこのフラグが True のときのみ有効
-AUTONOMOUS_RESPONSE_ENABLED: bool = (
-    os.getenv("AUTONOMOUS_RESPONSE_ENABLED", "false").lower() == "true"
-)
 JUDGE_SCORE_THRESHOLD: int = int(os.getenv("JUDGE_SCORE_THRESHOLD", "20"))
 JUDGE_SCORE_FULL_RESPONSE: int = int(os.getenv("JUDGE_SCORE_FULL_RESPONSE", "60"))
 JUDGE_SCORE_SHORT_ACK: int = int(os.getenv("JUDGE_SCORE_SHORT_ACK", "30"))
@@ -75,38 +77,23 @@ ENGAGEMENT_BOOST: int = int(os.getenv("ENGAGEMENT_BOOST", "40"))
 JUDGE_KEYWORDS: str = os.getenv("JUDGE_KEYWORDS", "")
 
 # LLM Judge（二次判定）
-# 依存: AUTONOMOUS_RESPONSE_ENABLED=True が必要
-LLM_JUDGE_ENABLED: bool = (
-    os.getenv("LLM_JUDGE_ENABLED", "false").lower() == "true"
-)
 JUDGE_LLM_THRESHOLD_LOW: int = int(os.getenv("JUDGE_LLM_THRESHOLD_LOW", "20"))
 JUDGE_LLM_THRESHOLD_HIGH: int = int(os.getenv("JUDGE_LLM_THRESHOLD_HIGH", "60"))
 
 # === チャンネルコンテキスト設定 ===
-CHANNEL_CONTEXT_ENABLED: bool = (
-    os.getenv("CHANNEL_CONTEXT_ENABLED", "false").lower() == "true"
-)
 SUMMARIZE_EVERY_N_MESSAGES: int = int(os.getenv("SUMMARIZE_EVERY_N_MESSAGES", "20"))
 SUMMARIZE_EVERY_N_MINUTES: int = int(os.getenv("SUMMARIZE_EVERY_N_MINUTES", "15"))
 
-# === 応答多様性設定 ===
-RESPONSE_DIVERSITY_ENABLED: bool = (
-    os.getenv("RESPONSE_DIVERSITY_ENABLED", "false").lower() == "true"
-)
-
-# === リアクション機能設定 ===
-REACTION_ENABLED: bool = os.getenv("REACTION_ENABLED", "false").lower() == "true"
+# リアクション機能
 # should_react=True になる最低スコア閾値（JUDGE_SCORE_THRESHOLD より低く設定する）
 JUDGE_REACT_THRESHOLD: int = int(os.getenv("JUDGE_REACT_THRESHOLD", "5"))
 
 # === ユーザープロファイル設定 (Phase 2B) ===
-USER_PROFILE_ENABLED: bool = os.getenv("USER_PROFILE_ENABLED", "false").lower() == "true"
 FAMILIARITY_THRESHOLD_ACQUAINTANCE: int = int(os.getenv("FAMILIARITY_THRESHOLD_ACQUAINTANCE", "6"))
 FAMILIARITY_THRESHOLD_REGULAR: int = int(os.getenv("FAMILIARITY_THRESHOLD_REGULAR", "31"))
 FAMILIARITY_THRESHOLD_CLOSE: int = int(os.getenv("FAMILIARITY_THRESHOLD_CLOSE", "101"))
 
 # === ユーザープロファイル拡張設定 (Phase 3B) ===
-USER_PROFILE_TAGS_ENABLED: bool = os.getenv("USER_PROFILE_TAGS_ENABLED", "false").lower() == "true"
 USER_PROFILE_TAGS_LIMIT: int = int(os.getenv("USER_PROFILE_TAGS_LIMIT", "30"))
 USER_PROFILE_FACTS_LIMIT: int = int(os.getenv("USER_PROFILE_FACTS_LIMIT", "30"))
 CHANNELS_ACTIVE_LIMIT: int = int(os.getenv("CHANNELS_ACTIVE_LIMIT", "20"))
@@ -127,7 +114,6 @@ FACT_STORE_ARCHIVE_ENABLED: bool = os.getenv("FACT_STORE_ARCHIVE_ENABLED", "fals
 FACT_ARCHIVE_MAX_ENTRIES: int = int(os.getenv("FACT_ARCHIVE_MAX_ENTRIES", "500"))
 
 # === 反省会エンジン設定 (Phase 3A) ===
-REFLECTION_ENABLED: bool = os.getenv("REFLECTION_ENABLED", "false").lower() == "true"
 REFLECTION_LULL_MINUTES: int = int(os.getenv("REFLECTION_LULL_MINUTES", "10"))
 REFLECTION_MIN_MESSAGES: int = int(os.getenv("REFLECTION_MIN_MESSAGES", "10"))
 # バッファ量ベースの反省会トリガー閾値。
@@ -139,6 +125,3 @@ EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
 VECTOR_SEARCH_ENABLED: bool = os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
 HYBRID_ALPHA: float = float(os.getenv("HYBRID_ALPHA", "0.5"))  # ベクトル/キーワードスコアのバランス係数
 
-# フィーチャーフラグの依存関係チェック（起動時バリデーション）
-if LLM_JUDGE_ENABLED and not AUTONOMOUS_RESPONSE_ENABLED:
-    raise ValueError("LLM_JUDGE_ENABLED requires AUTONOMOUS_RESPONSE_ENABLED=True")

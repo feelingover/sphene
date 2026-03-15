@@ -110,10 +110,8 @@ class TestEventHandling:
         mock_config,
     ):
         """ボットがメンションされていない場合のテスト"""
-        mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
-        mock_config.CHANNEL_CONTEXT_ENABLED = False
-        mock_config.USER_PROFILE_ENABLED = False
-        mock_config.REFLECTION_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
+        mock_config.LIVING_MEMORY_ENABLED = False
         # channel_configの代わりにconfig_managerを使用
         mock_channel_config = MagicMock()
         mock_channel_config.can_bot_speak.return_value = True
@@ -498,11 +496,9 @@ class TestCollectAiContextFacts:
     """_collect_ai_context のファクト検索テスト"""
 
     @pytest.mark.asyncio
-    @patch("config.REFLECTION_ENABLED", True)
-    @patch("config.CHANNEL_CONTEXT_ENABLED", False)
-    @patch("config.USER_PROFILE_ENABLED", False)
+    @patch("config.LIVING_MEMORY_ENABLED", True)
     async def test_collect_ai_context_injects_facts(self):
-        """REFLECTION_ENABLED=True のとき relevant_facts_str にファクトが含まれること"""
+        """LIVING_MEMORY_ENABLED=True のとき relevant_facts_str にファクトが含まれること"""
         from memory.fact_store import Fact
         from datetime import timezone
         import uuid
@@ -537,11 +533,9 @@ class TestCollectAiContextFacts:
         assert "Aさんは先週Rustを始めた" in relevant_facts_str
 
     @pytest.mark.asyncio
-    @patch("config.REFLECTION_ENABLED", False)
-    @patch("config.CHANNEL_CONTEXT_ENABLED", False)
-    @patch("config.USER_PROFILE_ENABLED", False)
+    @patch("config.LIVING_MEMORY_ENABLED", False)
     async def test_collect_ai_context_no_facts_when_disabled(self):
-        """REFLECTION_ENABLED=False のとき relevant_facts_str が空であること"""
+        """LIVING_MEMORY_ENABLED=False のとき relevant_facts_str が空であること"""
         message = MagicMock()
         message.channel.id = 12345
         message.author.id = 67890
@@ -568,11 +562,9 @@ class TestHandleMessageReflectionTrigger:
         self, mock_config_manager, mock_is_bot_mentioned, mock_config
     ):
         """バッファが上限に達したとき反省会エンジンが呼ばれること"""
-        mock_config.REFLECTION_ENABLED = True
+        mock_config.LIVING_MEMORY_ENABLED = True
         mock_config.REFLECTION_MAX_BUFFER_MESSAGES = 5
-        mock_config.CHANNEL_CONTEXT_ENABLED = False
-        mock_config.USER_PROFILE_ENABLED = False
-        mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
 
         mock_channel_config = MagicMock()
         mock_channel_config.can_bot_speak.return_value = True
@@ -612,11 +604,9 @@ class TestHandleMessageReflectionTrigger:
     async def test_reflection_not_triggered_when_disabled(
         self, mock_config_manager, mock_is_bot_mentioned, mock_config
     ):
-        """REFLECTION_ENABLED=False のとき反省会エンジンが呼ばれないこと"""
-        mock_config.REFLECTION_ENABLED = False
-        mock_config.CHANNEL_CONTEXT_ENABLED = False
-        mock_config.USER_PROFILE_ENABLED = False
-        mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
+        """LIVING_MEMORY_ENABLED=False のとき反省会エンジンが呼ばれないこと"""
+        mock_config.LIVING_MEMORY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
 
         mock_channel_config = MagicMock()
         mock_channel_config.can_bot_speak.return_value = True
@@ -668,7 +658,7 @@ class TestTryAutonomousResponseReaction:
         """should_react=True のとき asyncio.create_task でリアクションが発火すること"""
         mock_config.JUDGE_LLM_THRESHOLD_HIGH = 60
         mock_config.JUDGE_LLM_THRESHOLD_LOW = 20
-        mock_config.LLM_JUDGE_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
         from memory.judge import JudgeResult
@@ -703,7 +693,7 @@ class TestTryAutonomousResponseReaction:
         """should_react=False のとき asyncio.create_task が呼ばれないこと"""
         mock_config.JUDGE_LLM_THRESHOLD_HIGH = 60
         mock_config.JUDGE_LLM_THRESHOLD_LOW = 20
-        mock_config.LLM_JUDGE_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
         from memory.judge import JudgeResult
@@ -740,7 +730,7 @@ class TestTryAutonomousResponseReaction:
         """高スコアで should_react=True のとき、リアクションと返信が両方実行されること"""
         mock_config.JUDGE_LLM_THRESHOLD_HIGH = 60
         mock_config.JUDGE_LLM_THRESHOLD_LOW = 20
-        mock_config.LLM_JUDGE_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
 
         from memory.judge import JudgeResult
@@ -780,7 +770,7 @@ class TestTryAutonomousResponseReaction:
         """LLM Judge が should_react=True を返したとき、リアクションが発火すること"""
         mock_config.JUDGE_LLM_THRESHOLD_HIGH = 60
         mock_config.JUDGE_LLM_THRESHOLD_LOW = 20
-        mock_config.LLM_JUDGE_ENABLED = True
+        mock_config.VANGUARD_ENABLED = True
         mock_config.BOT_NAME = "テストボット"
 
         from memory.judge import JudgeResult

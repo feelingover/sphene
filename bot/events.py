@@ -106,14 +106,14 @@ async def _collect_ai_context(
     buffer = get_channel_buffer()
     channel_context = buffer.get_context_string(message.channel.id, limit=10)
 
-    if config.CHANNEL_CONTEXT_ENABLED:
+    if config.LIVING_MEMORY_ENABLED:
         from memory.channel_context import get_channel_context_store
 
         ctx = get_channel_context_store().get_context(message.channel.id)
         channel_summary = ctx.format_for_injection()
         topic_keywords = ctx.topic_keywords
 
-    if config.USER_PROFILE_ENABLED:
+    if config.LIVING_MEMORY_ENABLED:
         from memory.user_profile import get_user_profile_store
 
         profile = get_user_profile_store().get_profile(
@@ -125,7 +125,7 @@ async def _collect_ai_context(
             profile.format_for_persona(),
         ]))
 
-    if config.REFLECTION_ENABLED:
+    if config.LIVING_MEMORY_ENABLED:
         from ai.client import generate_embedding
         from memory.fact_store import extract_keywords, get_fact_store
 
@@ -209,7 +209,7 @@ def _post_response_update(
     """
     from memory.short_term import ChannelMessage, get_channel_buffer
 
-    if config.USER_PROFILE_ENABLED and topic_keywords:
+    if config.LIVING_MEMORY_ENABLED and topic_keywords:
         from memory.user_profile import get_user_profile_store
 
         get_user_profile_store().update_last_topic(message.author.id, topic_keywords)
@@ -337,7 +337,7 @@ async def _try_autonomous_response(
         return
 
     # 中間スコア: LLM Judgeで二次判定
-    if config.LLM_JUDGE_ENABLED:
+    if config.VANGUARD_ENABLED:
         from memory.llm_judge import get_llm_judge
 
         context = buffer.get_context_string(message.channel.id, limit=15)
@@ -608,7 +608,7 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         )
 
         # チャンネルコンテキスト: メッセージカウント + 要約トリガー
-        if config.CHANNEL_CONTEXT_ENABLED:
+        if config.LIVING_MEMORY_ENABLED:
             from memory.channel_context import get_channel_context_store
             from memory.summarizer import get_summarizer
 
@@ -618,7 +618,7 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             get_summarizer().maybe_summarize(message.channel.id, recent)
 
         # ユーザープロファイル: メッセージ記録
-        if config.USER_PROFILE_ENABLED:
+        if config.LIVING_MEMORY_ENABLED:
             from memory.user_profile import get_user_profile_store
 
             get_user_profile_store().record_message(
@@ -626,7 +626,7 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             )
 
         # バッファ量ベースの反省会トリガー
-        if config.REFLECTION_ENABLED:
+        if config.LIVING_MEMORY_ENABLED:
             from memory.reflection import get_reflection_engine
 
             engine = get_reflection_engine()
@@ -650,21 +650,21 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         is_mentioned, question, is_reply = await is_bot_mentioned(bot, message)
         if is_mentioned:
             # ユーザープロファイル: ボットメンション記録
-            if config.USER_PROFILE_ENABLED:
+            if config.LIVING_MEMORY_ENABLED:
                 from memory.user_profile import get_user_profile_store
 
                 get_user_profile_store().record_bot_mention(message.author.id)
 
             await process_conversation(message, question, is_reply, images)
             # エンゲージメント記録（自律応答のスコアブーストに使用）
-            if config.AUTONOMOUS_RESPONSE_ENABLED:
+            if config.VANGUARD_ENABLED:
                 from memory.judge import get_judge
 
                 get_judge().record_response(message.channel.id)
             return
 
         # 自律応答: メンションされていない場合の判定
-        if config.AUTONOMOUS_RESPONSE_ENABLED:
+        if config.VANGUARD_ENABLED:
             await _try_autonomous_response(bot, message, images)
 
     except Exception as e:
