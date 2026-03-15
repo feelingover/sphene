@@ -5,6 +5,10 @@ applyTo: "**"
 
 ## Completed Features
 
+- **機能フラグをグループフラグに統合 (issue #108)**:
+  - 旧8フラグを `VANGUARD_ENABLED`（自律応答・LLM Judge・応答多様性・リアクション）と `LIVING_MEMORY_ENABLED`（チャンネルコンテキスト・ユーザープロファイル・ユーザープロファイルタグ・反省会）に統合
+  - デフォルトを `false` → `true` に変更（デフォルト有効化）
+  - `docs/vanguard.md` 新規作成（旧 `docs/autonomous-response.md` から移行）
 - **ファクトストア忘却機能 (issue #80)**:
   - `Fact` に `access_count: int` / `last_accessed_at: datetime | None` フィールド追加
   - `effective_relevance_score()`: 時間減衰 + 参照頻度ブースト（`min(1.0, decay + log1p(count) * weight)`）

@@ -316,15 +316,15 @@ class TestGetReflectionEngine:
 
 
 class TestUserProfileTags:
-    """USER_PROFILE_TAGS_ENABLED フラグのテスト"""
+    """LIVING_MEMORY_ENABLED フラグのテスト（ユーザープロファイルタグ抽出）"""
 
     @pytest.mark.asyncio
     async def test_user_profile_llm_not_called_when_disabled(self):
-        """USER_PROFILE_TAGS_ENABLED=False のとき _call_user_profile_llm が呼ばれないこと"""
+        """LIVING_MEMORY_ENABLED=False のとき _call_user_profile_llm が呼ばれないこと"""
         engine = ReflectionEngine()
         messages = [_make_message() for _ in range(15)]
 
-        with patch("config.USER_PROFILE_TAGS_ENABLED", False):
+        with patch("config.LIVING_MEMORY_ENABLED", False):
             with patch.object(engine, "_call_reflection_llm", return_value=[]):
                 with patch.object(engine, "_apply_facts"):
                     with patch.object(engine, "_call_user_profile_llm") as mock_profile_llm:
@@ -333,11 +333,11 @@ class TestUserProfileTags:
 
     @pytest.mark.asyncio
     async def test_user_profile_llm_called_when_enabled(self):
-        """USER_PROFILE_TAGS_ENABLED=True のとき _call_user_profile_llm が呼ばれること"""
+        """LIVING_MEMORY_ENABLED=True のとき _call_user_profile_llm が呼ばれること"""
         engine = ReflectionEngine()
         messages = [_make_message() for _ in range(15)]
 
-        with patch("config.USER_PROFILE_TAGS_ENABLED", True):
+        with patch("config.LIVING_MEMORY_ENABLED", True):
             with patch.object(engine, "_call_reflection_llm", return_value=[]):
                 with patch.object(engine, "_apply_facts"):
                     with patch.object(engine, "_call_user_profile_llm") as mock_profile_llm:

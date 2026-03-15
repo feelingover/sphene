@@ -56,9 +56,7 @@ class TestDiscordBotAdditional:
             bot_wrapper = SpheneBot()
 
         with (
-            patch("config.USER_PROFILE_ENABLED", True),
-            patch("config.CHANNEL_CONTEXT_ENABLED", True),
-            patch("config.REFLECTION_ENABLED", True),
+            patch("config.LIVING_MEMORY_ENABLED", True),
             patch("memory.user_profile.get_user_profile_store") as mock_user_store,
             patch("memory.channel_context.get_channel_context_store") as mock_ctx_store,
             patch("memory.short_term.get_channel_buffer") as mock_buffer_fn,
@@ -95,11 +93,9 @@ class TestDiscordBotAdditional:
         with (
             patch("bot.discord_bot.cleanup_expired_conversations", side_effect=Exception("error1")),
             patch("memory.short_term.get_channel_buffer", side_effect=Exception("error2")),
-            patch("config.USER_PROFILE_ENABLED", True),
+            patch("config.LIVING_MEMORY_ENABLED", True),
             patch("memory.user_profile.get_user_profile_store", side_effect=Exception("error3")),
-            patch("config.CHANNEL_CONTEXT_ENABLED", True),
             patch("memory.channel_context.get_channel_context_store", side_effect=Exception("error4")),
-            patch("config.REFLECTION_ENABLED", True),
             patch("memory.reflection.get_reflection_engine", side_effect=Exception("error5")),
         ):
             await bot_wrapper._cleanup_task()

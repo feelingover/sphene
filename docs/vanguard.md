@@ -1,6 +1,7 @@
-> **このドキュメントは移動しました → [docs/vanguard.md](./vanguard.md)**
+# VANGUARD システム
 
-# 自律応答システム (VANGUARD)
+> **VANGUARD_ENABLED** (デフォルト: `true`) で一括制御
+> 制御対象: 自律応答・LLM Judge・応答多様性・リアクション
 
 ## アーキテクチャ
 
@@ -43,21 +44,21 @@
 
 最終スコアは 0-100 にクランプされる。
 
-### 応答タイプ (Response Diversity)
+### 応答多様性 (Response Diversity)
 
-`RESPONSE_DIVERSITY_ENABLED` が有効な場合、スコアやLLM判定に応じて応答の形式が変化する。
+`VANGUARD_ENABLED` が有効な場合、スコアやLLM判定に応じて応答の形式が変化する。
 
 | スコア / 状況 | 応答タイプ | 挙動 |
 |---------------|------------|------|
 | `JUDGE_SCORE_FULL_RESPONSE` (60) 以上 | `full_response` | 通常の文章による応答 |
 | `JUDGE_SCORE_SHORT_ACK` (30) 以上 | `short_ack` | 短い相槌や同意のみ |
-| それ未満 | `react_only` | リアクションのみ（`REACTION_ENABLED=true` 時は `should_react` で代替） |
+| それ未満 | `react_only` | リアクションのみ（`VANGUARD_ENABLED=true` 時は `should_react` で代替） |
 
 **注:** LLM Judgeが有効な場合、上記の閾値に関わらずLLMが最適な `response_type` (`full`, `short`, `react`) を選択し、その決定が優先される。
 
-### リアクション機能 (REACTION_ENABLED)
+### リアクション機能
 
-`REACTION_ENABLED=true` にすると、返信とは独立してリアクションを追加できる。
+`VANGUARD_ENABLED=true` にすると、返信とは独立してリアクションを追加できる。
 
 | 特徴 | 説明 |
 |------|------|
@@ -67,7 +68,7 @@
 | **クールダウンなし** | `record=False` で発火するため、リアクションはクールダウンカウントに含まれない |
 
 ```
-REACTION_ENABLED=true
+VANGUARD_ENABLED=true
 JUDGE_REACT_THRESHOLD=5   # score >= 5 でリアクション実行（JUDGE_SCORE_THRESHOLD より低く設定）
 ```
 
@@ -110,7 +111,7 @@ JUDGE_REACT_THRESHOLD=5   # score >= 5 でリアクション実行（JUDGE_SCORE
 }
 ```
 
-`react`・`emojis` フィールドは `REACTION_ENABLED=true` 時に利用される。ルールベースが未リアクションの場合のみ、LLM指定の絵文字でリアクションを発火する（重複防止）。
+`react`・`emojis` フィールドは `VANGUARD_ENABLED=true` 時に利用される。ルールベースが未リアクションの場合のみ、LLM指定の絵文字でリアクションを発火する（重複防止）。
 
 ## パラメータリファレンス
 
@@ -125,7 +126,7 @@ JUDGE_REACT_THRESHOLD=5   # score >= 5 でリアクション実行（JUDGE_SCORE
 
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
-| `AUTONOMOUS_RESPONSE_ENABLED` | `false` | 自律応答の有効化 |
+| `VANGUARD_ENABLED` | `true` | 自律応答・LLM Judge・応答多様性・リアクションの一括有効化 |
 | `JUDGE_SCORE_THRESHOLD` | `20` | ルールベース判定の最小応答閾値 |
 | `JUDGE_SCORE_FULL_RESPONSE` | `60` | 通常応答（full）を返すスコア閾値 |
 | `JUDGE_SCORE_SHORT_ACK` | `30` | 相槌（short）を返すスコア閾値 |
@@ -138,33 +139,15 @@ JUDGE_REACT_THRESHOLD=5   # score >= 5 でリアクション実行（JUDGE_SCORE
 
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
-| `LLM_JUDGE_ENABLED` | `false` | LLM二次判定の有効化 |
 | `JUDGE_MODEL` | `""` | 判定用モデル。空なら GEMINI_MODEL を使用 |
 | `JUDGE_LLM_THRESHOLD_LOW` | `20` | この値以下はLLM判定せずスキップ |
 | `JUDGE_LLM_THRESHOLD_HIGH` | `60` | この値以上はLLM判定せず即応答 |
-
-### 応答多様性
-
-| 変数 | デフォルト | 説明 |
-|------|-----------|------|
-| `RESPONSE_DIVERSITY_ENABLED` | `false` | スコアに応じた応答パターンの変化を有効化 |
 
 ### リアクション機能
 
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
-| `REACTION_ENABLED` | `false` | 返信と独立したリアクション機能の有効化 |
 | `JUDGE_REACT_THRESHOLD` | `5` | リアクション実行の最低スコア閾値（`JUDGE_SCORE_THRESHOLD` より低く設定推奨） |
-
-### チャンネルコンテキスト（要約）
-
-| 変数 | デフォルト | 説明 |
-|------|-----------|------|
-| `CHANNEL_CONTEXT_ENABLED` | `false` | 長期的な文脈維持の有効化 |
-| `CHANNEL_CONTEXT_STORAGE_TYPE` | `memory` | 保存先 (`memory` / `firestore`) |
-| `SUMMARIZE_EVERY_N_MESSAGES` | `20` | 要約を実行するメッセージ数間隔 |
-| `SUMMARIZE_EVERY_N_MINUTES` | `15` | 要約を実行する時間間隔（分） |
-| `SUMMARIZE_MODEL` | `""` | 要約生成に使用するモデル名 |
 
 ### チューニングガイド
 

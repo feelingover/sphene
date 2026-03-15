@@ -79,7 +79,7 @@ class SpheneBot:
             )
 
         # ユーザープロファイルの永続化
-        if config.USER_PROFILE_ENABLED:
+        if config.LIVING_MEMORY_ENABLED:
             try:
                 from memory.user_profile import get_user_profile_store
 
@@ -89,7 +89,7 @@ class SpheneBot:
                 logger.error(f"ユーザープロファイル永続化エラー: {str(e)}", exc_info=True)
 
         # 時間ベースの要約チェック
-        if config.CHANNEL_CONTEXT_ENABLED:
+        if config.LIVING_MEMORY_ENABLED:
             try:
                 from memory.channel_context import get_channel_context_store
                 from memory.short_term import get_channel_buffer
@@ -109,7 +109,7 @@ class SpheneBot:
                 )
 
         # 沈黙ベースの反省会チェック + ファクトストアの永続化
-        if config.REFLECTION_ENABLED:
+        if config.LIVING_MEMORY_ENABLED:
             try:
                 from datetime import datetime, timezone
 

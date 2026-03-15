@@ -56,9 +56,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -78,9 +77,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -99,9 +97,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -121,9 +118,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -144,9 +140,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -171,9 +166,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -197,9 +191,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -221,9 +214,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -242,9 +234,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_KEYWORDS = "test"
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -265,9 +256,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -281,9 +271,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -301,9 +290,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -331,9 +319,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -360,9 +347,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -390,9 +376,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -416,9 +401,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -445,9 +429,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -471,9 +454,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -495,9 +477,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -522,9 +503,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -547,15 +527,14 @@ class TestRuleBasedJudge:
 
     @patch("memory.judge.config")
     def test_response_type_full_response_when_disabled(self, mock_config):
-        """RESPONSE_DIVERSITY_ENABLED=Falseなら常にfull_response"""
+        """VANGUARD_ENABLED=Falseなら常にfull_response"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -580,15 +559,14 @@ class TestRuleBasedJudge:
 
     @patch("memory.judge.config")
     def test_should_react_true_when_enabled_and_above_threshold(self, mock_config):
-        """REACTION_ENABLED=True かつ score >= JUDGE_REACT_THRESHOLD で should_react=True"""
+        """VANGUARD_ENABLED=True かつ score >= JUDGE_REACT_THRESHOLD で should_react=True"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = True
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = True
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -600,15 +578,14 @@ class TestRuleBasedJudge:
 
     @patch("memory.judge.config")
     def test_should_react_false_when_disabled(self, mock_config):
-        """REACTION_ENABLED=False の場合 should_react=False"""
+        """VANGUARD_ENABLED=False の場合 should_react=False"""
         mock_config.JUDGE_KEYWORDS = ""
         mock_config.COOLDOWN_SECONDS = 120
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = False
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
@@ -624,9 +601,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = True
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = True
         mock_config.JUDGE_REACT_THRESHOLD = 30  # 閾値を高めに設定
 
         judge = RuleBasedJudge()
@@ -643,9 +619,8 @@ class TestRuleBasedJudge:
         mock_config.JUDGE_SCORE_THRESHOLD = 20
         mock_config.JUDGE_SCORE_FULL_RESPONSE = 60
         mock_config.JUDGE_SCORE_SHORT_ACK = 30
-        mock_config.RESPONSE_DIVERSITY_ENABLED = False
+        mock_config.VANGUARD_ENABLED = True
         mock_config.BOT_NAME = "テストボット"
-        mock_config.REACTION_ENABLED = True
         mock_config.JUDGE_REACT_THRESHOLD = 5
 
         judge = RuleBasedJudge()
