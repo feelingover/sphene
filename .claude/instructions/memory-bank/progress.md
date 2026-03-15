@@ -27,14 +27,15 @@ applyTo: "**"
   - `LLMJudge.evaluate()` 戻り値を 4-tuple に変更（破壊的変更、全呼び出し元を更新済み）
 - **記憶システム「リビングメモリー (Living Memory)」**:
   - `docs/living-memory.md`: 記憶の3層構造（短期・中期・長期）とライフサイクルを定義。
-- **記憶機能 Phase 3A（反省会 + ファクトストア + 自発的会話）**:
+- **記憶機能 Phase 3A（反省会 + ファクトストア）**:
   - `memory/fact_store.py`: `Fact` dataclass + `FactStore`（Jaccard類似度 × 指数減衰スコアリング、local/Firestore永続化）
   - `memory/reflection.py`: `ReflectionEngine`（LLMによるファクト抽出、fire-and-forget非同期実行）
   - `memory/short_term.py`: `get_active_channel_ids`, `get_last_message_time`, `count_messages_since_reflection`, `mark_reflected` 追加
   - `ai/conversation.py`: `relevant_facts` パラメータ追加（user_profile の後に context_section へ注入）
-  - `bot/events.py`: ファクト検索・注入、沈黙後自発会話（`_try_proactive_conversation`, `_dispatch_proactive_message`）、バッファ量ベース反省会トリガー
+  - `bot/events.py`: ファクト検索・注入、バッファ量ベース反省会トリガー
   - `bot/discord_bot.py`: 沈黙ベース反省会チェック + ファクトストア永続化
-  - 新規環境変数11個: `REFLECTION_ENABLED/LULL_MINUTES/MIN_MESSAGES/MAX_BUFFER_MESSAGES/MODEL`, `FACT_STORE_MAX_FACTS_PER_CHANNEL`, `FACT_DECAY_HALF_LIFE_DAYS`, `FACT_USER_BOOST_FACTOR`, `PROACTIVE_CONVERSATION_ENABLED`, `PROACTIVE_SILENCE_MINUTES`, `FIRESTORE_COLLECTION_FACTS`
+  - 新規環境変数9個: `REFLECTION_ENABLED/LULL_MINUTES/MIN_MESSAGES/MAX_BUFFER_MESSAGES/MODEL`, `FACT_STORE_MAX_FACTS_PER_CHANNEL`, `FACT_DECAY_HALF_LIFE_DAYS`, `FACT_USER_BOOST_FACTOR`, `FIRESTORE_COLLECTION_FACTS`
+- **自発会話機能（issue #104対応で削除）**: `PROACTIVE_CONVERSATION_ENABLED` ベースの実装を削除。マルチテナント競合・トリガー設計の根本見直しのため一旦削除（issue #104 OPEN）
 - **Phase 3A コードレビュー対応**: `extract_keywords` 公開化、ブースト係数環境変数化、型アノテーション修正、冗長インポート削除、`_cleanup_task` ブロック統合
 - **コードレビュー Medium/Low 課題の一括対応**:
   - `utils/file_utils.py` 新規作成（`atomic_write_json` 共通化）

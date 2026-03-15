@@ -77,13 +77,11 @@ system_prompt
 
 ## Message Flow
 ユーザー → Discord → `_handle_message()`
-  → `pre_add_last_time` 取得（自発会話チェック用）
   → バッファ追加 + チャンネルコンテキスト更新 + **ユーザープロファイル記録**
   → **バッファ量ベース反省会トリガー** (`REFLECTION_ENABLED`: メッセージ数 >= MAX_BUFFER_MESSAGES)
   → トリガー判定 (is_mentioned)
     → Yes: **プロファイル取得** → `process_conversation()` → `Sphene.input_message()` → **last_topic更新**
     → No:  Judge評価 → `_dispatch_response()` → react / short_ack / **`_process_autonomous_response()`**
-         → **自発会話チェック** (`PROACTIVE_CONVERSATION_ENABLED`: 沈黙後再活性化 + shareable ファクト)
   → Vertex AI (Native SDK) → Discord応答
 
 ## Reflection Flow（反省会）
