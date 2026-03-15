@@ -139,16 +139,6 @@ EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
 VECTOR_SEARCH_ENABLED: bool = os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
 HYBRID_ALPHA: float = float(os.getenv("HYBRID_ALPHA", "0.5"))  # ベクトル/キーワードスコアのバランス係数
 
-# === 自発的会話設定 (Phase 3A) ===
-PROACTIVE_CONVERSATION_ENABLED: bool = (
-    os.getenv("PROACTIVE_CONVERSATION_ENABLED", "false").lower() == "true"
-)
-# 自発的会話をトリガーする沈黙時間（分）。REFLECTION_LULL_MINUTES と独立して設定可能。
-PROACTIVE_SILENCE_MINUTES: int = int(os.getenv("PROACTIVE_SILENCE_MINUTES", "10"))
-
 # フィーチャーフラグの依存関係チェック（起動時バリデーション）
 if LLM_JUDGE_ENABLED and not AUTONOMOUS_RESPONSE_ENABLED:
     raise ValueError("LLM_JUDGE_ENABLED requires AUTONOMOUS_RESPONSE_ENABLED=True")
-
-if PROACTIVE_CONVERSATION_ENABLED and not REFLECTION_ENABLED:
-    raise ValueError("PROACTIVE_CONVERSATION_ENABLED requires REFLECTION_ENABLED=True")

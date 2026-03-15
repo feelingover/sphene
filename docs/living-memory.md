@@ -128,10 +128,6 @@
 - `EMBEDDING_MODEL`: Embedding生成に使用するモデル名 (デフォルト: text-embedding-004)
 - `HYBRID_ALPHA`: ハイブリッドスコアのバランス係数。0=Jaccardのみ、1=ベクトルのみ (デフォルト: 0.5)
 
-### 自発的会話 (Proactive Conversation)
-- `PROACTIVE_CONVERSATION_ENABLED`: 沈黙時に自発的に会話を始める機能を有効にするか。`REFLECTION_ENABLED=true`が必要 (デフォルト: false)
-- `PROACTIVE_SILENCE_MINUTES`: 自発会話をトリガーする沈黙時間（分）。REFLECTION_LULL_MINUTESと独立 (デフォルト: 10)
-
 ---
 
 ## 6. 今後の拡張 (Roadmap)

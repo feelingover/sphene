@@ -114,7 +114,6 @@ class TestEventHandling:
         mock_config.CHANNEL_CONTEXT_ENABLED = False
         mock_config.USER_PROFILE_ENABLED = False
         mock_config.REFLECTION_ENABLED = False
-        mock_config.PROACTIVE_CONVERSATION_ENABLED = False
         # channel_configの代わりにconfig_managerを使用
         mock_channel_config = MagicMock()
         mock_channel_config.can_bot_speak.return_value = True
@@ -574,7 +573,6 @@ class TestHandleMessageReflectionTrigger:
         mock_config.CHANNEL_CONTEXT_ENABLED = False
         mock_config.USER_PROFILE_ENABLED = False
         mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
-        mock_config.PROACTIVE_CONVERSATION_ENABLED = False
 
         mock_channel_config = MagicMock()
         mock_channel_config.can_bot_speak.return_value = True
@@ -619,7 +617,6 @@ class TestHandleMessageReflectionTrigger:
         mock_config.CHANNEL_CONTEXT_ENABLED = False
         mock_config.USER_PROFILE_ENABLED = False
         mock_config.AUTONOMOUS_RESPONSE_ENABLED = False
-        mock_config.PROACTIVE_CONVERSATION_ENABLED = False
 
         mock_channel_config = MagicMock()
         mock_channel_config.can_bot_speak.return_value = True
@@ -649,121 +646,6 @@ class TestHandleMessageReflectionTrigger:
                 await _handle_message(bot, message)
 
         mock_engine.maybe_reflect.assert_not_called()
-
-
-class TestTryProactiveConversation:
-    """_try_proactive_conversation のテスト"""
-
-    @pytest.mark.asyncio
-    async def test_skips_when_silence_too_short(self):
-        """沈黙時間が設定未満の場合スキップされること"""
-        from datetime import timedelta, timezone
-        from bot.events import _try_proactive_conversation
-
-        now = datetime.now(timezone.utc)
-        pre_add_last_time = now - timedelta(minutes=2)  # 2分前
-
-        message = MagicMock()
-        message.created_at = now
-        message.channel.id = 12345
-
-        bot = MagicMock()
-
-        with patch("config.REFLECTION_LULL_MINUTES", 10):
-            with patch("memory.fact_store.get_fact_store") as mock_store_fn:
-                await _try_proactive_conversation(bot, message, pre_add_last_time)
-                mock_store_fn.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_skips_when_in_cooldown(self):
-        """クールダウン中の場合スキップされること"""
-        from datetime import timedelta, timezone
-        from bot.events import _try_proactive_conversation
-
-        now = datetime.now(timezone.utc)
-        pre_add_last_time = now - timedelta(minutes=30)  # 十分な沈黙
-
-        message = MagicMock()
-        message.created_at = now
-        message.channel.id = 12345
-
-        bot = MagicMock()
-
-        mock_judge = MagicMock()
-        mock_judge.is_in_cooldown.return_value = True
-
-        with patch("config.REFLECTION_LULL_MINUTES", 10):
-            with patch("memory.judge.get_judge", return_value=mock_judge):
-                with patch("memory.fact_store.get_fact_store") as mock_store_fn:
-                    await _try_proactive_conversation(bot, message, pre_add_last_time)
-                    mock_store_fn.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_skips_when_no_shareable_facts(self):
-        """shareable ファクトがない場合スキップされること"""
-        from datetime import timedelta, timezone
-        from bot.events import _try_proactive_conversation
-
-        now = datetime.now(timezone.utc)
-        pre_add_last_time = now - timedelta(minutes=30)
-
-        message = MagicMock()
-        message.created_at = now
-        message.channel.id = 12345
-
-        bot = MagicMock()
-
-        mock_judge = MagicMock()
-        mock_judge.is_in_cooldown.return_value = False
-
-        mock_store = MagicMock()
-        mock_store.get_shareable_facts.return_value = []
-
-        with patch("config.REFLECTION_LULL_MINUTES", 10):
-            with patch("memory.judge.get_judge", return_value=mock_judge):
-                with patch("memory.fact_store.get_fact_store", return_value=mock_store):
-                    with patch("bot.events._dispatch_proactive_message") as mock_dispatch:
-                        await _try_proactive_conversation(bot, message, pre_add_last_time)
-                        mock_dispatch.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_dispatches_when_conditions_met(self):
-        """条件が揃ったとき _dispatch_proactive_message が呼ばれること"""
-        from datetime import timedelta, timezone
-        from memory.fact_store import Fact
-        import uuid
-        from bot.events import _try_proactive_conversation
-
-        now = datetime.now(timezone.utc)
-        pre_add_last_time = now - timedelta(minutes=30)
-
-        message = MagicMock()
-        message.created_at = now
-        message.channel.id = 12345
-
-        bot = MagicMock()
-
-        mock_fact = Fact(
-            fact_id=str(uuid.uuid4()),
-            channel_id=12345,
-            content="Aさんがゲームを始めた",
-            keywords=["ゲーム"],
-            source_user_ids=[1],
-            created_at=now,
-            shareable=True,
-        )
-
-        mock_judge = MagicMock()
-        mock_judge.is_in_cooldown.return_value = False
-        mock_store = MagicMock()
-        mock_store.get_shareable_facts.return_value = [mock_fact]
-
-        with patch("config.REFLECTION_LULL_MINUTES", 10):
-            with patch("memory.judge.get_judge", return_value=mock_judge):
-                with patch("memory.fact_store.get_fact_store", return_value=mock_store):
-                    with patch("bot.events._dispatch_proactive_message", new_callable=AsyncMock) as mock_dispatch:
-                        await _try_proactive_conversation(bot, message, pre_add_last_time)
-                        mock_dispatch.assert_called_once_with(bot, message, mock_fact)
 
 
 class TestTryAutonomousResponseReaction:

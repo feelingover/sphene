@@ -21,7 +21,6 @@ SpheneはGoogle Gen AI SDK（Vertex AI経由のGemini）を活用した会話機
 - 応答多様性（リアクション / 相槌 / フル応答の3段階で自然な会話参加）
 - **ユーザープロファイル**: 交流回数・関係性レベル（stranger/acquaintance/regular/close）・直近の話題を記録し、初見と常連で自然に接し方を変える
 - **長期記憶（反省会 + ファクトストア）**: 会話が沈静化した後にLLMで事実を抽出・保存し、次の会話に活用（`REFLECTION_ENABLED`）
-- **自発的会話**: 沈黙後チャンネルが再活性化した際、過去の記憶をもとに自然に話題を振る（`PROACTIVE_CONVERSATION_ENABLED`）
 
 ## セットアップ方法
 
@@ -246,7 +245,7 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 - 応答多様性（リアクション / 相槌 / フル応答の3段階）
 - 会話フロー分析（2人会話検出、高頻度検出、沈黙後検出、会話減衰検出）
 - ユーザープロファイル（交流回数・関係性レベル・直近話題の記録、15分ごとの定期永続化）
-- 長期記憶 Phase 3A: 反省会エンジン（ファクト抽出）、ファクトストア（Jaccard×減衰スコア）、自発的会話開始
+- 長期記憶 Phase 3A: 反省会エンジン（ファクト抽出）、ファクトストア（Jaccard×減衰スコア）
 
 **翻訳機能**
 
