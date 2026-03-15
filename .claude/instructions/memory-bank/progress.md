@@ -3,74 +3,55 @@ applyTo: "**"
 ---
 # Progress
 
-## Completed Features
+## v1.0.0 完成済み機能
 
-- **機能フラグをグループフラグに統合 (issue #108)**:
-  - 旧8フラグを `VANGUARD_ENABLED`（自律応答・LLM Judge・応答多様性・リアクション）と `LIVING_MEMORY_ENABLED`（チャンネルコンテキスト・ユーザープロファイル・ユーザープロファイルタグ・反省会）に統合
-  - デフォルトを `false` → `true` に変更（デフォルト有効化）
-  - `docs/vanguard.md` 新規作成（旧 `docs/autonomous-response.md` から移行）
-- **ファクトストア忘却機能 (issue #80)**:
-  - `Fact` に `access_count: int` / `last_accessed_at: datetime | None` フィールド追加
-  - `effective_relevance_score()`: 時間減衰 + 参照頻度ブースト（`min(1.0, decay + log1p(count) * weight)`）
-  - `search()` でヒットしたファクトの `access_count` を自動インクリメント
-  - `cleanup_low_relevance_facts()`: 閾値未満のファクトを15分ごとに削除
-  - `_archive_facts()` / `_append_to_local_archive()` / `_append_to_firestore_archive()`: アーカイブ機能
-  - 新規環境変数3個: `FACT_STORE_CLEANUP_THRESHOLD`(0.05)、`FACT_ACCESS_BOOST_WEIGHT`(0.1)、`FACT_STORE_ARCHIVE_ENABLED`(false)
-  - `FIRESTORE_COLLECTION_FACTS_ARCHIVE` 定数追加
-- **記憶機能 Phase 3B - Vertex AI Embeddings + ハイブリッド検索 (issue #77, #78)**:
-  - `Fact.embedding` フィールド追加、`_cosine_similarity()` ヘルパー、`search()` にハイブリッドスコアリング（コサインは `max(0, cosine)` クリッピング）
-  - `generate_embedding()` 追加（失敗時 `None` でJaccardフォールバック）
-  - `_apply_facts()` を async化、`asyncio.gather()` でEmbedding並列生成
-  - 新規環境変数3個: `EMBEDDING_MODEL`, `VECTOR_SEARCH_ENABLED`, `HYBRID_ALPHA`
-  - `VECTOR_SEARCH_ENABLED=false`（デフォルト）で後方互換性維持
-- **リアクション機能の独立制御 (issue #97)**:
-  - `JudgeResult.should_react` / `reaction_emojis` フィールドで返信とリアクションを独立管理
-  - `REACTION_ENABLED` / `JUDGE_REACT_THRESHOLD` 環境変数でしきい値チューニング可能
-  - LLM Judge が文脈に合う絵文字（最大2個）を選択して返すように拡張
-  - `asyncio.create_task` によるリアクション先行実行（LLM生成を待たない）
-  - `LLMJudge.evaluate()` 戻り値を 4-tuple に変更（破壊的変更、全呼び出し元を更新済み）
-- **記憶システム「リビングメモリー (Living Memory)」**:
-  - `docs/living-memory.md`: 記憶の3層構造（短期・中期・長期）とライフサイクルを定義。
-- **記憶機能 Phase 3A（反省会 + ファクトストア）**:
-  - `memory/fact_store.py`: `Fact` dataclass + `FactStore`（Jaccard類似度 × 指数減衰スコアリング、local/Firestore永続化）
-  - `memory/reflection.py`: `ReflectionEngine`（LLMによるファクト抽出、fire-and-forget非同期実行）
-  - `memory/short_term.py`: `get_active_channel_ids`, `get_last_message_time`, `count_messages_since_reflection`, `mark_reflected` 追加
-  - `ai/conversation.py`: `relevant_facts` パラメータ追加（user_profile の後に context_section へ注入）
-  - `bot/events.py`: ファクト検索・注入、バッファ量ベース反省会トリガー
-  - `bot/discord_bot.py`: 沈黙ベース反省会チェック + ファクトストア永続化
-  - 新規環境変数9個: `REFLECTION_ENABLED/LULL_MINUTES/MIN_MESSAGES/MAX_BUFFER_MESSAGES/MODEL`, `FACT_STORE_MAX_FACTS_PER_CHANNEL`, `FACT_DECAY_HALF_LIFE_DAYS`, `FACT_USER_BOOST_FACTOR`, `FIRESTORE_COLLECTION_FACTS`
-- **自発会話機能（issue #104対応で削除）**: `PROACTIVE_CONVERSATION_ENABLED` ベースの実装を削除。マルチテナント競合・トリガー設計の根本見直しのため一旦削除（issue #104 OPEN）
-- **Phase 3A コードレビュー対応**: `extract_keywords` 公開化、ブースト係数環境変数化、型アノテーション修正、冗長インポート削除、`_cleanup_task` ブロック統合
-- **コードレビュー Medium/Low 課題の一括対応**:
-  - `utils/file_utils.py` 新規作成（`atomic_write_json` 共通化）
-  - `ai/api.py` 新規作成（API レイヤーを `ai/conversation.py` から分離）
-  - `judge.evaluate()` から常時 False パラメータ3個削除
-  - `process_conversation` / `_process_autonomous_response` の共通ロジックを4ヘルパーに抽出
-  - フィーチャーフラグ依存チェックを `config.py` 起動時バリデーションに追加
-  - デッドコード削除（`generate_contextual_response`, ローカル `truncate_text`）
-- **ストレージタイプ設定の統合**: `CHANNEL_CONFIG_STORAGE_TYPE`・`CHANNEL_CONTEXT_STORAGE_TYPE`・`USER_PROFILE_STORAGE_TYPE` を `STORAGE_TYPE` 1変数に統合。`memory` オプション廃止。
-- **Vertex AI Native SDK (`google-genai`) 移行**: OpenAI互換APIを廃止し、最新SDKへ完全移行（Gemini 3/2.5対応、Grounding対応）
-- **記憶機能 Phase 1**: 短期記憶バッファ（ChannelMessageBuffer、dequeリングバッファ）
-- **記憶機能 Phase 2**: 自律応答（ハイブリッドJudge: RuleBasedJudge + LLMJudge）
-- **記憶機能 Phase 2A**: チャンネルコンテキスト（ローリング要約）+ 応答多様性（3段階）+ Judge拡張（会話フロー考慮）
-- **記憶機能 Phase 2B（コンテキスト統合）**: チャンネル単位履歴 + メンション/自律応答の共有コンテキスト注入
-- **記憶機能 Phase 2B（ユーザープロファイル）**: 交流回数・関係性レベル・直近話題の記録と応答生成への注入
-  - `UserProfile` dataclass + `UserProfileStore`（local/firestore）
-  - `familiarity_level`（stranger/acquaintance/regular/close）閾値ベース自動算出
-  - `last_topic`: チャンネルコンテキストの topic_keywords を応答後に同期
-  - `input_message()` に `user_profile` パラメータ追加
-  - 15分ごとの定期永続化
-- S3廃止 + Firestore移行: AWS依存完全削除、チャンネル設定をFirestoreに移行
-- uv移行: pyproject.toml + uv.lock による依存管理、CI/Dockerfileのuv対応
-- Discord応答（メンション、名前呼び、リプライ）、スラッシュコマンド
-- Gemini-2.5-flash対話、会話履歴管理、マルチモーダル（画像）
-- ツール呼び出しループ改善: `MAX_TOOL_CALL_ROUNDS`環境変数化（デフォルト5）+ ツールなし最終コール追加
-- Function Calling → XIVAPI v2検索（アイテム・アクション・レシピ・クエスト等、詳細フィルタ対応）
-- 翻訳（国旗リアクション: US/JP）
-- チャンネル管理（全体/限定モード、追加/削除）
-- ストレージ: ローカル/Firestore選択
-- デプロイ: ローカル/Docker/Kubernetes
-- PRテンプレート整備
+### 基盤
+- Discord接続・基本ボット機能（メンション、名前呼び、リプライ）
+- スラッシュコマンド（reset, mode, channels, addlist/removelist/clearlist, reload_prompt, translation）
+- 翻訳機能（国旗リアクション: 🇺🇸 / 🇯🇵）
+- チャンネル管理（全体/限定モード、Firestore/ローカル選択）
+- Vertex AI Native SDK (`google-genai`) 移行（OpenAI互換API廃止）
+- Google検索Grounding（`ENABLE_GOOGLE_SEARCH_GROUNDING`、function callingと排他）
+- uv による依存管理（pyproject.toml + uv.lock）
+- Docker / Kubernetes デプロイ対応
+
+### AI会話
+- Gemini（Vertex AI）によるマルチターン会話（チャンネル単位の履歴共有）
+- マルチモーダル対応（画像処理）
+- 会話タイムアウト（30分）・最大10ターン
+- Router LLM による Grounding / Function Calling の動的切り替え
+- Function Calling → XIVAPI v2 検索（アイテム・アクション・レシピ・クエスト・マウント・ミニオン等）
+- ツール呼び出しループ改善（`MAX_TOOL_CALL_ROUNDS` 環境変数化、ツールなし最終コール）
+- API レイヤー分離（`ai/api.py`）
+
+### リビングメモリー (Living Memory)
+- 短期記憶: チャンネルバッファ（dequeリングバッファ、TTL管理）
+- 中期記憶: チャンネルコンテキスト（ローリング要約、mood/topic_keywords/active_users）
+- 長期記憶: ユーザープロファイル（交流回数・関係性レベル・直近話題）
+- 長期記憶: ファクトストア（Jaccard×指数減衰スコアリング、local/Firestore永続化）
+- 反省会エンジン（LLMによるファクト抽出、fire-and-forget非同期）
+- ファクト忘却機能（参照頻度ブースト + 時間減衰クリーンアップ）
+- ハイブリッド検索（Vertex AI Embeddings + Jaccard、`VECTOR_SEARCH_ENABLED`）
+- `LIVING_MEMORY_ENABLED` 1フラグで全機能をデフォルト有効化
+
+### VANGUARD（自律応答）
+- ルールベースJudge（スコアリング + response_type決定 + should_react判定）
+- LLM二次判定（曖昧スコア帯のみLLM呼び出し、絵文字選択）
+- 応答多様性（リアクション / 相槌 / フル応答の3段階）
+- リアクション先行実行（`asyncio.create_task`）
+- チャンネルコンテキスト注入による応答品質向上
+- 会話フロー分析（2人会話・高頻度・沈黙後・会話減衰の検出）
+- `VANGUARD_ENABLED` 1フラグで全機能をデフォルト有効化
+
+### コードクオリティ（v1.0.0 対応）
+- 機能フラグを2グループフラグに統合（旧8フラグ廃止）
+- `utils/file_utils.py` 新規作成（`atomic_write_json` 共通化）
+- フィーチャーフラグ依存チェックを `config.py` 起動時バリデーション
+- 共通ロジックを4ヘルパーに抽出（`_collect_ai_context`, `_get_or_reset_conversation`, `_send_chunks`, `_post_response_update`）
+- Firestoreコレクション名のネームスペース化（`FIRESTORE_NAMESPACE`）
+- ストレージタイプ設定の統合（`STORAGE_TYPE` 1変数）
+- 自発会話機能削除（issue #104、タイマーベースへ再設計予定）
+- セキュリティ・品質レビュー対応（Critical/High/Medium 15件）
 
 ## TODO
 
@@ -82,3 +63,5 @@ applyTo: "**"
 - 使用統計・モニタリング
 - CI/CD強化
 - AsyncOpenAI移行（フルasync化）
+- 自発会話機能 タイマーベースへの再設計（issue #104）
+- Firestore Native Vector Search（`find_nearest()`）
