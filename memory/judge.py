@@ -174,9 +174,6 @@ class RuleBasedJudge:
 
     def _determine_response_type(self, score: int, is_engaged: bool) -> str:
         """スコアに基づいて応答タイプを決定する"""
-        if not config.VANGUARD_ENABLED:
-            return "full_response"
-        
         full_threshold = config.JUDGE_SCORE_FULL_RESPONSE
         short_threshold = config.JUDGE_SCORE_SHORT_ACK
         
