@@ -31,11 +31,15 @@ class TestCommandsExtensive:
         mock_config = MagicMock()
         mock_config.set_behavior.return_value = True
         mock_config_manager.get_config.return_value = mock_config
-        
+
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
-        
+        mock_member = MagicMock(spec=discord.Member)
+        mock_member.guild_permissions = MagicMock()
+        mock_member.guild_permissions.administrator = True
+        interaction.user = mock_member
+
         select = ModeSelect(guild_id=123)
         with patch.object(ModeSelect, "values", new_callable=PropertyMock) as mock_values:
             mock_values.return_value = ["allow"]
@@ -52,11 +56,15 @@ class TestCommandsExtensive:
         mock_config = MagicMock()
         mock_config.set_translation_enabled.return_value = True
         mock_config_manager.get_config.return_value = mock_config
-        
+
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
-        
+        mock_member = MagicMock(spec=discord.Member)
+        mock_member.guild_permissions = MagicMock()
+        mock_member.guild_permissions.administrator = True
+        interaction.user = mock_member
+
         select = TranslationSelect(guild_id=123)
         with patch.object(TranslationSelect, "values", new_callable=PropertyMock) as mock_values:
             mock_values.return_value = ["true"]
@@ -73,11 +81,15 @@ class TestCommandsExtensive:
         mock_config = MagicMock()
         mock_config.clear_channels.return_value = True
         mock_config_manager.get_config.return_value = mock_config
-        
+
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
-        
+        mock_member = MagicMock(spec=discord.Member)
+        mock_member.guild_permissions = MagicMock()
+        mock_member.guild_permissions.administrator = True
+        interaction.user = mock_member
+
         view = ClearConfirmView(guild_id=123)
         
         # confirmボタンのコールバックを直接呼ぶ
@@ -87,6 +99,125 @@ class TestCommandsExtensive:
         mock_config.clear_channels.assert_called_once()
         interaction.response.send_message.assert_called_once()
         assert "クリアしました" in interaction.response.send_message.call_args[0][0]
+
+    @pytest.mark.asyncio
+    @patch("bot.commands.config_manager")
+    async def test_mode_select_callback_non_admin(self, mock_config_manager):
+        """非管理者ユーザーがモード選択コールバックを呼んだ場合、権限エラーを返すこと"""
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        mock_member = MagicMock(spec=discord.Member)
+        mock_member.guild_permissions = MagicMock()
+        mock_member.guild_permissions.administrator = False
+        interaction.user = mock_member
+
+        select = ModeSelect(guild_id=123)
+        with patch.object(ModeSelect, "values", new_callable=PropertyMock) as mock_values:
+            mock_values.return_value = ["allow"]
+            await select.callback(interaction)
+
+        interaction.response.send_message.assert_called_once()
+        args, kwargs = interaction.response.send_message.call_args
+        assert "管理者権限" in args[0]
+        assert kwargs.get("ephemeral") is True
+        mock_config_manager.get_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_mode_select_callback_non_member(self):
+        """discord.Memberでないユーザー（DM等）がモード選択コールバックを呼んだ場合、権限エラーを返すこと"""
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.user = MagicMock()  # discord.Member ではない
+
+        select = ModeSelect(guild_id=123)
+        with patch.object(ModeSelect, "values", new_callable=PropertyMock) as mock_values:
+            mock_values.return_value = ["allow"]
+            await select.callback(interaction)
+
+        interaction.response.send_message.assert_called_once()
+        args, kwargs = interaction.response.send_message.call_args
+        assert "管理者権限" in args[0]
+        assert kwargs.get("ephemeral") is True
+
+    @pytest.mark.asyncio
+    @patch("bot.commands.config_manager")
+    async def test_translation_select_callback_non_admin(self, mock_config_manager):
+        """非管理者ユーザーが翻訳設定コールバックを呼んだ場合、権限エラーを返すこと"""
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        mock_member = MagicMock(spec=discord.Member)
+        mock_member.guild_permissions = MagicMock()
+        mock_member.guild_permissions.administrator = False
+        interaction.user = mock_member
+
+        select = TranslationSelect(guild_id=123)
+        with patch.object(TranslationSelect, "values", new_callable=PropertyMock) as mock_values:
+            mock_values.return_value = ["true"]
+            await select.callback(interaction)
+
+        interaction.response.send_message.assert_called_once()
+        args, kwargs = interaction.response.send_message.call_args
+        assert "管理者権限" in args[0]
+        assert kwargs.get("ephemeral") is True
+        mock_config_manager.get_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_translation_select_callback_non_member(self):
+        """discord.Memberでないユーザー（DM等）が翻訳設定コールバックを呼んだ場合、権限エラーを返すこと"""
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.user = MagicMock()  # discord.Member ではない
+
+        select = TranslationSelect(guild_id=123)
+        with patch.object(TranslationSelect, "values", new_callable=PropertyMock) as mock_values:
+            mock_values.return_value = ["true"]
+            await select.callback(interaction)
+
+        interaction.response.send_message.assert_called_once()
+        args, kwargs = interaction.response.send_message.call_args
+        assert "管理者権限" in args[0]
+        assert kwargs.get("ephemeral") is True
+
+    @pytest.mark.asyncio
+    @patch("bot.commands.config_manager")
+    async def test_clear_confirm_callback_non_admin(self, mock_config_manager):
+        """非管理者ユーザーがクリア確認ボタンを押した場合、権限エラーを返すこと"""
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        mock_member = MagicMock(spec=discord.Member)
+        mock_member.guild_permissions = MagicMock()
+        mock_member.guild_permissions.administrator = False
+        interaction.user = mock_member
+
+        view = ClearConfirmView(guild_id=123)
+        await view.confirm.callback(interaction)
+
+        interaction.response.send_message.assert_called_once()
+        args, kwargs = interaction.response.send_message.call_args
+        assert "管理者権限" in args[0]
+        assert kwargs.get("ephemeral") is True
+        mock_config_manager.get_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_clear_confirm_callback_non_member(self):
+        """discord.Memberでないユーザー（DM等）がクリア確認ボタンを押した場合、権限エラーを返すこと"""
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.user = MagicMock()  # discord.Member ではない
+
+        view = ClearConfirmView(guild_id=123)
+        await view.confirm.callback(interaction)
+
+        interaction.response.send_message.assert_called_once()
+        args, kwargs = interaction.response.send_message.call_args
+        assert "管理者権限" in args[0]
+        assert kwargs.get("ephemeral") is True
 
     @pytest.mark.asyncio
     @patch("bot.commands.config_manager")

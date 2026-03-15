@@ -302,12 +302,15 @@ class ReflectionEngine:
 
 # シングルトン
 _reflection_engine: ReflectionEngine | None = None
+_reflection_engine_lock = threading.Lock()
 
 
 def get_reflection_engine() -> ReflectionEngine:
     """ReflectionEngineのシングルトンインスタンスを取得する"""
     global _reflection_engine
     if _reflection_engine is None:
-        _reflection_engine = ReflectionEngine()
-        logger.info("ReflectionEngine初期化完了")
+        with _reflection_engine_lock:
+            if _reflection_engine is None:
+                _reflection_engine = ReflectionEngine()
+                logger.info("ReflectionEngine初期化完了")
     return _reflection_engine

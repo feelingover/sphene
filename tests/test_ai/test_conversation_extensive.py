@@ -72,8 +72,8 @@ class TestConversationExtensive:
     def test_handle_api_error_mapping(self):
         """APIエラーハンドリングのマッピングテスト"""
         errors = [
-            (genai_errors.APIError(code=404, response_json={}), "指定されたAIモデル"),
-            (google_exceptions.NotFound("not found"), "指定されたAIモデル"),
+            (genai_errors.APIError(code=404, response_json={}), "AIモデル"),
+            (google_exceptions.NotFound("not found"), "AIモデル"),
             (genai_errors.APIError(code=429, response_json={}), "混み合ってる"),
             (google_exceptions.TooManyRequests("rate limited"), "混み合ってる"),
             (Exception("General Error"), "通信中にエラー"),

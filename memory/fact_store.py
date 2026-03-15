@@ -489,12 +489,15 @@ class FactStore:
 
 # シングルトン
 _fact_store: FactStore | None = None
+_fact_store_lock = threading.Lock()
 
 
 def get_fact_store() -> FactStore:
     """FactStoreのシングルトンインスタンスを取得する"""
     global _fact_store
     if _fact_store is None:
-        _fact_store = FactStore()
-        logger.info(f"FactStore初期化: storage_type={config.STORAGE_TYPE}")
+        with _fact_store_lock:
+            if _fact_store is None:
+                _fact_store = FactStore()
+                logger.info(f"FactStore初期化: storage_type={config.STORAGE_TYPE}")
     return _fact_store

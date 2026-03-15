@@ -2,6 +2,7 @@
 
 import json
 import asyncio
+from html import escape
 
 import config
 from ai.client import _get_genai_client, get_lite_model_name
@@ -64,7 +65,9 @@ class LLMJudge:
         client = _get_genai_client()
         model_name = get_lite_model_name()
         
-        prompt = f"{LLM_JUDGE_PROMPT.format(bot_name=bot_name)}\n\n直近の会話:\n{recent_context}\n\n最新メッセージ:\n{message_content}"
+        safe_message = f"<message>{escape(message_content)}</message>"
+        safe_context = f"<context>{escape(recent_context)}</context>"
+        prompt = f"{LLM_JUDGE_PROMPT.format(bot_name=bot_name)}\n\n直近の会話:\n{safe_context}\n\n最新メッセージ:\n{safe_message}"
 
         logger.debug(f"LLM Judge呼び出し: model={model_name}")
 

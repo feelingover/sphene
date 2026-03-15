@@ -115,14 +115,14 @@ def test_handle_api_error_404() -> None:
     """404エラー時のメッセージをテスト"""
     error = genai_errors.APIError(code=404, response_json={"error": "not found"})
     msg = _handle_api_error(error)
-    assert "指定されたAIモデル" in msg
+    assert "AIモデル" in msg
 
 
 def test_handle_api_error_404_google_exception() -> None:
     """google.api_core.exceptions.NotFoundの場合のメッセージをテスト"""
     error = google_exceptions.NotFound("Model not found")
     msg = _handle_api_error(error)
-    assert "指定されたAIモデル" in msg
+    assert "AIモデル" in msg
 
 
 def test_handle_api_error_429() -> None:

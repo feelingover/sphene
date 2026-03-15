@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -313,14 +314,17 @@ class UserProfileStore:
 
 # シングルトン
 _store: UserProfileStore | None = None
+_store_lock = threading.Lock()
 
 
 def get_user_profile_store() -> UserProfileStore:
     """UserProfileStoreのシングルトンインスタンスを取得する"""
     global _store
     if _store is None:
-        _store = UserProfileStore()
-        logger.info(
-            f"UserProfileStore初期化: storage_type={config.STORAGE_TYPE}"
-        )
+        with _store_lock:
+            if _store is None:
+                _store = UserProfileStore()
+                logger.info(
+                    f"UserProfileStore初期化: storage_type={config.STORAGE_TYPE}"
+                )
     return _store

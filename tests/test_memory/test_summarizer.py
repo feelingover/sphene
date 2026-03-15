@@ -54,23 +54,25 @@ class TestFormatMessagesForSummary:
             _make_message(author_name="Bob", content="やあ"),
         ]
         result = _format_messages_for_summary(messages)
-        assert result == "Alice: こんにちは\nBob: やあ"
+        assert '<message user="Alice">こんにちは</message>' in result
+        assert '<message user="Bob">やあ</message>' in result
 
     def test_bot_messages_get_bot_tag(self):
-        """Botメッセージに[BOT]タグが付くこと"""
+        """Botメッセージにbot属性が付くこと"""
         messages = [
             _make_message(author_name="Alice", content="質問です"),
             _make_message(author_name="スフェーン", content="回答です", is_bot=True),
         ]
         result = _format_messages_for_summary(messages)
-        assert "Alice: 質問です" in result
-        assert "スフェーン[BOT]: 回答です" in result
+        assert '<message user="Alice">質問です</message>' in result
+        assert 'bot="true"' in result
+        assert "回答です" in result
 
     def test_single_message(self):
         """メッセージが1件の場合も正しくフォーマットされること"""
         messages = [_make_message(author_name="Solo", content="一人です")]
         result = _format_messages_for_summary(messages)
-        assert result == "Solo: 一人です"
+        assert '<message user="Solo">一人です</message>' in result
 
     def test_bot_only_messages(self):
         """Botメッセージのみの場合も正しく動作すること"""
@@ -79,8 +81,10 @@ class TestFormatMessagesForSummary:
             _make_message(author_name="Bot2", content="ボット2", is_bot=True),
         ]
         result = _format_messages_for_summary(messages)
-        assert "Bot1[BOT]: ボット1" in result
-        assert "Bot2[BOT]: ボット2" in result
+        assert 'user="Bot1"' in result
+        assert "ボット1" in result
+        assert 'user="Bot2"' in result
+        assert "ボット2" in result
 
 
 class TestExtractActiveUsers:
@@ -158,9 +162,9 @@ class TestSummarizerMaybeSummarize:
         summarizer = Summarizer()
         messages = [_make_message()]
 
-        with patch("memory.summarizer.asyncio.ensure_future") as mock_future:
+        with patch("memory.summarizer.asyncio.create_task") as mock_task:
             summarizer.maybe_summarize(100, messages)
-            mock_future.assert_not_called()
+            mock_task.assert_not_called()
 
     @patch("memory.summarizer.get_channel_context_store")
     def test_skip_when_already_running(self, mock_get_store):
@@ -175,13 +179,13 @@ class TestSummarizerMaybeSummarize:
         summarizer._running.add(100)  # 既に実行中
         messages = [_make_message()]
 
-        with patch("memory.summarizer.asyncio.ensure_future") as mock_future:
+        with patch("memory.summarizer.asyncio.create_task") as mock_task:
             summarizer.maybe_summarize(100, messages)
-            mock_future.assert_not_called()
+            mock_task.assert_not_called()
 
     @patch("memory.summarizer.get_channel_context_store")
     def test_trigger_when_should_summarize_true(self, mock_get_store):
-        """should_summarizeがTrueの場合、asyncio.ensure_futureが呼ばれること"""
+        """should_summarizeがTrueの場合、asyncio.create_taskが呼ばれること"""
         mock_ctx = MagicMock()
         mock_ctx.should_summarize.return_value = True
         mock_ctx.message_count_since_update = 20
@@ -192,9 +196,9 @@ class TestSummarizerMaybeSummarize:
         summarizer = Summarizer()
         messages = [_make_message()]
 
-        with patch("memory.summarizer.asyncio.ensure_future") as mock_future:
+        with patch("memory.summarizer.asyncio.create_task") as mock_task:
             summarizer.maybe_summarize(100, messages)
-            mock_future.assert_called_once()
+            mock_task.assert_called_once()
 
     @patch("memory.summarizer.get_channel_context_store")
     def test_different_channel_not_blocked(self, mock_get_store):
@@ -210,9 +214,9 @@ class TestSummarizerMaybeSummarize:
         summarizer._running.add(200)  # 別チャンネルが実行中
         messages = [_make_message()]
 
-        with patch("memory.summarizer.asyncio.ensure_future") as mock_future:
+        with patch("memory.summarizer.asyncio.create_task") as mock_task:
             summarizer.maybe_summarize(100, messages)
-            mock_future.assert_called_once()
+            mock_task.assert_called_once()
 
 
 class TestSummarizerCallSummarizeLlm:

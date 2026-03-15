@@ -114,7 +114,8 @@ def _handle_api_error(error: Exception) -> str:
     if (isinstance(error, genai_errors.APIError) and error.code == 404) or isinstance(
         error, google_exceptions.NotFound
     ):
-        return f"ごめんね、指定されたAIモデル「{BOT_MODEL}」が見つからないか、このリージョンでは使えないみたい…😢"
+        logger.error(f"AIモデルが見つからないか利用不可: model={BOT_MODEL}", exc_info=True)
+        return "ごめんね、AIモデルが見つからないか、このリージョンでは使えないみたい…😢"
     if (isinstance(error, genai_errors.APIError) and error.code == 429) or isinstance(
         error, (google_exceptions.TooManyRequests, google_exceptions.ResourceExhausted)
     ):

@@ -28,6 +28,7 @@ MAX_CONVERSATION_TURNS = 10
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5MB
 IMAGE_REQUEST_TIMEOUT = (3, 5)  # (connect, read)
 ALLOWED_IMAGE_DOMAINS = {"cdn.discordapp.com", "media.discordapp.net"}
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 TOOL_USAGE_INSTRUCTION = (
     "FF14のゲームデータ（アイテム、製作レシピ、スキル・アクション、クエスト、マウント、ミニオン等）に関する質問は、"
@@ -122,8 +123,8 @@ class Sphene:
                             resp.raise_for_status()
 
                             content_type = resp.headers.get("Content-Type", "")
-                            if not content_type.startswith("image/"):
-                                logger.warning(f"画像以外のContent-Typeを検出: {url} ({content_type})")
+                            if content_type.split(";")[0].strip() not in ALLOWED_IMAGE_TYPES:
+                                logger.warning(f"許可されていないContent-Typeを検出: {url} ({content_type})")
                                 continue
 
                             content_length = resp.headers.get("Content-Length")
