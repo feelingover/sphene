@@ -11,6 +11,7 @@ applyTo: "**"
 - 翻訳機能（国旗リアクション: 🇺🇸 / 🇯🇵）
 - チャンネル管理（全体/限定モード、Firestore/ローカル選択）
 - Vertex AI Native SDK (`google-genai`) 移行（OpenAI互換API廃止）
+- Gemini 4 Hydrogen (`gemini-4-hydrogen`) へモデル移行・`VERTEX_AI_LOCATION` デフォルトを `global` に変更・未使用の `google-cloud-aiplatform` 依存を削除（2026/11）
 - Google検索Grounding（`ENABLE_GOOGLE_SEARCH_GROUNDING`、function callingと排他）
 - uv による依存管理（pyproject.toml + uv.lock）
 - Docker / Kubernetes デプロイ対応

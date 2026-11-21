@@ -67,7 +67,7 @@ async def test_translate_to_english_success(
     mock_get_client: MagicMock, mock_model_name: MagicMock
 ) -> None:
     """英語翻訳が成功するケース"""
-    mock_model_name.return_value = "gemini-2.5-flash"
+    mock_model_name.return_value = "gemini-4-hydrogen"
 
     mock_response = MagicMock()
     mock_response.text = "This is a translation test."
@@ -86,7 +86,7 @@ async def test_translate_to_english_error(
     mock_get_client: MagicMock, mock_model_name: MagicMock
 ) -> None:
     """英語翻訳中にエラーが発生するケース"""
-    mock_model_name.return_value = "gemini-2.5-flash"
+    mock_model_name.return_value = "gemini-4-hydrogen"
     mock_get_client.return_value.models.generate_content.side_effect = Exception(
         "API error"
     )
@@ -103,7 +103,7 @@ async def test_translate_to_japanese_success(
     mock_get_client: MagicMock, mock_model_name: MagicMock
 ) -> None:
     """日本語翻訳が成功するケース"""
-    mock_model_name.return_value = "gemini-2.5-flash"
+    mock_model_name.return_value = "gemini-4-hydrogen"
 
     mock_response = MagicMock()
     mock_response.text = "これは翻訳されたテキストです。"
@@ -122,7 +122,7 @@ async def test_translate_to_japanese_error(
     mock_get_client: MagicMock, mock_model_name: MagicMock
 ) -> None:
     """日本語翻訳中にエラーが発生するケース"""
-    mock_model_name.return_value = "gemini-2.5-flash"
+    mock_model_name.return_value = "gemini-4-hydrogen"
     mock_get_client.return_value.models.generate_content.side_effect = Exception(
         "API error"
     )

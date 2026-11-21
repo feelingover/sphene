@@ -226,7 +226,7 @@ class TestSummarizerCallSummarizeLlm:
     @patch("memory.summarizer._get_genai_client")
     def test_success(self, mock_get_client, mock_get_model):
         """LLM呼び出しが成功した場合、解析済み辞書を返すこと"""
-        mock_get_model.return_value = "gemini-2.5-flash"
+        mock_get_model.return_value = "gemini-4-hydrogen"
 
         expected_result = {
             "summary": "テスト要約",
@@ -258,7 +258,7 @@ class TestSummarizerCallSummarizeLlm:
     @patch("memory.summarizer._get_genai_client")
     def test_uses_bot_model(self, mock_get_client, mock_get_model):
         """BOT_MODELが使用されることをテスト"""
-        mock_get_model.return_value = "gemini-2.5-flash"
+        mock_get_model.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({"summary": "要約", "mood": "", "topic_keywords": []})
@@ -273,14 +273,14 @@ class TestSummarizerCallSummarizeLlm:
         summarizer._call_summarize_llm(context, messages)
 
         call_args = mock_client.models.generate_content.call_args
-        assert call_args.kwargs["model"] == "gemini-2.5-flash"
+        assert call_args.kwargs["model"] == "gemini-4-hydrogen"
         mock_get_model.assert_called_once()
 
     @patch("memory.summarizer.get_model_name")
     @patch("memory.summarizer._get_genai_client")
     def test_falls_back_to_default_model(self, mock_get_client, mock_get_model):
         """get_model_nameのデフォルトを使用すること"""
-        mock_get_model.return_value = "gemini-2.5-flash"
+        mock_get_model.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({"summary": "要約", "mood": "", "topic_keywords": []})
@@ -295,14 +295,14 @@ class TestSummarizerCallSummarizeLlm:
         summarizer._call_summarize_llm(context, messages)
 
         call_args = mock_client.models.generate_content.call_args
-        assert call_args.kwargs["model"] == "gemini-2.5-flash"
+        assert call_args.kwargs["model"] == "gemini-4-hydrogen"
         mock_get_model.assert_called_once()
 
     @patch("memory.summarizer.get_model_name")
     @patch("memory.summarizer._get_genai_client")
     def test_empty_messages_returns_none(self, mock_get_client, mock_get_model):
         """メッセージが空の場合、Noneを返すこと"""
-        mock_get_model.return_value = "gemini-2.5-flash"
+        mock_get_model.return_value = "gemini-4-hydrogen"
 
         summarizer = Summarizer()
         context = ChannelContext(channel_id=100)
@@ -317,7 +317,7 @@ class TestSummarizerCallSummarizeLlm:
     @patch("memory.summarizer._get_genai_client")
     def test_empty_response_text_returns_none(self, mock_get_client, mock_get_model):
         """レスポンスのtextが空の場合、Noneを返すこと"""
-        mock_get_model.return_value = "gemini-2.5-flash"
+        mock_get_model.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = ""
@@ -337,7 +337,7 @@ class TestSummarizerCallSummarizeLlm:
     @patch("memory.summarizer._get_genai_client")
     def test_llm_exception_returns_none(self, mock_get_client, mock_get_model):
         """LLM呼び出しで例外が発生した場合、Noneを返すこと"""
-        mock_get_model.return_value = "gemini-2.5-flash"
+        mock_get_model.return_value = "gemini-4-hydrogen"
 
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception("API Error")
@@ -355,7 +355,7 @@ class TestSummarizerCallSummarizeLlm:
     @patch("memory.summarizer._get_genai_client")
     def test_invalid_json_returns_none(self, mock_get_client, mock_get_model):
         """不正なJSONレスポンスの場合、Noneを返すこと"""
-        mock_get_model.return_value = "gemini-2.5-flash"
+        mock_get_model.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = "これはJSONではない"
@@ -375,7 +375,7 @@ class TestSummarizerCallSummarizeLlm:
     @patch("memory.summarizer._get_genai_client")
     def test_previous_context_included_in_prompt(self, mock_get_client, mock_get_model):
         """前回の要約がある場合、プロンプトに含まれること"""
-        mock_get_model.return_value = "gemini-2.5-flash"
+        mock_get_model.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({"summary": "新要約", "mood": "", "topic_keywords": []})

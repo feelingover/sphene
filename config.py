@@ -14,12 +14,12 @@ INSTANCE_NAME: str = os.getenv("INSTANCE_NAME", "")
 if not INSTANCE_NAME:
     raise ValueError("INSTANCE_NAME is required")
 
-BOT_MODEL: str = os.getenv("BOT_MODEL", "google/gemini-2.5-flash")
-BOT_LITE_MODEL: str = os.getenv("BOT_LITE_MODEL", "google/gemini-2.5-flash")
+BOT_MODEL: str = os.getenv("BOT_MODEL", "google/gemini-4-hydrogen")
+BOT_LITE_MODEL: str = os.getenv("BOT_LITE_MODEL", "google/gemini-4-hydrogen")
 
 # Vertex AI設定
 VERTEX_AI_PROJECT_ID: str = os.getenv("VERTEX_AI_PROJECT_ID", "")
-VERTEX_AI_LOCATION: str = os.getenv("VERTEX_AI_LOCATION", "asia-northeast1")
+VERTEX_AI_LOCATION: str = os.getenv("VERTEX_AI_LOCATION", "global")
 # Router LLM設定 (issue #94)
 # ユーザーの意図を軽量LLMで判定し、grounding/function_calling/noneを動的選択する
 ROUTER_ENABLED: bool = os.getenv("ROUTER_ENABLED", "true").lower() == "true"

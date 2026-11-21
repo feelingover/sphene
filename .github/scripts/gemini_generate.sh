@@ -5,12 +5,12 @@
 # Usage: gemini_generate.sh <prompt> <fallback>
 # Env:
 #   GEMINI_API_KEY  Gemini API キー（未設定ならフォールバック）
-#   GEMINI_MODEL    使用モデル（デフォルト: gemini-3.8-flash）
+#   GEMINI_MODEL    使用モデル（デフォルト: gemini-4-hydrogen）
 set -uo pipefail
 
 PROMPT="$1"
 FALLBACK="$2"
-MODEL="${GEMINI_MODEL:-gemini-3.8-flash}"
+MODEL="${GEMINI_MODEL:-gemini-4-hydrogen}"
 
 fallback() {
   echo "❌ $1 フォールバックを使います。" >&2
