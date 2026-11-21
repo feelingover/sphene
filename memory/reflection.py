@@ -10,7 +10,7 @@ from html import escape
 from google.genai import types
 
 import config
-from ai.client import get_genai_client, get_model_name
+from ai.client import get_genai_client, get_light_thinking_config, get_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
 from memory.short_term import ChannelMessage
@@ -161,6 +161,7 @@ class ReflectionEngine:
                 ],
                 config=types.GenerateContentConfig(
                     temperature=0.3,
+                    thinking_config=get_light_thinking_config(),
                     response_mime_type="application/json",
                 ),
             )
@@ -266,6 +267,7 @@ class ReflectionEngine:
                 ],
                 config=types.GenerateContentConfig(
                     temperature=0.3,
+                    thinking_config=get_light_thinking_config(),
                     response_mime_type="application/json",
                 ),
             )

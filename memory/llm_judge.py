@@ -5,7 +5,7 @@ import asyncio
 from html import escape
 
 import config
-from ai.client import _get_genai_client, get_lite_model_name
+from ai.client import _get_genai_client, get_light_thinking_config, get_lite_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from google.genai import types
 from log_utils.logger import logger
@@ -78,6 +78,7 @@ class LLMJudge:
                 contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
                 config=types.GenerateContentConfig(
                     temperature=0.1,
+                    thinking_config=get_light_thinking_config(),
                     response_mime_type="application/json", # JSONモードを有効化！
                 ),
             )

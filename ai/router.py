@@ -7,7 +7,7 @@ from typing import Literal, cast
 from google.genai import types
 
 import config
-from ai.client import _get_genai_client, get_lite_model_name
+from ai.client import _get_genai_client, get_light_thinking_config, get_lite_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
 
@@ -76,6 +76,7 @@ def _call_router_llm(message: str, context: str | None) -> ToolMode:
         contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
         config=types.GenerateContentConfig(
             temperature=0.0,
+            thinking_config=get_light_thinking_config(),
             response_mime_type="application/json",
         ),
     )

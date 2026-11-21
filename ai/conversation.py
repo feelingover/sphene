@@ -7,7 +7,7 @@ from pathlib import Path
 import requests
 from google.genai import types
 
-from ai.client import _get_genai_client, get_model_name
+from ai.client import _get_genai_client, get_light_thinking_config, get_model_name
 from ai.api import (
     generate_content_with_retry as _generate_content_with_retry,
     call_genai_with_tools as _call_genai_with_tools,
@@ -257,6 +257,7 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
             config=types.GenerateContentConfig(
                 system_instruction=instruction,
                 max_output_tokens=1000,
+                thinking_config=get_light_thinking_config(),
             ),
         )
 

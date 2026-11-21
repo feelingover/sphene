@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import threading
 from typing import Any
 
@@ -61,6 +62,37 @@ def get_lite_model_name() -> str:
     if model_name.startswith("google/"):
         model_name = model_name.replace("google/", "")
     return model_name
+
+
+_VALID_THINKING_LEVELS = frozenset({"minimal", "low", "medium", "high"})
+
+
+@functools.lru_cache(maxsize=8)
+def _build_thinking_config(level: str) -> types.ThinkingConfig | None:
+    """Thinkingレベル文字列から ThinkingConfig を生成する。
+
+    Args:
+        level: "minimal" / "low" / "medium" / "high"。空文字はモデルのデフォルトを使う。
+
+    Returns:
+        ThinkingConfig。空文字または不正な値の場合はNone（モデルのデフォルト）。
+    """
+    if not level:
+        return None
+    if level not in _VALID_THINKING_LEVELS:
+        logger.warning(f"不正なThinkingレベル '{level}' を無視してモデルのデフォルトを使用します")
+        return None
+    return types.ThinkingConfig(thinking_level=types.ThinkingLevel(level.upper()))
+
+
+def get_main_thinking_config() -> types.ThinkingConfig | None:
+    """会話応答・ツール呼び出し用の ThinkingConfig を取得する"""
+    return _build_thinking_config(config.MAIN_THINKING_LEVEL)
+
+
+def get_light_thinking_config() -> types.ThinkingConfig | None:
+    """Router・Judge・相槌などの軽量タスク用の ThinkingConfig を取得する"""
+    return _build_thinking_config(config.LIGHT_THINKING_LEVEL)
 
 
 def get_genai_client() -> genai.Client:

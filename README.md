@@ -93,6 +93,8 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 2. **名前呼び**: `ボット名、元気？`
 3. **リプライ**: ボットのメッセージに返信する
 
+応答を生成している間は、Discord上に「（ボット名）が入力中...」と表示されます（自律応答・相槌・翻訳も同様）。
+
 ### 自律応答
 
 VANGUARD（自律応答）と Living Memory（記憶システム）はデフォルト有効です。ボットは明示的に呼びかけられなくても、会話の流れに応じて自然に参加します。
