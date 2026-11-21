@@ -57,6 +57,12 @@ FIRESTORE_COLLECTION_FACTS_ARCHIVE: str = get_collection_name("facts_archive")
 # === AI会話設定 ===
 MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "5"))
 
+# Thinkingレベル（"" = モデルのデフォルト / "minimal" / "low" / "medium" / "high"）
+# MAIN: 会話応答・ツール呼び出しループ
+# LIGHT: Router・LLM Judge・相槌・要約・反省会・翻訳などの軽量タスク
+MAIN_THINKING_LEVEL: str = os.getenv("MAIN_THINKING_LEVEL", "").strip().lower()
+LIGHT_THINKING_LEVEL: str = os.getenv("LIGHT_THINKING_LEVEL", "low").strip().lower()
+
 # === 記憶機能設定 ===
 
 # 短期記憶（チャンネルメッセージバッファ）

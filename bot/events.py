@@ -1,5 +1,7 @@
 import asyncio
+import contextlib
 import random
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -166,6 +168,29 @@ def _get_or_reset_conversation(channel_id: str) -> "Sphene":
     return channel_conversations[channel_id]
 
 
+@contextlib.asynccontextmanager
+async def _typing_indicator(channel: discord.abc.Messageable) -> AsyncIterator[None]:
+    """応答生成中に「入力中...」インジケーターを表示する。
+
+    discord.py の typing() は約10秒ごとに自動で再送されるため、長時間の生成中も表示が続く。
+    インジケーターの表示に失敗しても応答処理は継続する。
+
+    Args:
+        channel: インジケーターを表示するチャンネル
+    """
+    typing_cm = channel.typing()
+    try:
+        await typing_cm.__aenter__()
+    except Exception as e:
+        logger.warning(f"入力中インジケーターの表示に失敗: {e}", exc_info=True)
+        yield
+        return
+    try:
+        yield
+    finally:
+        await typing_cm.__aexit__(None, None, None)
+
+
 async def _send_chunks(
     message: discord.Message,
     chunks: list[str],
@@ -251,15 +276,16 @@ async def process_conversation(
     api = _get_or_reset_conversation(channel_id)
 
     # 会話履歴とコンテキストを使用して応答生成（Lock で直列化）
-    answer = await api.async_input_message(
-        input_text=question,
-        author_name=author_name,
-        image_urls=images,
-        channel_context=channel_context,
-        channel_summary=channel_summary,
-        user_profile=user_profile_str,
-        relevant_facts=relevant_facts_str,
-    )
+    async with _typing_indicator(message.channel):
+        answer = await api.async_input_message(
+            input_text=question,
+            author_name=author_name,
+            image_urls=images,
+            channel_context=channel_context,
+            channel_summary=channel_summary,
+            user_profile=user_profile_str,
+            relevant_facts=relevant_facts_str,
+        )
 
     if answer:
         await _send_chunks(message, split_message(answer), is_reply=is_reply)
@@ -449,11 +475,12 @@ async def _process_short_ack(
         logger.debug("相槌: コンテキストが空のためスキップ (channel=%s)", message.channel.id)
         return
 
-    answer = await asyncio.to_thread(
-        generate_short_ack,
-        channel_context=context,
-        trigger_message=message.content or "",
-    )
+    async with _typing_indicator(message.channel):
+        answer = await asyncio.to_thread(
+            generate_short_ack,
+            channel_context=context,
+            trigger_message=message.content or "",
+        )
 
     if not answer:
         if already_reacted:
@@ -522,15 +549,16 @@ async def _process_autonomous_response(
     api = _get_or_reset_conversation(channel_id_str)
 
     # 会話履歴を使用した応答生成（Lock で直列化）
-    answer = await api.async_input_message(
-        input_text=message.content or "",
-        author_name=message.author.display_name,
-        image_urls=images,
-        channel_context=channel_context,
-        channel_summary=channel_summary,
-        user_profile=user_profile_str,
-        relevant_facts=relevant_facts_str,
-    )
+    async with _typing_indicator(message.channel):
+        answer = await api.async_input_message(
+            input_text=message.content or "",
+            author_name=message.author.display_name,
+            image_urls=images,
+            channel_context=channel_context,
+            channel_summary=channel_summary,
+            user_profile=user_profile_str,
+            relevant_facts=relevant_facts_str,
+        )
 
     if answer:
         await _send_chunks(message, split_message(answer), is_reply=False)
@@ -811,8 +839,9 @@ async def translate_and_reply(
         translate_func = translate_to_english
         language_flag = "🇺🇸"
 
-    # 翻訳実行
-    translated_text = await translate_func(content)
+    # 翻訳実行（生成中は入力中インジケーターを表示）
+    async with _typing_indicator(message.channel):
+        translated_text = await translate_func(content)
 
     if translated_text:
         # 適切な方法で翻訳結果を送信

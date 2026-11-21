@@ -14,7 +14,7 @@ from tenacity import (
     before_sleep_log,
 )
 
-from ai.client import _get_genai_client, get_model_name
+from ai.client import _get_genai_client, get_main_thinking_config, get_model_name
 from ai.tools import get_tools, TOOL_FUNCTIONS
 from config import BOT_MODEL, MAX_TOOL_CALL_ROUNDS
 from log_utils.logger import logger
@@ -167,6 +167,7 @@ def call_genai_with_tools(
                 contents=local_history,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
+                    thinking_config=get_main_thinking_config(),
                     tools=tools,  # type: ignore[arg-type]
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(
                         disable=True
@@ -218,6 +219,7 @@ def call_genai_with_tools(
             contents=local_history,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
+                thinking_config=get_main_thinking_config(),
             ),
         )
     except Exception as e:

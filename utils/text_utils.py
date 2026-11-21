@@ -1,7 +1,9 @@
 import asyncio
 
+from google.genai import types
+
 import config
-from ai.client import _get_genai_client, get_model_name
+from ai.client import _get_genai_client, get_light_thinking_config, get_model_name
 from log_utils.logger import logger
 
 PREVIEW_LENGTH = 30
@@ -48,7 +50,13 @@ async def translate_text(text: str, target_language: str = "english") -> str | N
             client = _get_genai_client()
             model_id = get_model_name()
             prompt = f"{language_configs[target_language]}\n\nText: {text}"
-            return client.models.generate_content(model=model_id, contents=prompt)
+            return client.models.generate_content(
+                model=model_id,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    thinking_config=get_light_thinking_config(),
+                ),
+            )
 
         result = await asyncio.to_thread(_sync_translate)
         return result.text

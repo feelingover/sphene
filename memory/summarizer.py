@@ -8,7 +8,7 @@ from html import escape
 from google.genai import types
 
 import config
-from ai.client import _get_genai_client, get_model_name
+from ai.client import _get_genai_client, get_light_thinking_config, get_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
 from memory.channel_context import ChannelContext, get_channel_context_store
@@ -122,6 +122,7 @@ class Summarizer:
                 contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
                 config=types.GenerateContentConfig(
                     temperature=0.3,
+                    thinking_config=get_light_thinking_config(),
                     response_mime_type="application/json",
                 ),
             )
