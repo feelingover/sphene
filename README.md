@@ -197,9 +197,8 @@ VANGUARD（自律応答）と Living Memory（記憶システム）はデフォ�
 - Python 3.14+
 - uv - パッケージ管理・仮想環境管理
 - discord.py - Discordボットフレームワーク
-- Google Gen AI SDK (`google-genai`) - Vertex AI経由のGeminiモデルによる会話（マルチモーダル対応）
+- Google Gen AI SDK (`google-genai`) - Vertex AI（現 Gemini Enterprise Agent Platform）経由のGeminiモデルによる会話（マルチモーダル対応）
 - google-auth - GCP認証（Vertex AI利用時）
-- google-cloud-aiplatform - Vertex AI基盤
 - Docker - コンテナ化
 - Kubernetes - オプショナルデプロイ環境
 - Cloud Firestore (オプション) - チャンネル設定のリモートストレージ

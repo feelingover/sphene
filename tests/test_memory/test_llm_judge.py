@@ -21,7 +21,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """LLMがrespond=trueを返す場合"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({
@@ -49,7 +49,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """LLMがrespond=falseを返す場合"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({
@@ -77,7 +77,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """BOT_LITE_MODELが使用されることをテスト"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({"respond": False, "reason": "test"})
@@ -89,7 +89,7 @@ class TestLLMJudge:
         await judge.evaluate("test", "context", "Bot")
 
         call_args = mock_get_client.return_value.models.generate_content.call_args
-        assert call_args.kwargs["model"] == "gemini-2.5-flash"
+        assert call_args.kwargs["model"] == "gemini-4-hydrogen"
 
     @pytest.mark.asyncio
     @patch("memory.llm_judge.get_lite_model_name")
@@ -98,7 +98,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """LLMからの応答が空の場合はFalse"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = None
@@ -120,7 +120,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """JSON解析失敗時はFalseを返す"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = "Yes, I think true"  # 不正なJSON
@@ -143,7 +143,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """API呼び出しエラー時はFalseを返す（安全側フォールバック）"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
         mock_get_client.return_value.models.generate_content.side_effect = Exception(
             "API Error"
         )
@@ -162,7 +162,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """LLMがJSON配列で返した場合も正常に処理できること"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         # Geminiが稀にJSON配列で返すケース
@@ -191,7 +191,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """LLMが空のJSON配列を返した場合はFalseを返すこと"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps([])
@@ -215,7 +215,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """コンテキストが空の場合でも動作すること"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({
@@ -246,7 +246,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """LLMがreact=true, emojisを返した場合に正しくパースされること"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({
@@ -278,7 +278,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """emojisが3個以上返ってきた場合は2個に制限されること"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({
@@ -307,7 +307,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """emojisフィールドが省略された場合は空リストを返すこと"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({
@@ -334,7 +334,7 @@ class TestLLMJudge:
         self, mock_get_client, mock_model_name
     ):
         """戻り値が4-tuple (bool, str, bool, list[str]) であること"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.text = json.dumps({

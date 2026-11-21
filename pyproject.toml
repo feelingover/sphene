@@ -11,7 +11,6 @@ dependencies = [
     "google-cloud-firestore",
     "requests",
     "httpx",
-    "google-cloud-aiplatform>=1.137.0",
     "google-genai>=1.0.0",
     "tenacity>=9.1.4",
     "python-json-logger>=4.0.0",

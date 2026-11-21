@@ -6,7 +6,7 @@ applyTo: "**"
 ## v1.0.0 Current State (2026/3)
 
 ### 品質指標
-- テスト: 668件全パス
+- テスト: 674件全パス
 - カバレッジ: 89%
 - mypy: 72ファイル no issues
 
@@ -34,7 +34,8 @@ applyTo: "**"
 ### 主要環境変数
 
 **基本設定**
-- `GEMINI_MODEL`: 使用モデル（デフォルト: `google/gemini-2.5-flash`）
+- `BOT_MODEL` / `BOT_LITE_MODEL`: 使用モデル（デフォルト: `google/gemini-4-hydrogen`）
+- `VERTEX_AI_LOCATION`: Vertex AIリージョン（デフォルト: `global`。`asia-northeast1` は新しいモデルで404になる）
 - `STORAGE_TYPE`: `local` | `firestore`（デフォルト: `local`）
 - `FIRESTORE_NAMESPACE`: Firestoreコレクション名プレフィックス
 - `BOT_NAME`: ボットの名前（デフォルト: `スフェーン`）

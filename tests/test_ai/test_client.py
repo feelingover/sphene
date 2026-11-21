@@ -25,7 +25,7 @@ class TestGetGenaiClient:
             "ai.client.google.auth.default",
             return_value=(mock_creds, "my-project"),
         ), patch.object(config, "VERTEX_AI_PROJECT_ID", "my-project"), patch.object(
-            config, "VERTEX_AI_LOCATION", "asia-northeast1"
+            config, "VERTEX_AI_LOCATION", "global"
         ):
             mock_client = MagicMock()
             mock_client_cls.return_value = mock_client
@@ -35,7 +35,7 @@ class TestGetGenaiClient:
             mock_client_cls.assert_called_once_with(
                 vertexai=True,
                 project="my-project",
-                location="asia-northeast1",
+                location="global",
             )
             assert client == mock_client
 
@@ -47,7 +47,7 @@ class TestGetGenaiClient:
             "ai.client.google.auth.default",
             return_value=(mock_creds, "my-project"),
         ), patch.object(config, "VERTEX_AI_PROJECT_ID", "my-project"), patch.object(
-            config, "VERTEX_AI_LOCATION", "asia-northeast1"
+            config, "VERTEX_AI_LOCATION", "global"
         ):
             mock_client = MagicMock()
             mock_client_cls.return_value = mock_client
@@ -66,7 +66,7 @@ class TestGetGenaiClient:
             "ai.client.google.auth.default",
             return_value=(mock_creds, "auto-detected-project"),
         ), patch.object(config, "VERTEX_AI_PROJECT_ID", ""), patch.object(
-            config, "VERTEX_AI_LOCATION", "asia-northeast1"
+            config, "VERTEX_AI_LOCATION", "global"
         ):
             mock_client_cls.return_value = MagicMock()
 
@@ -75,7 +75,7 @@ class TestGetGenaiClient:
             mock_client_cls.assert_called_once_with(
                 vertexai=True,
                 project="auto-detected-project",
-                location="asia-northeast1",
+                location="global",
             )
 
 
@@ -84,13 +84,13 @@ class TestGetModelName:
 
     def test_strips_google_prefix(self) -> None:
         """google/ プレフィックスが除去されることをテスト"""
-        with patch.object(config, "BOT_MODEL", "google/gemini-2.5-flash"):
-            assert get_model_name() == "gemini-2.5-flash"
+        with patch.object(config, "BOT_MODEL", "google/gemini-4-hydrogen"):
+            assert get_model_name() == "gemini-4-hydrogen"
 
     def test_keeps_name_without_prefix(self) -> None:
         """プレフィックスなしのモデル名がそのまま返されることをテスト"""
-        with patch.object(config, "BOT_MODEL", "gemini-2.5-pro"):
-            assert get_model_name() == "gemini-2.5-pro"
+        with patch.object(config, "BOT_MODEL", "gemini-4-hydrogen"):
+            assert get_model_name() == "gemini-4-hydrogen"
 
 
 class TestGetLiteModelName:
@@ -98,13 +98,13 @@ class TestGetLiteModelName:
 
     def test_strips_google_prefix(self) -> None:
         """google/ プレフィックスが除去されることをテスト"""
-        with patch.object(config, "BOT_LITE_MODEL", "google/gemini-2.5-flash"):
-            assert get_lite_model_name() == "gemini-2.5-flash"
+        with patch.object(config, "BOT_LITE_MODEL", "google/gemini-4-hydrogen"):
+            assert get_lite_model_name() == "gemini-4-hydrogen"
 
     def test_keeps_name_without_prefix(self) -> None:
         """プレフィックスなしのモデル名がそのまま返されることをテスト"""
-        with patch.object(config, "BOT_LITE_MODEL", "gemini-2.5-pro"):
-            assert get_lite_model_name() == "gemini-2.5-pro"
+        with patch.object(config, "BOT_LITE_MODEL", "gemini-4-hydrogen"):
+            assert get_lite_model_name() == "gemini-4-hydrogen"
 
 
 class TestResetClient:
@@ -118,7 +118,7 @@ class TestResetClient:
             "ai.client.google.auth.default",
             return_value=(mock_creds, "my-project"),
         ), patch.object(config, "VERTEX_AI_PROJECT_ID", "my-project"), patch.object(
-            config, "VERTEX_AI_LOCATION", "asia-northeast1"
+            config, "VERTEX_AI_LOCATION", "global"
         ):
             mock_client1 = MagicMock()
             mock_client2 = MagicMock()

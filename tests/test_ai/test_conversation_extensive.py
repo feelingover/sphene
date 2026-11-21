@@ -133,7 +133,7 @@ class TestConversationExtensive:
         self, mock_get_client, mock_model_name
     ):
         """ツール呼び出しの無限ループ防止テスト"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         # 常にfunction_callを返すレスポンスを作成
         mock_fc = MagicMock()
@@ -173,7 +173,7 @@ class TestConversationExtensive:
         self, mock_get_client, mock_model_name
     ):
         """ツール呼び出しラウンド上限到達後、ツールなし最終コールでテキスト応答を返すテスト"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         # ツール呼び出しを返すレスポンス
         mock_fc = MagicMock()
@@ -229,7 +229,7 @@ class TestConversationExtensive:
         self, mock_get_client, mock_model_name
     ):
         """ツールなし最終コールでAPI例外が発生した場合のテスト"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         # ツール呼び出しを返すレスポンス
         mock_fc = MagicMock()
@@ -296,7 +296,7 @@ class TestConversationExtensive:
         self, mock_get_client, mock_model_name
     ):
         """テキスト応答の正常処理テスト"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         # テキスト応答のみを返すレスポンス
         mock_part = MagicMock()
@@ -323,7 +323,7 @@ class TestConversationExtensive:
         self, mock_get_client, mock_model_name
     ):
         """空のcandidatesが返された場合のテスト"""
-        mock_model_name.return_value = "gemini-2.5-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         mock_response = MagicMock()
         mock_response.candidates = []
@@ -342,7 +342,7 @@ class TestConversationExtensive:
         self, mock_get_client, mock_model_name
     ):
         """tool_mode='grounding'の時に正しいツール構成でSDKが呼ばれるかテスト"""
-        mock_model_name.return_value = "gemini-3-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         # モックの戻り値設定
         mock_response = MagicMock()
@@ -382,7 +382,7 @@ class TestConversationExtensive:
         self, mock_get_client, mock_model_name
     ):
         """Groundingメタデータが含まれるレスポンスの処理テスト"""
-        mock_model_name.return_value = "gemini-3-flash"
+        mock_model_name.return_value = "gemini-4-hydrogen"
 
         candidate = MagicMock()
         candidate.content.parts = [types.Part.from_text(text="grounded response")]
