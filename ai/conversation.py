@@ -104,6 +104,8 @@ class Sphene:
         if not isinstance(input_text, str) or not input_text.strip():
             return None
 
+        # 失敗時に中間のfunction_call/responseを履歴に残さないためのスナップショット
+        history_before = list(self.history)
         try:
             self.update_interaction_time()
             
@@ -157,8 +159,6 @@ class Sphene:
                     except Exception as e:
                         logger.error(f"画像読み込み失敗: {url} - {e}")
 
-            # 失敗時に中間のfunction_call/responseを履歴に残さないためのスナップショット
-            history_before = list(self.history)
             self.history.append(types.Content(role="user", parts=parts))
 
             # チャンネルのコンテキスト情報を構築
@@ -196,6 +196,7 @@ class Sphene:
             return response
         except Exception as e:
             logger.critical(f"input_messageエラー: {e}", exc_info=True)
+            self.history = history_before
             return "予期せぬエラーが発生しちゃった...😢"
     async def async_input_message(
         self,
