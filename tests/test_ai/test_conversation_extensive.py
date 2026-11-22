@@ -12,7 +12,7 @@ import pytest
 from google.genai import types, errors as genai_errors
 from google.api_core import exceptions as google_exceptions
 
-from ai.api import _strip_function_parts
+from ai.api import _flatten_function_parts
 from ai.conversation import (
     Sphene,
     _call_genai_with_tools,
@@ -440,7 +440,7 @@ class TestUndeclaredFunctionCalls:
     @patch("ai.api.get_model_name", return_value="gemini-4-hydrogen")
     @patch("ai.api._get_genai_client")
     def test_final_call_function_call_is_retried(self, mock_get_client, _model, mock_exec):
-        """上限到達後の最終コールでfunction_callが返ったら、実行せずstrip版で再リクエストする"""
+        """上限到達後の最終コールでfunction_callが返ったら、実行せずテキスト化した履歴で再リクエストする"""
         mock_exec.return_value = [
             types.Part.from_function_response(name="search_recipe", response={"r": 1})
         ]
@@ -465,6 +465,9 @@ class TestUndeclaredFunctionCalls:
             for c in retry_contents
             for p in c.parts
         )
+        # 集めたツール結果はテキストとして渡される
+        retry_texts = [p.text for c in retry_contents for p in c.parts]
+        assert any("search_recipe" in t and '"r": 1' in t for t in retry_texts)
         assert history[-1].parts[0].text == "まとめたよ"
 
     @patch("ai.api.MAX_TOOL_CALL_ROUNDS", 0)
@@ -488,30 +491,50 @@ class TestUndeclaredFunctionCalls:
         assert mock_exec.call_count == 1
         assert mock_get_client.return_value.models.generate_content.call_count == 3
 
-    def test_strip_merges_consecutive_same_role(self):
-        """function系partの除去で同じroleが連続したら1つにまとめる"""
+    def test_flatten_converts_responses_and_merges_roles(self):
+        """function_callは除去、function_responseはテキスト化し、同じroleの連続はまとめる"""
         contents = [
             types.Content(role="user", parts=[types.Part.from_text(text="User: 集計して")]),
             types.Content(
                 role="model",
+                parts=[types.Part.from_function_call(name="search_recipe", args={})],
+            ),
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_function_response(
+                        name="search_recipe", response={"素材": "ダークマター"}
+                    )
+                ],
+            ),
+            types.Content(
+                role="model",
                 parts=[
                     types.Part.from_text(text="調べるね"),
-                    types.Part.from_function_call(name="search_recipe", args={}),
+                    types.Part.from_function_call(name="search_item", args={}),
                 ],
             ),
             types.Content(
                 role="user",
-                parts=[types.Part.from_function_response(name="search_recipe", response={})],
+                parts=[types.Part.from_function_response(name="search_item", response={})],
             ),
             types.Content(role="model", parts=[types.Part.from_text(text="結果だよ")]),
         ]
 
-        stripped = _strip_function_parts(contents)
+        flattened = _flatten_function_parts(contents)
 
-        assert [c.role for c in stripped] == ["user", "model"]
-        assert [p.text for p in stripped[1].parts] == ["調べるね", "結果だよ"]
+        assert [c.role for c in flattened] == ["user", "model", "user", "model"]
+        assert all(
+            not p.function_call and not p.function_response for c in flattened for p in c.parts
+        )
+        # function_callだけのmodelが消え、ユーザー発言とツール結果がまとまる
+        assert flattened[0].parts[0].text == "User: 集計して"
+        assert "search_recipe" in flattened[0].parts[1].text
+        assert "ダークマター" in flattened[0].parts[1].text
+        assert [p.text for p in flattened[1].parts] == ["調べるね"]
+        assert "search_item" in flattened[2].parts[0].text
         # 元の履歴は変更しない
-        assert len(contents[1].parts) == 2
+        assert contents[1].parts[0].function_call is not None
 
     @patch("ai.api._execute_tool_calls")
     @patch("ai.api.get_model_name", return_value="gemini-4-hydrogen")
@@ -533,8 +556,8 @@ class TestUndeclaredFunctionCalls:
     @patch("ai.api._execute_tool_calls")
     @patch("ai.api.get_model_name", return_value="gemini-4-hydrogen")
     @patch("ai.api._get_genai_client")
-    def test_retry_with_stripped_history_succeeds(self, mock_get_client, _model, mock_exec):
-        """テキストが無ければfunction系partを除去した履歴で再リクエストし、その応答を採用する"""
+    def test_retry_with_flattened_history_succeeds(self, mock_get_client, _model, mock_exec):
+        """function系partをテキスト化した履歴で再リクエストし、その応答を採用する"""
         call_only = [types.Part.from_function_call(name="search_recipe", args={"query": "x"})]
         text_only = [types.Part.from_text(text="ちゃんと答えるね")]
         generate = mock_get_client.return_value.models.generate_content
@@ -559,7 +582,9 @@ class TestUndeclaredFunctionCalls:
         assert text == "ちゃんと答えるね"
         mock_exec.assert_not_called()
         retry_contents = generate.call_args_list[1].kwargs["contents"]
+        # function_callのみのmodelは消え、ツール結果はテキストとしてユーザー発言にまとまる
         assert [c.role for c in retry_contents] == ["user", "model", "user"]
+        assert "search_recipe" in retry_contents[0].parts[1].text
         assert all(
             not p.function_call and not p.function_response
             for c in retry_contents

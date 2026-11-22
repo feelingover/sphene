@@ -132,12 +132,22 @@ def _extract_text(content: types.Content | None) -> str | None:
     return "".join(text_parts) if text_parts else None
 
 
-def _strip_function_parts(contents: list[types.Content]) -> list[types.Content]:
-    """履歴からfunction_call/function_responseのpartを除去した送信用コピーを作る
+def _function_response_to_text(part: types.Part) -> types.Part:
+    """function_responseのpartを、ツール結果を説明するテキストpartに変換する"""
+    fr = part.function_response
+    if fr is None:
+        return part
+    result = json.dumps(fr.response, ensure_ascii=False, default=str)
+    return types.Part.from_text(text=f"（ツール {fr.name} の実行結果）\n{result}")
+
+
+def _flatten_function_parts(contents: list[types.Content]) -> list[types.Content]:
+    """履歴のfunction系partをテキスト化・除去した送信用コピーを作る
 
     ツール未宣言のリクエストで履歴中のfunction_callをモデルが模倣するのを防ぐ。
-    partが空になったContentは丸ごと除外し、除去によって同じroleが連続した場合は
-    1つのContentにまとめる。
+    function_callは除去し、function_responseは集めた情報を活かせるよう
+    テキストpartに変換する。partが空になったContentは丸ごと除外し、
+    同じroleが連続した場合は1つのContentにまとめる。
 
     Args:
         contents: 会話履歴
@@ -145,19 +155,21 @@ def _strip_function_parts(contents: list[types.Content]) -> list[types.Content]:
     Returns:
         function系partを含まない送信用の履歴
     """
-    stripped: list[types.Content] = []
+    flattened: list[types.Content] = []
     for content in contents:
         parts = [
-            p for p in (content.parts or []) if not p.function_call and not p.function_response
+            _function_response_to_text(p) if p.function_response else p
+            for p in (content.parts or [])
+            if not p.function_call
         ]
         if not parts:
             continue
-        if stripped and stripped[-1].role == content.role:
-            prev = stripped[-1]
-            stripped[-1] = types.Content(role=prev.role, parts=[*(prev.parts or []), *parts])
+        if flattened and flattened[-1].role == content.role:
+            prev = flattened[-1]
+            flattened[-1] = types.Content(role=prev.role, parts=[*(prev.parts or []), *parts])
         else:
-            stripped.append(types.Content(role=content.role, parts=parts))
-    return stripped
+            flattened.append(types.Content(role=content.role, parts=parts))
+    return flattened
 
 
 def _handle_undeclared_function_calls(
@@ -170,7 +182,7 @@ def _handle_undeclared_function_calls(
     """ツール未宣言時に返されたfunction_callを破棄し、テキスト応答を得る
 
     function_callに添えられたテキストは「調べてみるね」のような前置きであることが
-    多いため採用せず、履歴からfunction系partを除去して1回だけ再リクエストする。
+    多いため採用せず、履歴のfunction系partをテキスト化・除去して1回だけ再リクエストする。
     function_callは履歴に追加しない。
 
     Args:
@@ -188,10 +200,10 @@ def _handle_undeclared_function_calls(
         f"ツール未宣言のモードでfunction_callを検出したため無視: "
         f"tool_mode={tool_mode}, calls={call_names}"
     )
-    logger.info("function系partを除去した履歴で再リクエスト")
+    logger.info("function系partをテキスト化した履歴で再リクエスト")
     try:
         response = generate_content_with_retry(
-            contents=_strip_function_parts(local_history), **request
+            contents=_flatten_function_parts(local_history), **request
         )
     except Exception as e:
         return False, _handle_api_error(e), local_history
@@ -215,7 +227,7 @@ def _request_final_answer(
     """ツール呼び出しラウンド上限到達後、ツールなしで最終応答を取得する
 
     履歴中のfunction_callを模倣してfunction_callが返された場合は実行せず、
-    function系partを除去して再リクエストする。
+    function系partをテキスト化して再リクエストする。
 
     Args:
         local_history: ツール呼び出し結果を含む会話履歴

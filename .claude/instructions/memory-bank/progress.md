@@ -23,7 +23,7 @@ applyTo: "**"
 - Router LLM による Grounding / Function Calling の動的切り替え
 - Function Calling → XIVAPI v2 検索（アイテム・アクション・レシピ・クエスト・マウント・ミニオン等）
 - ツール呼び出しループ改善（`MAX_TOOL_CALL_ROUNDS` 環境変数化、ツールなし最終コール）
-- 応答失敗時の履歴ロールバック・ツール未宣言モード（none/grounding）および上限到達後の最終コールで返された function_call を実行せず破棄し、function 系 part を除去した履歴で1回再リクエスト（前置きテキストは採用しない）・`MAX_TOOL_CALL_ROUNDS` デフォルトを 5→15 に変更（2026/11）
+- 応答失敗時の履歴ロールバック・ツール未宣言モード（none/grounding）および上限到達後の最終コールで返された function_call を実行せず破棄し、function_call を除去・function_response をテキスト化した履歴で1回再リクエスト（前置きテキストは採用しない）・`MAX_TOOL_CALL_ROUNDS` デフォルトを 5→15 に変更（2026/11）
 - API レイヤー分離（`ai/api.py`）
 - Thinkingレベルの用途別設定（`MAIN_THINKING_LEVEL` / `LIGHT_THINKING_LEVEL`）（2026/11）
 - 応答生成中の「入力中...」インジケーター（`bot/events.py` の `_typing_indicator`。通常会話・自律応答・相槌・翻訳で表示）（2026/11）
