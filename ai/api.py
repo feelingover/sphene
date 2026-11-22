@@ -178,6 +178,7 @@ def _handle_undeclared_function_calls(
     local_history: list[types.Content],
     request: dict[str, Any],
     failure_message: str = "応答を読み取れなかったよ…😢",
+    phase: str = "main",
 ) -> tuple[bool, str, list[types.Content]]:
     """ツール未宣言時に返されたfunction_callを破棄し、テキスト応答を得る
 
@@ -187,10 +188,11 @@ def _handle_undeclared_function_calls(
 
     Args:
         resp_content: function_callを含むモデル応答
-        tool_mode: 現在のツールモード ("grounding" | "none")
+        tool_mode: 現在のツールモード
         local_history: 会話履歴
         request: 再リクエスト用の client / model / config
         failure_message: 再リクエストでもテキストを得られなかった場合の応答
+        phase: ログ用の呼び出し箇所 ("main" | "final_call")
 
     Returns:
         (成功フラグ, 応答テキスト, 更新後の履歴)
@@ -198,7 +200,7 @@ def _handle_undeclared_function_calls(
     call_names = [p.function_call.name for p in (resp_content.parts or []) if p.function_call]
     logger.warning(
         f"ツール未宣言のモードでfunction_callを検出したため無視: "
-        f"tool_mode={tool_mode}, calls={call_names}"
+        f"tool_mode={tool_mode}, phase={phase}, calls={call_names}"
     )
     logger.info("function系partをテキスト化した履歴で再リクエスト")
     try:
@@ -208,7 +210,12 @@ def _handle_undeclared_function_calls(
     except Exception as e:
         return False, _handle_api_error(e), local_history
     candidate = response.candidates[0] if response.candidates else None
-    final_text = _extract_text(candidate.content if candidate else None)
+    retry_content = candidate.content if candidate else None
+    if retry_content is not None and any(p.function_call for p in (retry_content.parts or [])):
+        # 添えられたテキストは前置きの可能性が高いため、初回と同じく採用しない
+        logger.warning("再リクエストでもfunction_callが返されたため応答を破棄")
+        return False, failure_message, local_history
+    final_text = _extract_text(retry_content)
     if final_text is None:
         logger.warning("再リクエストでもテキスト応答を得られなかった")
         return False, failure_message, local_history
@@ -250,7 +257,12 @@ def _request_final_answer(
 
     if any(p.function_call for p in resp_content.parts):
         return _handle_undeclared_function_calls(
-            resp_content, "none", local_history, request, failure_message=give_up_message
+            resp_content,
+            "function_calling",
+            local_history,
+            request,
+            failure_message=give_up_message,
+            phase="final_call",
         )
 
     final_text = _extract_text(resp_content)
@@ -310,8 +322,14 @@ def call_genai_with_tools(
     for round_num in range(MAX_TOOL_CALL_ROUNDS + 1):
         logger.info(f"GenAIリクエスト送信 (ラウンド {round_num + 1}, モデル: {model_id})")
 
+        # ツール未宣言のモードでは、履歴のfunction_callを模倣されないよう最初からテキスト化して送る
+        send_contents = (
+            local_history
+            if tool_mode == "function_calling"
+            else _flatten_function_parts(local_history)
+        )
         try:
-            response = generate_content_with_retry(contents=local_history, **request)
+            response = generate_content_with_retry(contents=send_contents, **request)
         except Exception as e:
             return False, _handle_api_error(e), local_history
 

@@ -667,3 +667,96 @@ class TestHistoryRollbackOnFailure:
         sphene.input_message("hi")
 
         assert sphene.history == updated
+
+
+class TestReviewFixes:
+    """トリムの切れ目・未宣言モードの事前テキスト化・再リクエスト時の前置き不採用のテスト"""
+
+    @staticmethod
+    def _make_response(parts):
+        mock_response = MagicMock()
+        mock_response.candidates = [MagicMock(content=types.Content(role="model", parts=parts))]
+        return mock_response
+
+    @staticmethod
+    def _tool_turn(question: str, rounds: int) -> list[types.Content]:
+        turn = [types.Content(role="user", parts=[types.Part.from_text(text=question)])]
+        for i in range(rounds):
+            turn.append(
+                types.Content(
+                    role="model",
+                    parts=[types.Part.from_function_call(name="search_item", args={"q": str(i)})],
+                )
+            )
+            turn.append(
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_function_response(name="search_item", response={"r": i})],
+                )
+            )
+        turn.append(types.Content(role="model", parts=[types.Part.from_text(text="答え")]))
+        return turn
+
+    def test_trim_keeps_long_tool_turn_intact(self):
+        """1ターンが上限を超えても、function_responseで切らずユーザー発言から残す"""
+        sphene = Sphene("System")
+        sphene.history = self._tool_turn("User: 前の質問", 1) + self._tool_turn("User: 集計して", 12)
+
+        sphene.trim_conversation_history()
+
+        assert sphene.history[0].parts[0].text == "User: 集計して"
+        assert sphene.history[0].parts[0].function_response is None
+        assert len(sphene.history) == 26
+
+    def test_trim_skips_function_response_boundary(self):
+        """切れ目の候補がfunction_responseのときは、次の本物のユーザー発言まで進める"""
+        sphene = Sphene("System")
+        sphene.history = self._tool_turn("User: 前の質問", 7) + self._tool_turn("User: 次の質問", 3)
+
+        sphene.trim_conversation_history()
+
+        assert sphene.history[0].parts[0].text == "User: 次の質問"
+        assert len(sphene.history) <= 20
+
+    @pytest.mark.parametrize("tool_mode", ["none", "grounding"])
+    @patch("ai.api.get_model_name", return_value="gemini-4-hydrogen")
+    @patch("ai.api._get_genai_client")
+    def test_undeclared_mode_sends_flattened_history(self, mock_get_client, _model, tool_mode):
+        """ツール未宣言のモードでは初回リクエストからfunction系partを送らない"""
+        generate = mock_get_client.return_value.models.generate_content
+        generate.return_value = self._make_response([types.Part.from_text(text="やあ")])
+        contents = self._tool_turn("User: 集計して", 2) + [
+            types.Content(role="user", parts=[types.Part.from_text(text="User: ありがとう")])
+        ]
+
+        success, text, history = _call_genai_with_tools(contents, "system", tool_mode=tool_mode)
+
+        assert success is True
+        assert text == "やあ"
+        assert generate.call_count == 1
+        sent = generate.call_args.kwargs["contents"]
+        assert all(not p.function_call and not p.function_response for c in sent for p in c.parts)
+        # 保存用の履歴は元のまま (function系partを保持)
+        assert history[1].parts[0].function_call is not None
+
+    @patch("ai.api._execute_tool_calls")
+    @patch("ai.api.get_model_name", return_value="gemini-4-hydrogen")
+    @patch("ai.api._get_genai_client")
+    def test_retry_preamble_with_function_call_is_rejected(
+        self, mock_get_client, _model, mock_exec
+    ):
+        """再リクエストでも前置き+function_callが返ったら、テキストを採用せず失敗にする"""
+        with_preamble = [
+            types.Part.from_text(text="調べてみるね！"),
+            types.Part.from_function_call(name="search_item", args={}),
+        ]
+        mock_get_client.return_value.models.generate_content.return_value = self._make_response(
+            with_preamble
+        )
+
+        success, text, history = _call_genai_with_tools([], "system", tool_mode="none")
+
+        assert success is False
+        assert text != "調べてみるね！"
+        assert history == []
+        mock_exec.assert_not_called()

@@ -61,6 +61,13 @@ def load_system_prompt(force_reload: bool = False, fail_on_error: bool = False) 
     _prompt_cache[SYSTEM_PROMPT_FILENAME] = prompt_content
     return prompt_content
 
+def _is_user_message(content: types.Content) -> bool:
+    """function_responseではない、本物のユーザー発言のContentかどうかを判定する"""
+    if content.role != "user":
+        return False
+    return not any(p.function_response for p in (content.parts or []))
+
+
 class Sphene:
     """AIチャットボットの会話管理クラス (google-genai版)"""
 
@@ -81,15 +88,27 @@ class Sphene:
         self.last_interaction = datetime.now()
 
     def trim_conversation_history(self) -> None:
-        if len(self.history) <= (MAX_CONVERSATION_TURNS * 2):
+        """履歴を上限件数に収まるよう、ユーザー発言の境界で切り詰める
+
+        function_responseもrole="user"のため、切れ目には本物のユーザー発言だけを使う。
+        上限内にユーザー発言が無い (1ターンでツールを多用した) 場合は、
+        直近のユーザー発言から残してターンを壊さない。
+        """
+        limit = MAX_CONVERSATION_TURNS * 2
+        if len(self.history) <= limit:
             return
-        recent_history = self.history[-(MAX_CONVERSATION_TURNS * 2) :]
-        start_idx = 0
-        for i, content in enumerate(recent_history):
-            if content.role == "user":
-                start_idx = i
-                break
-        self.history = recent_history[start_idx:]
+        window_start = len(self.history) - limit
+        user_indices = [
+            i for i, content in enumerate(self.history) if _is_user_message(content)
+        ]
+        in_window = [i for i in user_indices if i >= window_start]
+        if in_window:
+            start_idx = in_window[0]
+        elif user_indices:
+            start_idx = user_indices[-1]
+        else:
+            start_idx = window_start
+        self.history = self.history[start_idx:]
 
     def input_message(
         self,
