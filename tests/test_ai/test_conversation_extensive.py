@@ -397,3 +397,149 @@ class TestConversationExtensive:
         assert success is True
         assert text == "grounded response"
         # ログ出力されるはず（副作用の検証は省略するが、クラッシュしないことが重要）
+
+
+class TestUndeclaredFunctionCalls:
+    """ツール未宣言モードでモデルがfunction_callを返した場合のテスト"""
+
+    @staticmethod
+    def _make_response(parts):
+        mock_response = MagicMock()
+        mock_response.candidates = [MagicMock(content=types.Content(role="model", parts=parts))]
+        return mock_response
+
+    @pytest.mark.parametrize("tool_mode", ["none", "grounding"])
+    @patch("ai.api._execute_tool_calls")
+    @patch("ai.api.get_model_name", return_value="gemini-4-hydrogen")
+    @patch("ai.api._get_genai_client")
+    def test_ignores_calls_and_uses_text(self, mock_get_client, _model, mock_exec, tool_mode):
+        """function_callは実行せず、テキスト部分だけを応答・履歴に使う"""
+        parts = [
+            types.Part.from_function_call(name="search_item", args={"category": "x"}),
+            types.Part.from_text(text="こんにちは"),
+        ]
+        mock_get_client.return_value.models.generate_content.return_value = self._make_response(parts)
+
+        success, text, history = _call_genai_with_tools([], "system", tool_mode=tool_mode)
+
+        assert success is True
+        assert text == "こんにちは"
+        mock_exec.assert_not_called()
+        assert mock_get_client.return_value.models.generate_content.call_count == 1
+        assert len(history) == 1
+        assert all(p.function_call is None for p in history[0].parts)
+
+    @patch("ai.api._execute_tool_calls")
+    @patch("ai.api.get_model_name", return_value="gemini-4-hydrogen")
+    @patch("ai.api._get_genai_client")
+    def test_calls_only_returns_failure(self, mock_get_client, _model, mock_exec):
+        """テキストが無ければ失敗扱いにし、function_callを履歴に残さない"""
+        parts = [types.Part.from_function_call(name="search_recipe", args={"query": "x"})]
+        mock_get_client.return_value.models.generate_content.return_value = self._make_response(parts)
+
+        success, text, history = _call_genai_with_tools([], "system", tool_mode="none")
+
+        assert success is False
+        assert "読み取れなかった" in text
+        mock_exec.assert_not_called()
+        assert history == []
+        # 再リクエストは1回だけ
+        assert mock_get_client.return_value.models.generate_content.call_count == 2
+
+    @patch("ai.api._execute_tool_calls")
+    @patch("ai.api.get_model_name", return_value="gemini-4-hydrogen")
+    @patch("ai.api._get_genai_client")
+    def test_retry_with_stripped_history_succeeds(self, mock_get_client, _model, mock_exec):
+        """テキストが無ければfunction系partを除去した履歴で再リクエストし、その応答を採用する"""
+        call_only = [types.Part.from_function_call(name="search_recipe", args={"query": "x"})]
+        text_only = [types.Part.from_text(text="ちゃんと答えるね")]
+        generate = mock_get_client.return_value.models.generate_content
+        generate.side_effect = [self._make_response(call_only), self._make_response(text_only)]
+        contents = [
+            types.Content(role="user", parts=[types.Part.from_text(text="User: 集計して")]),
+            types.Content(
+                role="model",
+                parts=[types.Part.from_function_call(name="search_recipe", args={})],
+            ),
+            types.Content(
+                role="user",
+                parts=[types.Part.from_function_response(name="search_recipe", response={})],
+            ),
+            types.Content(role="model", parts=[types.Part.from_text(text="集計結果だよ")]),
+            types.Content(role="user", parts=[types.Part.from_text(text="User: ありがとう")]),
+        ]
+
+        success, text, history = _call_genai_with_tools(contents, "system", tool_mode="none")
+
+        assert success is True
+        assert text == "ちゃんと答えるね"
+        mock_exec.assert_not_called()
+        retry_contents = generate.call_args_list[1].kwargs["contents"]
+        assert [c.role for c in retry_contents] == ["user", "model", "user"]
+        assert all(
+            not p.function_call and not p.function_response
+            for c in retry_contents
+            for p in c.parts
+        )
+        # 保存用の履歴は元のまま + テキスト応答のみ追加
+        assert history[:-1] == contents
+        assert history[-1].parts[0].text == "ちゃんと答えるね"
+
+    @patch("ai.api.get_model_name", return_value="gemini-4-hydrogen")
+    @patch("ai.api._get_genai_client")
+    def test_retry_api_error_returns_failure(self, mock_get_client, _model):
+        """再リクエストでAPIエラーが起きたら失敗として返す"""
+        call_only = [types.Part.from_function_call(name="search_recipe", args={})]
+        mock_get_client.return_value.models.generate_content.side_effect = [
+            self._make_response(call_only),
+            RuntimeError("boom"),
+        ]
+
+        success, text, history = _call_genai_with_tools([], "system", tool_mode="none")
+
+        assert success is False
+        assert "エラー" in text
+        assert history == []
+
+
+class TestHistoryRollbackOnFailure:
+    """応答生成失敗時の履歴ロールバックのテスト"""
+
+    @patch("ai.conversation.detect_tool_mode", return_value="function_calling")
+    @patch("ai.conversation._call_genai_with_tools")
+    def test_failure_restores_previous_history(self, mock_call, _router):
+        """失敗時はユーザー発言と中間のツール履歴を破棄する"""
+        sphene = Sphene("System")
+        previous = [
+            types.Content(role="user", parts=[types.Part.from_text(text="User: hi")]),
+            types.Content(role="model", parts=[types.Part.from_text(text="hello")]),
+        ]
+        sphene.history = list(previous)
+        polluted = previous + [
+            types.Content(role="user", parts=[types.Part.from_text(text="User: 集計して")]),
+            types.Content(
+                role="model",
+                parts=[types.Part.from_function_call(name="search_recipe", args={})],
+            ),
+        ]
+        mock_call.return_value = (False, "処理が複雑すぎて諦めちゃった…😢", polluted)
+
+        response = sphene.input_message("集計して")
+
+        assert response == "処理が複雑すぎて諦めちゃった…😢"
+        assert sphene.history == previous
+
+    @patch("ai.conversation.detect_tool_mode", return_value="none")
+    @patch("ai.conversation._call_genai_with_tools")
+    def test_success_keeps_updated_history(self, mock_call, _router):
+        """成功時は更新後の履歴を採用する"""
+        sphene = Sphene("System")
+        updated = [
+            types.Content(role="user", parts=[types.Part.from_text(text="User: hi")]),
+            types.Content(role="model", parts=[types.Part.from_text(text="hello")]),
+        ]
+        mock_call.return_value = (True, "hello", updated)
+
+        sphene.input_message("hi")
+
+        assert sphene.history == updated

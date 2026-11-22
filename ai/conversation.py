@@ -157,8 +157,10 @@ class Sphene:
                     except Exception as e:
                         logger.error(f"画像読み込み失敗: {url} - {e}")
 
+            # 失敗時に中間のfunction_call/responseを履歴に残さないためのスナップショット
+            history_before = list(self.history)
             self.history.append(types.Content(role="user", parts=parts))
-            
+
             # チャンネルのコンテキスト情報を構築
             context_section = ""
             if channel_context:
@@ -184,11 +186,13 @@ class Sphene:
                 tool_mode=tool_mode,
             )
             
-            # 履歴を更新
-            self.history = updated_history
-            
             if success:
+                self.history = updated_history
                 self.trim_conversation_history()
+            else:
+                # 失敗時はユーザー発言ごとロールバックし、壊れた履歴を次の会話に持ち越さない
+                logger.warning(f"応答生成に失敗したため履歴をロールバック: {truncate_text(response)}")
+                self.history = history_before
             return response
         except Exception as e:
             logger.critical(f"input_messageエラー: {e}", exc_info=True)

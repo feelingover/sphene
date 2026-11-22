@@ -42,7 +42,7 @@ applyTo: "**"
 - `COMMAND_GROUP_NAME`: スラッシュコマンドプレフィックス（デフォルト: `sphene`）
 
 **AI制御**
-- `MAX_TOOL_CALL_ROUNDS`: ツール呼び出し最大ラウンド数（デフォルト: 5）
+- `MAX_TOOL_CALL_ROUNDS`: ツール呼び出し最大ラウンド数（デフォルト: 15）
 - `MAIN_THINKING_LEVEL`: 会話応答・ツールループのThinkingレベル（デフォルト: 空 = モデルのデフォルト）
 - `LIGHT_THINKING_LEVEL`: Router・Judge・相槌・要約・反省会・翻訳のThinkingレベル（デフォルト: `low`）。`ai/client.py` の `get_light_thinking_config()` 経由で渡す
 - `ENABLE_GOOGLE_SEARCH_GROUNDING`: Google検索Grounding（function callingと排他）

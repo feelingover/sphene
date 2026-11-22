@@ -124,6 +124,77 @@ def _handle_api_error(error: Exception) -> str:
     return "ごめん！AIとの通信中にエラーが発生しちゃった...😢"
 
 
+def _extract_text(content: types.Content | None) -> str | None:
+    """Contentからテキスト部分のみを連結して返す (function_call等は無視)"""
+    if content is None or not content.parts:
+        return None
+    text_parts = [p.text for p in content.parts if p.text]
+    return "".join(text_parts) if text_parts else None
+
+
+def _strip_function_parts(contents: list[types.Content]) -> list[types.Content]:
+    """履歴からfunction_call/function_responseのpartを除去した送信用コピーを作る
+
+    ツール未宣言のリクエストで履歴中のfunction_callをモデルが模倣するのを防ぐ。
+    partが空になったContentは丸ごと除外する。
+    """
+    stripped: list[types.Content] = []
+    for content in contents:
+        parts = [
+            p for p in (content.parts or []) if not p.function_call and not p.function_response
+        ]
+        if parts:
+            stripped.append(types.Content(role=content.role, parts=parts))
+    return stripped
+
+
+def _handle_undeclared_function_calls(
+    resp_content: types.Content,
+    tool_mode: "ToolMode",
+    local_history: list[types.Content],
+    request: dict[str, Any],
+) -> tuple[bool, str, list[types.Content]]:
+    """ツール未宣言時に返されたfunction_callを破棄し、テキスト応答を得る
+
+    応答にテキストがあればそれを採用する。無ければ履歴からfunction系partを
+    除去して1回だけ再リクエストする。function_callは履歴に追加しない。
+
+    Args:
+        resp_content: function_callを含むモデル応答
+        tool_mode: 現在のツールモード ("grounding" | "none")
+        local_history: 会話履歴
+        request: 再リクエスト用の client / model / config
+
+    Returns:
+        (成功フラグ, 応答テキスト, 更新後の履歴)
+    """
+    call_names = [p.function_call.name for p in (resp_content.parts or []) if p.function_call]
+    logger.warning(
+        f"ツール未宣言のモードでfunction_callを検出したため無視: "
+        f"tool_mode={tool_mode}, calls={call_names}"
+    )
+    final_text = _extract_text(resp_content)
+    if final_text is None:
+        logger.info("function系partを除去した履歴で再リクエスト")
+        try:
+            response = generate_content_with_retry(
+                contents=_strip_function_parts(local_history), **request
+            )
+        except Exception as e:
+            return False, _handle_api_error(e), local_history
+        candidate = response.candidates[0] if response.candidates else None
+        final_text = _extract_text(candidate.content if candidate else None)
+        if final_text is None:
+            logger.warning("再リクエストでもテキスト応答を得られなかった")
+            return False, "応答を読み取れなかったよ…😢", local_history
+
+    local_history.append(
+        types.Content(role="model", parts=[types.Part.from_text(text=final_text)])
+    )
+    logger.debug(f"GenAI応答受信: {truncate_text(final_text)}")
+    return True, final_text, local_history
+
+
 def call_genai_with_tools(
     contents: list[types.Content],
     system_instruction: str,
@@ -154,6 +225,19 @@ def call_genai_with_tools(
         tools = []
         logger.debug("ツールなしモード")
 
+    request: dict[str, Any] = {
+        "client": client,
+        "model": model_id,
+        "config": types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            thinking_config=get_main_thinking_config(),
+            tools=tools,  # type: ignore[arg-type]
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                disable=True
+            ),  # 手動ループ
+        ),
+    }
+
     # contentsリストをコピーして操作する
     local_history = list(contents)
 
@@ -161,19 +245,7 @@ def call_genai_with_tools(
         logger.info(f"GenAIリクエスト送信 (ラウンド {round_num + 1}, モデル: {model_id})")
 
         try:
-            response = generate_content_with_retry(
-                client=client,
-                model=model_id,
-                contents=local_history,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    thinking_config=get_main_thinking_config(),
-                    tools=tools,  # type: ignore[arg-type]
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                        disable=True
-                    ),  # 手動ループ
-                ),
-            )
+            response = generate_content_with_retry(contents=local_history, **request)
         except Exception as e:
             return False, _handle_api_error(e), local_history
 
@@ -190,10 +262,15 @@ def call_genai_with_tools(
         if resp_content is None or resp_content.parts is None:
             return False, "応答を読み取れなかったよ…😢", local_history
 
-        local_history.append(resp_content)
-
-        # ツール呼び出しがあるか確認 (grounding時はfunction callsは来ない)
         function_calls = [p.function_call for p in resp_content.parts if p.function_call]
+
+        if function_calls and tool_mode != "function_calling":
+            # ツール未宣言なのにモデルがfunction_callを返した (履歴の模倣など)。実行せず無視する
+            return _handle_undeclared_function_calls(
+                resp_content, tool_mode, local_history, request
+            )
+
+        local_history.append(resp_content)
 
         if function_calls:
             logger.info(f"ツール呼び出し検出: {len(function_calls)}件")
