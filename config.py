@@ -55,7 +55,7 @@ FIRESTORE_COLLECTION_FACTS: str = get_collection_name("facts")
 FIRESTORE_COLLECTION_FACTS_ARCHIVE: str = get_collection_name("facts_archive")
 
 # === AI会話設定 ===
-MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "5"))
+MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "15"))
 
 # Thinkingレベル（"" = モデルのデフォルト / "minimal" / "low" / "medium" / "high"）
 # MAIN: 会話応答・ツール呼び出しループ
