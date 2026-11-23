@@ -50,6 +50,7 @@ applyTo: "**"
 - `GENAI_REQUEST_TIMEOUT_SECONDS`: Gen AI API 1リクエストのタイムアウト秒（デフォルト: 300。混雑時は長く待つと正確な応答が返るため長め）
 - `GENAI_MAIN_MAX_ATTEMPTS` / `GENAI_MAIN_TIMEOUT_RETRIES` / `GENAI_MAIN_TOTAL_TIMEOUT_SECONDS`: 会話応答・要約・反省会のリトライ設定（デフォルト: 5回 / タイムアウト再試行1回 / 全体600秒。会話応答はツールループ全体で予算を共有）
 - `GENAI_LIGHT_REQUEST_TIMEOUT_SECONDS` / `GENAI_LIGHT_MAX_ATTEMPTS` / `GENAI_LIGHT_TIMEOUT_RETRIES` / `GENAI_LIGHT_TOTAL_TIMEOUT_SECONDS`: Router・LLM Judge・相槌のリトライ設定（デフォルト: 30秒 / 2回 / 0回 / 45秒）
+- `GENAI_MIN_REQUEST_TIMEOUT_SECONDS`: 上限時刻までの残り時間がこの秒数未満なら新たなリクエストを送らず打ち切る（デフォルト: 5）
 - `MAIN_THINKING_LEVEL`: 会話応答・ツールループのThinkingレベル（デフォルト: 空 = モデルのデフォルト）
 - `LIGHT_THINKING_LEVEL`: Router・Judge・相槌・要約・反省会・翻訳のThinkingレベル（デフォルト: `low`）。`ai/client.py` の `get_light_thinking_config()` 経由で渡す
 - `ENABLE_GOOGLE_SEARCH_GROUNDING`: Google検索Grounding（function callingと排他）

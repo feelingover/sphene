@@ -161,13 +161,33 @@ class TestDeadline:
 
         client.models.generate_content.assert_not_called()
 
+    def test_too_little_remaining_raises_without_calling(self) -> None:
+        """残り時間が最低ラインを下回るならリクエストを送らない"""
+        client = MagicMock()
+
+        with patch.object(config, "GENAI_MIN_REQUEST_TIMEOUT_SECONDS", 5):
+            with pytest.raises(TimeoutError):
+                _call(client, policy=_policy(), deadline=time.monotonic() + 3)
+
+        client.models.generate_content.assert_not_called()
+
+    def test_remaining_above_minimum_is_sent(self) -> None:
+        client = MagicMock()
+        client.models.generate_content.return_value = "ok"
+
+        with patch.object(config, "GENAI_MIN_REQUEST_TIMEOUT_SECONDS", 5):
+            _call(client, policy=_policy(), deadline=time.monotonic() + 8)
+
+        client.models.generate_content.assert_called_once()
+
     def test_stops_retrying_when_wait_exceeds_deadline(self) -> None:
         """次の待機（最低2秒）で上限を超えるなら再試行しない"""
         client = MagicMock()
         client.models.generate_content.side_effect = genai_errors.APIError(503, {})
 
-        with pytest.raises(genai_errors.APIError):
-            _call(client, policy=_policy(), deadline=time.monotonic() + 1)
+        with patch.object(config, "GENAI_MIN_REQUEST_TIMEOUT_SECONDS", 0):
+            with pytest.raises(genai_errors.APIError):
+                _call(client, policy=_policy(), deadline=time.monotonic() + 1)
 
         assert client.models.generate_content.call_count == 1
 

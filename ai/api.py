@@ -172,7 +172,8 @@ def _generate_once(
 ) -> Any:
     """上限時刻までの残り時間でタイムアウトを絞って1回だけAPIを呼び出す"""
     remaining = deadline - time.monotonic()
-    if remaining <= 0:
+    # 残り時間がわずかな場合はほぼ確実に失敗するため、リクエストを送らずに打ち切る
+    if remaining < max(_config.GENAI_MIN_REQUEST_TIMEOUT_SECONDS, 0.001):
         raise TimeoutError("Gen AI API呼び出しの所要時間上限に到達しました")
     timeout_seconds = min(policy.request_timeout_seconds, remaining)
     return client.models.generate_content(

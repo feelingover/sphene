@@ -86,6 +86,10 @@ GENAI_LIGHT_TIMEOUT_RETRIES: int = int(os.getenv("GENAI_LIGHT_TIMEOUT_RETRIES", 
 GENAI_LIGHT_TOTAL_TIMEOUT_SECONDS: int = int(
     os.getenv("GENAI_LIGHT_TOTAL_TIMEOUT_SECONDS", "45")
 )
+# 上限時刻までの残り時間がこの秒数未満なら、新たなリクエストを送らずに打ち切る
+GENAI_MIN_REQUEST_TIMEOUT_SECONDS: int = int(
+    os.getenv("GENAI_MIN_REQUEST_TIMEOUT_SECONDS", "5")
+)
 
 # Thinkingレベル（"" = モデルのデフォルト / "minimal" / "low" / "medium" / "high"）
 # MAIN: 会話応答・ツール呼び出しループ
