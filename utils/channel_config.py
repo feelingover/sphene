@@ -65,13 +65,21 @@ class ChannelConfigManager:
         """
         guild_id = str(guild_id)  # 文字列に変換
 
-        if guild_id not in self.guild_configs:
-            logger.info(f"ギルドID {guild_id} の設定インスタンスをメモリ上に作成")
-            self.guild_configs[guild_id] = ChannelConfig(
-                guild_id=guild_id, debug_mode=self.debug_mode
-            )
+        cached = self.guild_configs.get(guild_id)
+        if cached is not None:
+            return cached
 
-        return self.guild_configs[guild_id]
+        logger.info(f"ギルドID {guild_id} の設定インスタンスをメモリ上に作成")
+        channel_config = ChannelConfig(guild_id=guild_id, debug_mode=self.debug_mode)
+        if channel_config.load_failed:
+            # 一時的な読み込み失敗でデフォルト設定が居座らないよう、キャッシュせず次回再読み込みする
+            logger.warning(
+                f"ギルドID {guild_id} の設定読み込みに失敗したためキャッシュしません"
+            )
+        else:
+            self.guild_configs[guild_id] = channel_config
+
+        return channel_config
 
     def create_guild_config(self, guild_id: Any) -> "ChannelConfig":
         """
@@ -86,7 +94,8 @@ class ChannelConfigManager:
         guild_id = str(guild_id)
         config_obj = ChannelConfig(guild_id=guild_id, debug_mode=self.debug_mode)
         config_obj.save_config()
-        self.guild_configs[guild_id] = config_obj
+        if not config_obj.load_failed:
+            self.guild_configs[guild_id] = config_obj
         logger.info(f"ギルドID {guild_id} の設定ファイルを作成")
         return config_obj
 
@@ -210,6 +219,9 @@ class ChannelConfig:
             f"storage_type={self.storage_type}, debug_mode={self.debug_mode}"
         )
 
+        # 読み込みエラー（未作成を除く）時は True。保存を拒否して既存データの上書きを防ぐ
+        self.load_failed = False
+
         # 設定を読み込み
         try:
             self.load_config()
@@ -218,12 +230,18 @@ class ChannelConfig:
                 f"モード={self.get_behavior()}({self.get_mode_display_name()}), "
                 f"チャンネル数={len(self.get_channels())}"
             )
-        except Exception as e:
+        except FileNotFoundError:
+            # 設定が未作成なのは正常系。デフォルト設定のまま使う
+            logger.info(
+                f"ギルドID {self.guild_id} の設定が未作成のため、デフォルト設定を使用します"
+            )
+        except Exception:
+            self.load_failed = True
             logger.warning(
                 f"ギルドID {self.guild_id} の設定読み込みに失敗しました。"
-                f"デフォルト設定を使用します: {str(e)}"
+                "一時的にデフォルト設定を使用し、保存は行いません",
+                exc_info=True,
             )
-            # 初期設定のままとする（すでに初期化済み）
 
     def load_config(self) -> None:
         """設定ファイルを読み込む"""
@@ -279,6 +297,13 @@ class ChannelConfig:
         """
         if self.debug_mode:
             return True
+
+        if self.load_failed:
+            logger.error(
+                f"ギルドID {self.guild_id} は設定の読み込みに失敗しているため、"
+                "既存データを上書きしないよう保存を中止しました"
+            )
+            return False
 
         # 更新日時を記録
         self.config_data["updated_at"] = datetime.now().isoformat()

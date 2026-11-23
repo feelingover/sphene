@@ -35,15 +35,21 @@ def _get_genai_client() -> genai.Client:
 
         # 新しいSDKのクライアント作成
         # vertexai=True を指定することで Vertex AI エンドポイントを使用する
+        # timeout はリクエスト単位（ミリ秒）。混雑時は長時間待つと正確な応答が
+        # 返ることが多いため、デフォルトは長めにしている
         _client = genai.Client(
             vertexai=True,
             project=project_id,
             location=config.VERTEX_AI_LOCATION,
+            http_options=types.HttpOptions(
+                timeout=config.GENAI_REQUEST_TIMEOUT_SECONDS * 1000
+            ),
         )
 
         logger.info(
             "Google Gen AIクライアントを初期化しました（プロジェクト: "
-            f"{project_id}, リージョン: {config.VERTEX_AI_LOCATION}）"
+            f"{project_id}, リージョン: {config.VERTEX_AI_LOCATION}, "
+            f"タイムアウト: {config.GENAI_REQUEST_TIMEOUT_SECONDS}秒）"
         )
     return _client
 

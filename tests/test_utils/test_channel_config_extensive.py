@@ -94,3 +94,84 @@ class TestChannelConfigExtensive:
         with patch("utils.file_utils.atomic_write_json", side_effect=Exception("Disk Full")):
             result = config._save_to_local()
             assert result is False
+
+
+class TestChannelConfigLoadFailure:
+    """設定読み込み失敗時に既存データを上書きしないことのテスト"""
+
+    @staticmethod
+    def _firestore_db(get_side_effect=None, exists=True, data=None):
+        mock_db = MagicMock()
+        doc_ref = mock_db.collection.return_value.document.return_value
+        if get_side_effect is not None:
+            doc_ref.get.side_effect = get_side_effect
+        else:
+            doc = MagicMock()
+            doc.exists = exists
+            doc.to_dict.return_value = data
+            doc_ref.get.return_value = doc
+        return mock_db, doc_ref
+
+    @patch("utils.channel_config.get_firestore_client")
+    def test_transient_error_marks_load_failed_and_refuses_save(self, mock_get_fs):
+        """一時的な読み込みエラーでは load_failed になり、保存を拒否すること"""
+        mock_db, doc_ref = self._firestore_db(get_side_effect=Exception("unavailable"))
+        mock_get_fs.return_value = mock_db
+
+        cfg = ChannelConfig(guild_id="123", storage_type="firestore")
+
+        assert cfg.load_failed is True
+        assert cfg.save_config() is False
+        doc_ref.set.assert_not_called()
+
+    @patch("utils.channel_config.get_firestore_client")
+    def test_missing_document_uses_defaults_and_allows_save(self, mock_get_fs):
+        """ドキュメント未作成は正常系としてデフォルト設定で保存できること"""
+        mock_db, doc_ref = self._firestore_db(exists=False)
+        mock_get_fs.return_value = mock_db
+
+        cfg = ChannelConfig(guild_id="123", storage_type="firestore")
+
+        assert cfg.load_failed is False
+        assert cfg.get_behavior() == "deny"
+        assert cfg.save_config() is True
+        doc_ref.set.assert_called_once()
+
+    @patch("utils.channel_config.config")
+    @patch("utils.channel_config.get_firestore_client")
+    def test_manager_does_not_cache_failed_load_and_retries(self, mock_get_fs, mock_config):
+        """読み込み失敗した設定はキャッシュせず、次回の取得で再読み込みすること"""
+        mock_config.STORAGE_TYPE = "firestore"
+        stored = {"behavior": "allow", "channels": [{"id": "1", "name": "c"}]}
+        ok_doc = MagicMock(exists=True)
+        ok_doc.to_dict.return_value = stored
+        mock_db, doc_ref = self._firestore_db(
+            get_side_effect=[Exception("unavailable"), ok_doc]
+        )
+        mock_get_fs.return_value = mock_db
+        manager = ChannelConfigManager(debug_mode=False)
+
+        first = manager.get_config("123")
+        assert first.load_failed is True
+        assert "123" not in manager.guild_configs
+
+        second = manager.get_config("123")
+        assert second.load_failed is False
+        assert second.get_behavior() == "allow"
+        assert manager.guild_configs["123"] is second
+
+    @patch("utils.channel_config.config")
+    @patch("utils.channel_config.get_firestore_client")
+    def test_create_guild_config_does_not_overwrite_on_load_failure(
+        self, mock_get_fs, mock_config
+    ):
+        """ギルド参加時に読み込み失敗した場合、デフォルトで上書き保存しないこと"""
+        mock_config.STORAGE_TYPE = "firestore"
+        mock_db, doc_ref = self._firestore_db(get_side_effect=Exception("unavailable"))
+        mock_get_fs.return_value = mock_db
+        manager = ChannelConfigManager(debug_mode=False)
+
+        manager.create_guild_config("123")
+
+        doc_ref.set.assert_not_called()
+        assert "123" not in manager.guild_configs

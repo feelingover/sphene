@@ -700,19 +700,31 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         await message.channel.send("ごめん！メッセージ処理中にエラーが発生しちゃった...😢")
 
 
-async def _handle_on_ready(
+async def _handle_setup_hook(
     bot: commands.Bot, command_group: app_commands.Group
 ) -> None:
-    """ボットの準備完了時の処理
+    """ログイン直後に1度だけ呼ばれる初期化処理
+
+    on_ready は再接続のたびに発火するため、コマンド登録と同期はここで1回だけ行う。
 
     Args:
         bot: Discordクライアント
         command_group: コマンドグループ
     """
-    # コマンドグループを追加
     bot.tree.add_command(command_group)
     await bot.tree.sync()
+    logger.info("スラッシュコマンドを登録・同期しました")
 
+
+async def _handle_on_ready(
+    bot: commands.Bot, command_group: app_commands.Group
+) -> None:
+    """ボットの準備完了時の処理（再接続のたびに呼ばれる）
+
+    Args:
+        bot: Discordクライアント
+        command_group: コマンドグループ
+    """
     if bot.user:
         logger.info(f"Discordボット起動完了: {bot.user.name}#{bot.user.discriminator}")
     else:
@@ -725,7 +737,9 @@ async def _handle_on_ready(
         try:
             config_manager.get_config(guild.id)
         except Exception as e:
-            logger.error(f"ギルドID {guild.id} の設定初期化中にエラー: {str(e)}")
+            logger.error(
+                f"ギルドID {guild.id} の設定初期化中にエラー: {str(e)}", exc_info=True
+            )
 
 
 async def _handle_on_guild_join(guild: discord.Guild) -> None:
@@ -939,6 +953,12 @@ def setup_events(bot: commands.Bot, command_group: app_commands.Group) -> None:
         command_group: コマンドグループ
     """
     from bot.commands import handle_command_error
+
+    async def setup_hook() -> None:
+        """ログイン直後に1度だけ呼ばれるフック"""
+        await _handle_setup_hook(bot, command_group)
+
+    bot.setup_hook = setup_hook  # type: ignore[method-assign]
 
     @bot.event
     async def on_ready() -> None:

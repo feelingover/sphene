@@ -27,6 +27,7 @@ applyTo: "**"
 - API レイヤー分離（`ai/api.py`）
 - Thinkingレベルの用途別設定（`MAIN_THINKING_LEVEL` / `LIGHT_THINKING_LEVEL`）（2026/11）
 - 応答生成中の「入力中...」インジケーター（`bot/events.py` の `_typing_indicator`。通常会話・自律応答・相槌・翻訳で表示）（2026/11）
+- 高優先度レビュー対応（2026/11）: チャンネル設定読み込み失敗時の上書き防止、`allowed_mentions` で @everyone/ロールメンション抑止、Gen AI リクエストタイムアウト（`GENAI_REQUEST_TIMEOUT_SECONDS`）、スラッシュコマンド登録を `setup_hook` へ移動
 
 ### リビングメモリー (Living Memory)
 - 短期記憶: チャンネルバッファ（dequeリングバッファ、TTL管理）
@@ -66,6 +67,6 @@ applyTo: "**"
 - チャンネル固有プロンプト
 - 使用統計・モニタリング
 - CI/CD強化
-- AsyncOpenAI移行（フルasync化）
+- フルasync化（google-genai `client.aio` 移行）
 - 自発会話機能 タイマーベースへの再設計（issue #104）
 - Firestore Native Vector Search（`find_nearest()`）

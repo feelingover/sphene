@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+from google.genai import types
+
 import pytest
 
 import config
@@ -26,7 +28,7 @@ class TestGetGenaiClient:
             return_value=(mock_creds, "my-project"),
         ), patch.object(config, "VERTEX_AI_PROJECT_ID", "my-project"), patch.object(
             config, "VERTEX_AI_LOCATION", "global"
-        ):
+        ), patch.object(config, "GENAI_REQUEST_TIMEOUT_SECONDS", 300):
             mock_client = MagicMock()
             mock_client_cls.return_value = mock_client
 
@@ -36,6 +38,7 @@ class TestGetGenaiClient:
                 vertexai=True,
                 project="my-project",
                 location="global",
+                http_options=types.HttpOptions(timeout=300_000),
             )
             assert client == mock_client
 
@@ -76,6 +79,9 @@ class TestGetGenaiClient:
                 vertexai=True,
                 project="auto-detected-project",
                 location="global",
+                http_options=types.HttpOptions(
+                    timeout=config.GENAI_REQUEST_TIMEOUT_SECONDS * 1000
+                ),
             )
 
 

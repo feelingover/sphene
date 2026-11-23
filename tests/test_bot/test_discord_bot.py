@@ -35,6 +35,14 @@ def test_sphene_bot_initialization() -> None:
         assert call_kwargs["intents"].message_content is True
         assert call_kwargs["intents"].members is True
 
+        # @everyone / ロールメンションは無効、ユーザー・リプライ元は許可
+        allowed = call_kwargs["allowed_mentions"]
+        assert isinstance(allowed, discord.AllowedMentions)
+        assert allowed.everyone is False
+        assert allowed.roles is False
+        assert allowed.users is True
+        assert allowed.replied_user is True
+
         # コマンドとイベントが設定されたか
         mock_setup_commands.assert_called_once_with(mock_bot)
         mock_setup_events.assert_called_once_with(mock_bot, mock_command_group)

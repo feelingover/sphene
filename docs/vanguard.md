@@ -137,9 +137,10 @@ JUDGE_REACT_THRESHOLD=5   # score >= 5 でリアクション実行（JUDGE_SCORE
 
 ### LLM Judge（二次判定）
 
+判定には `BOT_LITE_MODEL` を使用する。
+
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
-| `JUDGE_MODEL` | `""` | 判定用モデル。空なら GEMINI_MODEL を使用 |
 | `JUDGE_LLM_THRESHOLD_LOW` | `20` | この値以下はLLM判定せずスキップ |
 | `JUDGE_LLM_THRESHOLD_HIGH` | `60` | この値以上はLLM判定せず即応答 |
 

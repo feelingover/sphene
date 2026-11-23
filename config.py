@@ -57,6 +57,10 @@ FIRESTORE_COLLECTION_FACTS_ARCHIVE: str = get_collection_name("facts_archive")
 # === AI会話設定 ===
 MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "15"))
 
+# Gen AI APIの1リクエストあたりのタイムアウト（秒）
+# 混雑時は長く待つと正確な応答が返ることが多いため長めに設定している
+GENAI_REQUEST_TIMEOUT_SECONDS: int = int(os.getenv("GENAI_REQUEST_TIMEOUT_SECONDS", "300"))
+
 # Thinkingレベル（"" = モデルのデフォルト / "minimal" / "low" / "medium" / "high"）
 # MAIN: 会話応答・ツール呼び出しループ
 # LIGHT: Router・LLM Judge・相槌・要約・反省会・翻訳などの軽量タスク
