@@ -467,15 +467,36 @@ async def handle_command_error(
         error: エラーオブジェクト
     """
     if isinstance(error, app_commands.errors.MissingPermissions):
-        await interaction.response.send_message(
-            "👮 このコマンドは管理者権限が必要だよ！", ephemeral=True
-        )
+        await _send_ephemeral(interaction, "👮 このコマンドは管理者権限が必要だよ！")
+        return
+    if isinstance(error, app_commands.errors.NoPrivateMessage):
+        await _send_ephemeral(interaction, "❌ このコマンドはサーバー内でのみ使用できます")
         return
 
+    # 例外の詳細はログにのみ出し、ユーザーには固定文言を返す
     logger.error(f"コマンドエラー発生: {str(error)}", exc_info=True)
-    await interaction.response.send_message(
-        f"😱 コマンド実行中にエラーが発生しちゃった: {str(error)}", ephemeral=True
+    await _send_ephemeral(
+        interaction, "😱 コマンド実行中にエラーが発生しちゃった…時間を置いてもう一度試してみてね"
     )
+
+
+async def _send_ephemeral(interaction: discord.Interaction, content: str) -> None:
+    """インタラクションに本人だけ見えるメッセージを送る
+
+    すでに応答済み（send_message / defer 済み）の場合は followup で送る。
+    送信自体の失敗（インタラクション期限切れ等）はログに残して握りつぶす。
+
+    Args:
+        interaction: インタラクションオブジェクト
+        content: 送信する本文
+    """
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(content, ephemeral=True)
+        else:
+            await interaction.response.send_message(content, ephemeral=True)
+    except discord.HTTPException:
+        logger.warning("コマンドエラー通知の送信に失敗しました", exc_info=True)
 
 
 def setup_commands(bot: discord.Client) -> app_commands.Group:

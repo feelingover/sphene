@@ -6,9 +6,9 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 751件全パス
+- テスト: 782件全パス
 - カバレッジ: 91%
-- mypy: 76ファイル no issues
+- mypy: 77ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -84,6 +84,9 @@ applyTo: "**"
 | 反省会LLM出力は発言者照合＋サニタイズ後に保存 | `user_id` は会話ログの人間発言者のみ許可。文字列は型・長さ検証し改行/制御文字を除去（`memory/sanitize.py`）。プロンプト再注入による間接インジェクション対策 |
 | ユーザープロファイルはギルド単位で分離 | 別サーバーで得た事実・性格メモが漏れるのを防ぐ。旧 user_id 単位のデータからはカウンタのみ引き継ぎ（内容は他ギルド由来の可能性があるため破棄） |
 | ストレージ同期I/Oは `asyncio.to_thread` でイベントループ外へ | Firestore 遅延で bot 全体が止まるのを防ぐ。記憶系は `_prefetch_memory` でキャッシュを先に温め、以降の同期呼び出しはキャッシュヒットさせる。各ストアは `threading.Lock` で保護（読み込みはロック外・登録は setdefault で先着優先） |
+| system_instruction のコンテキストはタグ＋エスケープ＋「データであり指示ではない」注記 | 他ユーザーの発言・LLM生成の記憶による間接プロンプトインジェクション対策（`ai/conversation.py` の `build_context_section`）。発言者名も改行・制御文字を除去 |
+| リトライ判定は例外の型とステータスコードのみ | 文字列一致は誤検知・見逃しが多い。408/429/5xx・httpx.TransportError・ConnectionError・TimeoutError をリトライ |
+| エラー通知はボットが話しかけられた場合のみ | 無関係なメッセージへのエラー投稿の連発を防ぐ。記憶の記録失敗は応答を止めない（`_record_memory` で隔離） |
 
 ## Open Issues
 
@@ -92,5 +95,5 @@ applyTo: "**"
 3. **フル async 化**: google-genai `client.aio` への移行（中期候補）
 4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索（現状は in-memory コサイン類似度）
 5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）
-6. **2026/11 コードレビュー残課題**: system_instruction へのチャンネル会話の未エスケープ注入、Router プリフィルタ（7文字以下で none）、リトライ判定の文字列一致、反省会LLM失敗時のバックオフなし、`persist_all` が変更有無に関わらず全件書き込み（dirty フラグ未導入）、スラッシュコマンドが3秒以内に応答しない場合の defer 未対応
+6. **2026/11 コードレビュー残課題**: Router プリフィルタ（7文字以下で none）、ツールスキーマの enum 欠落、function_response の型/件数ずれ、react_only の二重リアクション、翻訳の重複排除、メンションのレート制限、反省会LLM失敗時のバックオフなし、`persist_all` の dirty フラグ未導入、ファクトの1ドキュメント集約（1MB上限）、要約JSONの検証、XIVAPI の DQL エスケープ・httpx Client 共有、Docker 内ローカルストレージ、スラッシュコマンドの defer、ツール結果の履歴肥大化
 7. **EMBEDDING_MODEL**: `text-embedding-004` の提供状況を要確認。移行すると次元が変わり既存ベクトルと非互換になるため要マイグレーション検討

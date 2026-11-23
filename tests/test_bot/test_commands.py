@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import discord
 from discord import app_commands
 
 import config
@@ -123,7 +124,51 @@ async def test_handle_command_error_general(
     mock_discord_interaction.response.send_message.assert_called_once()
     args = mock_discord_interaction.response.send_message.call_args[0][0]
     assert "エラーが発生" in args
-    assert "テストエラー" in args
+    # 例外の内部詳細はユーザーに見せない
+    assert "テストエラー" not in args
+
+
+@pytest.mark.asyncio
+async def test_handle_command_error_after_response_uses_followup(
+    mock_discord_interaction: MagicMock,
+) -> None:
+    """応答済みのインタラクションでは followup で通知すること"""
+    mock_discord_interaction.response.is_done.return_value = True
+    error = app_commands.AppCommandError("内部詳細")
+
+    await handle_command_error(mock_discord_interaction, error)
+
+    mock_discord_interaction.response.send_message.assert_not_called()
+    mock_discord_interaction.followup.send.assert_awaited_once()
+    args, kwargs = mock_discord_interaction.followup.send.call_args
+    assert "内部詳細" not in args[0]
+    assert kwargs["ephemeral"] is True
+
+
+@pytest.mark.asyncio
+async def test_handle_command_error_no_private_message(
+    mock_discord_interaction: MagicMock,
+) -> None:
+    """DMでの実行はサーバー限定である旨を返すこと"""
+    error = app_commands.errors.NoPrivateMessage()
+
+    await handle_command_error(mock_discord_interaction, error)
+
+    args = mock_discord_interaction.response.send_message.call_args[0][0]
+    assert "サーバー内でのみ" in args
+
+
+@pytest.mark.asyncio
+async def test_handle_command_error_swallows_send_failure(
+    mock_discord_interaction: MagicMock,
+) -> None:
+    """エラー通知の送信自体が失敗しても例外を投げないこと"""
+    response = MagicMock(status=404, reason="Not Found")
+    mock_discord_interaction.response.send_message.side_effect = discord.NotFound(
+        response, "Unknown interaction"
+    )
+
+    await handle_command_error(mock_discord_interaction, app_commands.AppCommandError("x"))
 
 
 def test_setup_commands() -> None:

@@ -283,7 +283,8 @@ class TestCommandsExtensive:
     async def test_handle_command_error_scenarios(self):
         """コマンドエラーハンドリングのテスト"""
         interaction = AsyncMock()
-        
+        interaction.response.is_done = MagicMock(return_value=False)
+
         # 権限不足
         err1 = discord.app_commands.errors.MissingPermissions(["administrator"])
         await handle_command_error(interaction, err1)
