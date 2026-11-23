@@ -15,6 +15,7 @@ import config
 from log_utils.logger import logger
 from memory.backoff import new_storage_load_backoff
 from memory.errors import StorageLoadError, log_storage_load_failure
+from utils.keyed_lock import KeyedLock
 
 # ひらがなストップワード（形態素解析なしの簡易除去）
 _HIRAGANA_STOPWORDS: frozenset[str] = frozenset({
@@ -196,6 +197,10 @@ class FactStore:
         # 読み込みに失敗したチャンネルの再読み込み間隔（ロック内で操作する）
         self._load_backoff = new_storage_load_backoff()
         self._lock = threading.Lock()
+        # チャンネル単位の保存ロック（スナップショット取得から書き込み完了まで保持する）。
+        # 古いスナップショットの書き込みが新しいものより後に完了して上書きするのを防ぐ。
+        # 取得順は必ず保存ロック → self._lock とする。
+        self._save_locks: KeyedLock[int] = KeyedLock()
 
     def add_fact(self, fact: Fact) -> bool:
         """ファクトを追加する。上限超過時はdecay_factor最小のものを削除
@@ -310,15 +315,7 @@ class FactStore:
         永続化先から読み込めていないチャンネルは、既存データを上書きしないよう書き込まない
         （dirty のまま残し、ロード成功後に保存する）。
         """
-        with self._lock:
-            if channel_id not in self._facts or channel_id not in self._loaded_channels:
-                return
-            facts = list(self._facts[channel_id])
-            self._dirty.discard(channel_id)
-
-        if not self._save_channel(channel_id, facts):
-            with self._lock:
-                self._dirty.add(channel_id)
+        self._persist_channel_serialized(channel_id, only_if_dirty=False)
 
     def persist_all(self) -> None:
         """変更のあったチャンネルだけを永続化する（クリーンアップタスクから呼ばれる）
@@ -327,15 +324,43 @@ class FactStore:
         """
         with self._lock:
             # 未ロードのチャンネルは既存データを上書きしないよう dirty に残して保存を見送る
-            unloaded = {cid for cid in self._dirty if cid not in self._loaded_channels}
-            dirty, self._dirty = self._dirty - unloaded, unloaded
-            snapshot = {cid: list(self._facts[cid]) for cid in dirty if cid in self._facts}
-        failed = {cid for cid, facts in snapshot.items() if not self._save_channel(cid, facts)}
-        if failed:
+            targets = [cid for cid in self._dirty if cid in self._loaded_channels]
+        results = [self._persist_channel_serialized(cid, only_if_dirty=True) for cid in targets]
+        attempted = [ok for ok in results if ok is not None]
+        if attempted:
+            logger.debug(f"ファクト永続化: {sum(attempted)}/{len(attempted)}チャンネル")
+
+    def _persist_channel_serialized(self, channel_id: int, only_if_dirty: bool) -> bool | None:
+        """チャンネルの保存ロックを保持したままスナップショットを取り、書き込む
+
+        同じチャンネルの保存は直列化されるため、後から取ったスナップショットが
+        必ず後に書き込まれる（古い内容による上書きが起きない）。
+
+        Args:
+            channel_id: チャンネルID
+            only_if_dirty: True の場合、dirty でなければ書き込まない
+                （待機中に別スレッドが保存を済ませたケース）
+
+        Returns:
+            書き込みの成否。書き込みを行わなかった場合は None
+        """
+        with self._save_locks.get(channel_id):
             with self._lock:
-                self._dirty |= failed
-        if snapshot:
-            logger.debug(f"ファクト永続化: {len(snapshot) - len(failed)}/{len(snapshot)}チャンネル")
+                if only_if_dirty and channel_id not in self._dirty:
+                    return None
+                if channel_id not in self._loaded_channels:
+                    return None
+                if channel_id not in self._facts:
+                    self._dirty.discard(channel_id)
+                    return None
+                facts = list(self._facts[channel_id])
+                self._dirty.discard(channel_id)
+
+            if self._save_channel(channel_id, facts):
+                return True
+            with self._lock:
+                self._dirty.add(channel_id)
+            return False
 
     def _save_channel(self, channel_id: int, facts: list[Fact]) -> bool:
         """設定された永続化先にチャンネルのファクトを書き込む

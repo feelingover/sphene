@@ -11,6 +11,7 @@ from log_utils.logger import logger
 from memory.backoff import new_storage_load_backoff
 from memory.errors import StorageLoadError, log_storage_load_failure
 from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
+from utils.keyed_lock import KeyedLock
 
 # 反省会LLMの抽出値はプロンプトへ再注入されるため、フィールドごとに長さを制限する
 _MAX_NICKNAME_LENGTH = 32
@@ -166,6 +167,10 @@ class UserProfileStore:
         self._load_backoff = new_storage_load_backoff()
         # イベントループとワーカースレッド（反省会・定期永続化）から並行アクセスされる
         self._lock = threading.Lock()
+        # プロファイル単位の保存ロック（スナップショット取得から書き込み完了まで保持する）。
+        # 並行した persist_all で古い内容の書き込みが後勝ちするのを防ぐ。
+        # 取得順は必ず保存ロック → self._lock とする。
+        self._save_locks: KeyedLock[ProfileKey] = KeyedLock()
 
     def _mark_dirty(self, guild_id: int, user_id: int) -> None:
         with self._lock:
@@ -352,17 +357,41 @@ class UserProfileStore:
         書き込みに失敗したプロファイルは次回の persist_all で再試行する。
         """
         with self._lock:
-            # キャッシュにないキー（読み込み失敗中の一時プロファイル）は保存しない
-            dirty, self._dirty = self._dirty, set()
-            snapshot = [(key, self._profiles[key]) for key in dirty if key in self._profiles]
-        failed = {key for key, profile in snapshot if not self._save_profile(profile)}
-        if failed:
-            with self._lock:
-                self._dirty |= failed
-        if snapshot:
+            targets = list(self._dirty)
+        results = [self._persist_profile_serialized(key) for key in targets]
+        attempted = [ok for ok in results if ok is not None]
+        if attempted:
             logger.debug(
-                f"ユーザープロファイル永続化: {len(snapshot) - len(failed)}/{len(snapshot)}件"
+                f"ユーザープロファイル永続化: {sum(attempted)}/{len(attempted)}件"
             )
+
+    def _persist_profile_serialized(self, key: ProfileKey) -> bool | None:
+        """プロファイルの保存ロックを保持したまま dirty を取り出し、書き込む
+
+        同じプロファイルの保存は直列化されるため、古い内容による上書きが起きない。
+
+        Args:
+            key: (guild_id, user_id)
+
+        Returns:
+            書き込みの成否。書き込みを行わなかった場合は None
+        """
+        with self._save_locks.get(key):
+            with self._lock:
+                # 待機中に別スレッドが保存を済ませていれば何もしない
+                if key not in self._dirty:
+                    return None
+                self._dirty.discard(key)
+                # キャッシュにないキー（読み込み失敗中の一時プロファイル）は保存しない
+                profile = self._profiles.get(key)
+            if profile is None:
+                return None
+
+            if self._save_profile(profile):
+                return True
+            with self._lock:
+                self._dirty.add(key)
+            return False
 
     def _save_profile(self, profile: UserProfile) -> bool:
         """設定された永続化先にプロファイルを書き込む
