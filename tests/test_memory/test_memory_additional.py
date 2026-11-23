@@ -31,12 +31,15 @@ class TestMemoryAdditional:
         assert get_channel_context_store() is store1
 
     def test_channel_context_load_exception(self):
+        from memory.errors import StorageLoadError
+
         store = ChannelContextStore()
         with (
             patch("memory.channel_context.os.path.exists", return_value=True),
             patch("builtins.open", side_effect=Exception("Read error")),
+            pytest.raises(StorageLoadError),
         ):
-            assert store._load_from_local(123) is None
+            store._load_from_local(123)
 
     @patch("utils.firestore_client.get_firestore_client")
     def test_channel_context_firestore(self, mock_get_db):

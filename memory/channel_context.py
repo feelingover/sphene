@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import config
 from log_utils.logger import logger
+from memory.errors import StorageLoadError
 
 
 @dataclass
@@ -21,6 +22,9 @@ class ChannelContext:
     active_users: list[str] = field(default_factory=list)
     last_updated: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     message_count_since_update: int = 0
+    # 永続化先の読み込みに失敗した一時コンテキストなら True（シリアライズしない）。
+    # 保存すると既存の要約を上書きしてしまうため、save_context はこれを拒否する
+    load_failed: bool = field(default=False, compare=False, repr=False)
 
     def increment_message_count(self) -> None:
         """メッセージカウンタをインクリメントする"""
@@ -118,14 +122,32 @@ class ChannelContextStore:
             return cached
 
         # ロック外で I/O を行い、取得後に先着を優先して登録する
-        ctx = self._load_context(channel_id)
+        try:
+            ctx = self._load_context(channel_id)
+        except StorageLoadError:
+            # 一時コンテキストを返すが、キャッシュしない（次回アクセス時に再読み込みする）
+            logger.warning(
+                f"チャンネルコンテキストの読み込みに失敗したため一時コンテキストを使用します: "
+                f"channel_id={channel_id}",
+                exc_info=True,
+            )
+            return ChannelContext(channel_id=channel_id, load_failed=True)
         if ctx is None:
             ctx = ChannelContext(channel_id=channel_id)
         with self._lock:
             return self._contexts.setdefault(channel_id, ctx)
 
     def save_context(self, context: ChannelContext) -> None:
-        """コンテキストを永続化する（I/Oを伴うためワーカースレッドで呼ぶこと）"""
+        """コンテキストを永続化する（I/Oを伴うためワーカースレッドで呼ぶこと）
+
+        読み込みに失敗した一時コンテキストは、既存の要約を上書きしないよう保存しない。
+        """
+        if context.load_failed:
+            logger.warning(
+                f"読み込みに失敗したチャンネルコンテキストのため保存を見送りました: "
+                f"channel_id={context.channel_id}"
+            )
+            return
         with self._lock:
             self._contexts[context.channel_id] = context
         storage_type = config.STORAGE_TYPE
@@ -154,7 +176,9 @@ class ChannelContextStore:
                     data = json.load(f)
                 return ChannelContext.from_dict(data)
         except Exception as e:
-            logger.error(f"チャンネルコンテキスト読み込みエラー: {e}", exc_info=True)
+            raise StorageLoadError(
+                f"チャンネルコンテキストのローカル読み込みに失敗: {file_path}"
+            ) from e
         return None
 
     def _save_to_local(self, context: ChannelContext) -> None:
@@ -186,9 +210,9 @@ class ChannelContextStore:
                     data["channel_id"] = channel_id
                     return ChannelContext.from_dict(data)
         except Exception as e:
-            logger.error(
-                f"Firestoreからのコンテキスト読み込みエラー: {e}", exc_info=True
-            )
+            raise StorageLoadError(
+                f"Firestoreからのコンテキスト読み込みに失敗: channel_id={channel_id}"
+            ) from e
         return None
 
     def _save_to_firestore(self, context: ChannelContext) -> None:

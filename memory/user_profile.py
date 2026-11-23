@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import config
 from log_utils.logger import logger
+from memory.errors import StorageLoadError
 from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
 
 # 反省会LLMの抽出値はプロンプトへ再注入されるため、フィールドごとに長さを制限する
@@ -190,9 +191,19 @@ class UserProfileStore:
             return cached
 
         # ロック外で I/O を行い、取得後に先着を優先して登録する
-        profile = self._load_profile(guild_id, user_id)
-        if profile is None:
-            profile = self._new_profile(guild_id, user_id, display_name)
+        try:
+            profile = self._load_profile(guild_id, user_id)
+            if profile is None:
+                profile = self._new_profile(guild_id, user_id, display_name)
+        except StorageLoadError:
+            # 一時的なプロファイルを返すが、キャッシュしない。persist_all は
+            # キャッシュにあるものだけを保存するため、既存データは上書きされない
+            logger.warning(
+                f"プロファイルの読み込みに失敗したため一時プロファイルを使用します: "
+                f"guild_id={guild_id}, user_id={user_id}",
+                exc_info=True,
+            )
+            return UserProfile(user_id=user_id, display_name=display_name, guild_id=guild_id)
         with self._lock:
             return self._profiles.setdefault(key, profile)
 
@@ -331,6 +342,7 @@ class UserProfileStore:
         書き込みに失敗したプロファイルは次回の persist_all で再試行する。
         """
         with self._lock:
+            # キャッシュにないキー（読み込み失敗中の一時プロファイル）は保存しない
             dirty, self._dirty = self._dirty, set()
             snapshot = [(key, self._profiles[key]) for key in dirty if key in self._profiles]
         failed = {key for key, profile in snapshot if not self._save_profile(profile)}
@@ -413,7 +425,9 @@ class UserProfileStore:
                 data["guild_id"] = guild_id
                 return UserProfile.from_dict(data)
         except Exception as e:
-            logger.error(f"ユーザープロファイル読み込みエラー: {e}", exc_info=True)
+            raise StorageLoadError(
+                f"ユーザープロファイルのローカル読み込みに失敗: {file_path}"
+            ) from e
         return None
 
     def _save_to_local(self, profile: "UserProfile") -> bool:
@@ -450,9 +464,9 @@ class UserProfileStore:
                     data["guild_id"] = guild_id
                     return UserProfile.from_dict(data)
         except Exception as e:
-            logger.error(
-                f"Firestoreからのプロファイル読み込みエラー: {e}", exc_info=True
-            )
+            raise StorageLoadError(
+                f"Firestoreからのプロファイル読み込みに失敗: doc_id={doc_id}"
+            ) from e
         return None
 
     def _save_to_firestore(self, profile: "UserProfile") -> bool:

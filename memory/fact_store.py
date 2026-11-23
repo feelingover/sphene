@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import config
 from log_utils.logger import logger
+from memory.errors import StorageLoadError
 
 # ひらがなストップワード（形態素解析なしの簡易除去）
 _HIRAGANA_STOPWORDS: frozenset[str] = frozenset({
@@ -301,9 +302,13 @@ class FactStore:
         return shareable
 
     def persist_channel(self, channel_id: int) -> None:
-        """特定のチャンネルを永続化する（変更の有無にかかわらず書き込む）"""
+        """特定のチャンネルを永続化する（変更の有無にかかわらず書き込む）
+
+        永続化先から読み込めていないチャンネルは、既存データを上書きしないよう書き込まない
+        （dirty のまま残し、ロード成功後に保存する）。
+        """
         with self._lock:
-            if channel_id not in self._facts:
+            if channel_id not in self._facts or channel_id not in self._loaded_channels:
                 return
             facts = list(self._facts[channel_id])
             self._dirty.discard(channel_id)
@@ -318,7 +323,9 @@ class FactStore:
         書き込みに失敗したチャンネルは次回の persist_all で再試行する。
         """
         with self._lock:
-            dirty, self._dirty = self._dirty, set()
+            # 未ロードのチャンネルは既存データを上書きしないよう dirty に残して保存を見送る
+            unloaded = {cid for cid in self._dirty if cid not in self._loaded_channels}
+            dirty, self._dirty = self._dirty - unloaded, unloaded
             snapshot = {cid: list(self._facts[cid]) for cid in dirty if cid in self._facts}
         failed = {cid for cid, facts in snapshot.items() if not self._save_channel(cid, facts)}
         if failed:
@@ -367,16 +374,26 @@ class FactStore:
         storage_type = config.STORAGE_TYPE
         facts: list[Fact] | None = None
 
-        if storage_type == "local":
-            facts = self._load_from_local(channel_id)
-        elif storage_type == "firestore":
-            facts = self._load_from_firestore(channel_id)
+        try:
+            if storage_type == "local":
+                facts = self._load_from_local(channel_id)
+            elif storage_type == "firestore":
+                facts = self._load_from_firestore(channel_id)
+        except StorageLoadError:
+            # ロード済みにしないことで次回アクセス時に再試行する
+            logger.warning(
+                f"ファクトの読み込みに失敗したため未ロードのまま扱います: channel_id={channel_id}",
+                exc_info=True,
+            )
+            return
 
         with self._lock:
             # 別スレッドが先にロードを完了していた場合はスキップ
             if channel_id not in self._loaded_channels:
                 if facts is not None:
-                    self._facts[channel_id] = facts
+                    self._facts[channel_id] = _merge_pending_facts(
+                        facts, self._facts.get(channel_id, [])
+                    )
                 self._loaded_channels.add(channel_id)
 
     def _save_to_local(self, channel_id: int, facts: list[Fact]) -> bool:
@@ -404,7 +421,7 @@ class FactStore:
                     data = json.load(f)
                 return [Fact.from_dict(item) for item in data.get("facts", [])]
         except Exception as e:
-            logger.error(f"ファクトのローカル読み込みエラー: {e}", exc_info=True)
+            raise StorageLoadError(f"ファクトのローカル読み込みに失敗: {file_path}") from e
         return None
 
     def _save_to_firestore(self, channel_id: int, facts: list[Fact]) -> bool:
@@ -441,7 +458,9 @@ class FactStore:
                 if data is not None:
                     return [Fact.from_dict(item) for item in data.get("facts", [])]
         except Exception as e:
-            logger.error(f"ファクトのFirestore読み込みエラー: {e}", exc_info=True)
+            raise StorageLoadError(
+                f"ファクトのFirestore読み込みに失敗: channel_id={channel_id}"
+            ) from e
         return None
 
     def cleanup_low_relevance_facts(self) -> dict[int, int]:
@@ -560,6 +579,31 @@ class FactStore:
             doc_ref.set({"channel_id": channel_id, "archived_facts": existing})
         except Exception as e:
             logger.error(f"ファクトFirestoreアーカイブエラー: {e}", exc_info=True)
+
+
+def _merge_pending_facts(loaded: list[Fact], pending: list[Fact]) -> list[Fact]:
+    """読み込んだファクトに、未ロード中に追加されたファクトをマージする
+
+    読み込みに失敗している間に追加されたファクトを、ロード成功時に捨てないための処理。
+    既存と重複するものは追加せず、上限を超えた分は decay_factor の低いものから削る。
+
+    Args:
+        loaded: 永続化先から読み込んだファクト
+        pending: 未ロード中にメモリ上へ追加されたファクト
+
+    Returns:
+        マージ後のファクトリスト
+    """
+    merged = list(loaded)
+    for fact in pending:
+        if _find_duplicate(fact, merged) is None:
+            merged.append(fact)
+    max_facts = config.FACT_STORE_MAX_FACTS_PER_CHANNEL
+    if len(merged) > max_facts:
+        half_life = config.FACT_DECAY_HALF_LIFE_DAYS
+        merged.sort(key=lambda f: f.decay_factor(half_life))
+        merged = merged[len(merged) - max_facts:]
+    return merged
 
 
 def _fit_facts_to_document(channel_id: int, facts: list[Fact]) -> list[dict]:
