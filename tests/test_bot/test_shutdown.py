@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bot.discord_bot import SpheneBot, _persist_memory_on_shutdown
+from bot.discord_bot import _ignore_sigterm as _real_ignore_sigterm
 
 
 def _patch_stores(profile: MagicMock, facts: MagicMock, contexts: MagicMock):  # type: ignore[no-untyped-def]
@@ -99,6 +100,33 @@ class TestRunShutdown:
 
         assert order == ["persist", "close"]
 
+    def test_finally_ignores_sigterm_before_persist(self, sphene_bot: SpheneBot) -> None:
+        """フォールバックの永続化の前に SIGTERM を無視に設定すること"""
+        order: list[str] = []
+        with patch(
+            "bot.discord_bot._ignore_sigterm", side_effect=lambda: order.append("ignore")
+        ), patch(
+            "bot.discord_bot._persist_memory_on_shutdown",
+            side_effect=lambda: order.append("persist"),
+        ), patch("bot.discord_bot.close_http_client"):
+            sphene_bot.run()
+        assert order == ["ignore", "persist"]
+
+    def test_ignore_sigterm_sets_sig_ign(self) -> None:
+        """_ignore_sigterm が SIGTERM を SIG_IGN に設定すること
+
+        conftest で bot.discord_bot._ignore_sigterm はパッチされているため、
+        インポート時に保持した実体を直接呼ぶ。
+        """
+        with patch("bot.discord_bot.signal.signal") as mock_signal:
+            _real_ignore_sigterm()
+        mock_signal.assert_called_once_with(signal.SIGTERM, signal.SIG_IGN)
+
+    def test_ignore_sigterm_outside_main_thread(self) -> None:
+        """メインスレッド外で設定できなくても例外を伝播しないこと"""
+        with patch("bot.discord_bot.signal.signal", side_effect=ValueError):
+            _real_ignore_sigterm()
+
     def test_finally_skips_when_already_persisted(self, sphene_bot: SpheneBot) -> None:
         """SIGTERM 経路で永続化済みなら finally で二重に永続化しないこと"""
         sphene_bot._memory_persisted = True
@@ -112,17 +140,38 @@ class TestRunShutdown:
 class TestSigtermHandler:
     """SIGTERM ハンドラ（イベントループ上）のテスト"""
 
-    def test_setup_hook_is_registered(self, sphene_bot: SpheneBot) -> None:
-        """discord.py の setup_hook に SpheneBot._setup_hook が設定されること"""
-        assert sphene_bot.bot.setup_hook == sphene_bot._setup_hook
-
     @pytest.mark.asyncio
-    async def test_setup_hook_installs_loop_signal_handler(self, sphene_bot: SpheneBot) -> None:
-        """setup_hook でイベントループに SIGTERM ハンドラを登録すること"""
+    async def test_setup_hook_keeps_command_sync_and_installs_handler(self) -> None:
+        """setup_hook がスラッシュコマンドの登録・同期と SIGTERM 登録の両方を行うこと
+
+        setup_events が設定したフックを上書きしてコマンドが登録されなくなった回帰を防ぐ。
+        本物の setup_events を通して確認する。
+        """
+        with patch("bot.discord_bot.commands.Bot") as mock_bot_cls, patch(
+            "bot.discord_bot.load_system_prompt"
+        ), patch("bot.discord_bot.setup_commands") as mock_setup_commands:
+            mock_bot = mock_bot_cls.return_value
+            mock_bot.tree.sync = AsyncMock()
+            command_group = mock_setup_commands.return_value
+            sphene = SpheneBot()
+
         loop = asyncio.get_running_loop()
         with patch.object(loop, "add_signal_handler") as mock_add:
-            await sphene_bot._setup_hook()
-        mock_add.assert_called_once_with(signal.SIGTERM, sphene_bot._request_shutdown)
+            await sphene.bot.setup_hook()
+
+        mock_bot.tree.add_command.assert_called_once_with(command_group)
+        mock_bot.tree.sync.assert_awaited_once()
+        mock_add.assert_called_once_with(signal.SIGTERM, sphene._request_shutdown)
+
+    @pytest.mark.asyncio
+    async def test_handler_installed_even_if_command_sync_fails(self, sphene_bot: SpheneBot) -> None:
+        """コマンド同期が失敗しても SIGTERM ハンドラは登録済みであること"""
+        sphene_bot._events_setup_hook = AsyncMock(side_effect=RuntimeError("sync failed"))  # type: ignore[method-assign]
+        loop = asyncio.get_running_loop()
+        with patch.object(loop, "add_signal_handler") as mock_add:
+            with pytest.raises(RuntimeError):
+                await sphene_bot._setup_hook()
+        mock_add.assert_called_once()
 
     def test_install_failure_does_not_raise(self, sphene_bot: SpheneBot) -> None:
         """シグナルハンドラを登録できない環境でも例外を伝播しないこと"""

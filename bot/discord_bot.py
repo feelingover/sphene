@@ -63,7 +63,10 @@ class SpheneBot:
         # イベントのセットアップ
         setup_events(self.bot, command_group)
 
-        # ログイン時（イベントループ起動後）にシグナルハンドラを登録する
+        # ログイン時（イベントループ起動後）にシグナルハンドラを登録する。
+        # setup_events が設定したフック（スラッシュコマンドの登録・同期）を
+        # 上書きせず、その前に SIGTERM ハンドラの登録を挟む
+        self._events_setup_hook = self.bot.setup_hook
         self.bot.setup_hook = self._setup_hook  # type: ignore[method-assign]
 
         # クリーンアップタスクの開始を準備
@@ -165,8 +168,12 @@ class SpheneBot:
                 )
 
     async def _setup_hook(self) -> None:
-        """discord.py の setup_hook: イベントループ上で SIGTERM ハンドラを登録する"""
+        """discord.py の setup_hook: SIGTERM ハンドラを登録し、元のフックを実行する
+
+        コマンド同期が失敗しても SIGTERM で永続化できるよう、ハンドラ登録を先に行う。
+        """
         self._install_sigterm_handler(asyncio.get_running_loop())
+        await self._events_setup_hook()
 
     def _install_sigterm_handler(self, loop: asyncio.AbstractEventLoop) -> None:
         """SIGTERM で graceful shutdown するためのハンドラを登録する
@@ -218,9 +225,20 @@ class SpheneBot:
         try:
             self.bot.run(config.DISCORD_TOKEN, log_handler=None)
         finally:
+            # ループ終了でシグナルハンドラは外れ SIG_DFL に戻るため、
+            # フォールバックの永続化中に SIGTERM で即死しないよう無視する
+            _ignore_sigterm()
             # SIGTERM 以外の終了経路（SIGINT・例外など）向けのフォールバック
             self._persist_memory_once()
             close_http_client()
+
+
+def _ignore_sigterm() -> None:
+    """プロセス終了直前の SIGTERM を無視する（メインスレッド外では何もしない）"""
+    try:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    except ValueError:
+        logger.debug("メインスレッド外のため SIGTERM を無視に設定できませんでした")
 
 
 def _persist_memory_on_shutdown() -> None:
