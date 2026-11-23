@@ -136,8 +136,8 @@ class SpheneBot:
                         datetime.now(timezone.utc) - last_time
                     ).total_seconds() / 60
                     if silence_minutes >= config.REFLECTION_LULL_MINUTES:
-                        recent = buffer.get_recent_messages(channel_id, limit=100)
-                        engine.maybe_reflect(channel_id, recent)
+                        pending = buffer.get_messages_since_reflection(channel_id)
+                        engine.maybe_reflect(channel_id, pending)
 
                 get_fact_store().persist_all()
                 logger.debug("ファクトストアを永続化しました")

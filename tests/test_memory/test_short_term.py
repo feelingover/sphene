@@ -252,3 +252,68 @@ class TestChannelMessageBuffer:
         buf.mark_reflected(100)
         # 2回目の mark_reflected 後は新規メッセージなし
         assert buf.count_messages_since_reflection(100) == 0
+
+
+
+class TestMessagesSinceReflection:
+    """get_messages_since_reflection / mark_reflected(until=...) のテスト"""
+
+    @staticmethod
+    def _msg(message_id: int, minutes_ago: float) -> ChannelMessage:
+        return ChannelMessage(
+            message_id=message_id,
+            channel_id=1,
+            author_id=10,
+            author_name="U",
+            content=f"m{message_id}",
+            timestamp=datetime.now(timezone.utc) - timedelta(minutes=minutes_ago),
+        )
+
+    def test_returns_all_before_first_reflection(self):
+        """反省会前はTTL内の全メッセージを返すこと"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        for i, ago in enumerate([5, 4, 3]):
+            buf.add_message(self._msg(i, ago))
+        assert [m.message_id for m in buf.get_messages_since_reflection(1)] == [0, 1, 2]
+
+    def test_returns_only_messages_after_checkpoint(self):
+        """チェックポイント以降の差分だけを返すこと"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        msgs = [self._msg(i, ago) for i, ago in enumerate([5, 4, 3])]
+        for m in msgs:
+            buf.add_message(m)
+        buf.mark_reflected(1, until=msgs[1].timestamp)
+
+        assert [m.message_id for m in buf.get_messages_since_reflection(1)] == [2]
+        assert buf.count_messages_since_reflection(1) == 1
+
+    def test_messages_during_reflection_are_not_lost(self):
+        """反省会中に届いたメッセージは次回の対象に残ること"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        processed = [self._msg(0, 5), self._msg(1, 4)]
+        for m in processed:
+            buf.add_message(m)
+        late = self._msg(2, 1)
+        buf.add_message(late)
+
+        buf.mark_reflected(1, until=max(m.timestamp for m in processed))
+
+        assert [m.message_id for m in buf.get_messages_since_reflection(1)] == [2]
+
+    def test_checkpoint_never_moves_backwards(self):
+        """古いタイムスタンプではチェックポイントを巻き戻さないこと"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        msgs = [self._msg(i, ago) for i, ago in enumerate([5, 4, 3])]
+        for m in msgs:
+            buf.add_message(m)
+        buf.mark_reflected(1, until=msgs[2].timestamp)
+        buf.mark_reflected(1, until=msgs[0].timestamp)
+
+        assert buf.get_messages_since_reflection(1) == []
+
+    def test_limit_returns_newest(self):
+        """limit 指定時は新しい方から返すこと"""
+        buf = ChannelMessageBuffer(max_size=10, ttl_minutes=30)
+        for i, ago in enumerate([5, 4, 3]):
+            buf.add_message(self._msg(i, ago))
+        assert [m.message_id for m in buf.get_messages_since_reflection(1, limit=2)] == [1, 2]

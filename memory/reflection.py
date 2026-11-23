@@ -13,6 +13,8 @@ import config
 from ai.client import get_genai_client, get_light_thinking_config, get_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
+from memory.fact_store import Fact
+from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
 from memory.short_term import ChannelMessage
 
 REFLECTION_PROMPT = """\
@@ -70,6 +72,87 @@ def _format_messages_for_reflection(messages: list[ChannelMessage]) -> str:
             f"</message>"
         )
     return "\n".join(lines)
+
+
+_MAX_FACT_CONTENT_LENGTH = 300
+_MAX_FACT_KEYWORD_LENGTH = 30
+_MAX_FACT_KEYWORDS = 10
+
+
+def _parse_user_id(value: object) -> int | None:
+    """LLMが返したユーザーIDを int に変換する（bool・不正値は None）"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _parse_fact_item(item: object) -> dict | None:
+    """反省会LLMが返したファクト1件を検証・正規化する
+
+    Args:
+        item: JSON配列の1要素
+
+    Returns:
+        content / keywords / source_user_ids / shareable を持つ辞書。不正な場合は None。
+    """
+    if not isinstance(item, dict):
+        return None
+    content = sanitize_llm_text(item.get("content"), _MAX_FACT_CONTENT_LENGTH)
+    if not content:
+        return None
+    raw_ids = item.get("source_user_ids")
+    source_ids = [
+        uid for uid in (_parse_user_id(v) for v in (raw_ids if isinstance(raw_ids, list) else []))
+        if uid is not None
+    ]
+    return {
+        "content": content,
+        "keywords": sanitize_llm_text_list(
+            item.get("keywords"), _MAX_FACT_KEYWORD_LENGTH, _MAX_FACT_KEYWORDS
+        ),
+        "source_user_ids": source_ids,
+        "shareable": item.get("shareable") is True,
+    }
+
+
+def _apply_user_profile_results(
+    result: list, messages: list[ChannelMessage]
+) -> int:
+    """ユーザープロファイルLLMの結果を、会話に登場した人間ユーザーにだけ反映する
+
+    LLMが返した user_id は会話ログ内の発言者と照合し、ログに登場しない
+    ユーザー（他チャンネルのユーザーや、発言内容で誘導された任意のID）は無視する。
+
+    Args:
+        result: LLMが返したJSON配列
+        messages: 反省会の対象メッセージ
+
+    Returns:
+        更新したプロファイル数
+    """
+    from memory.user_profile import get_user_profile_store
+
+    allowed_ids = {msg.author_id for msg in messages if not msg.is_bot}
+    store = get_user_profile_store()
+    updated_count = 0
+    for item in result:
+        if not isinstance(item, dict):
+            continue
+        user_id = _parse_user_id(item.get("user_id"))
+        if user_id is None:
+            continue
+        if user_id not in allowed_ids:
+            logger.warning(
+                f"会話に登場しないuser_idのプロファイル更新を拒否: user_id={user_id}"
+            )
+            continue
+        store.update_from_reflection(user_id, item)
+        updated_count += 1
+    return updated_count
 
 
 class ReflectionEngine:
@@ -188,56 +271,55 @@ class ReflectionEngine:
         raw_facts: list[dict],
         messages: list[ChannelMessage],
     ) -> None:
-        """LLM結果をFactオブジェクトに変換しFactStore.add_fact()で保存。
-        ファクト保存が成功した場合のみ buffer.mark_reflected(channel_id) を呼ぶ
+        """LLM結果を検証してFactに変換し、FactStore.add_fact()で保存する
+
+        有効なファクトを1件以上処理できた場合（重複でスキップした場合を含む）、
+        またはLLMが空配列を返した場合に、処理したメッセージの最大タイムスタンプで
+        チェックポイントを進める。
+
+        Args:
+            channel_id: チャンネルID
+            raw_facts: LLMが返したJSON配列
+            messages: 反省会の対象メッセージ
         """
         from ai.client import generate_embedding
-        from memory.fact_store import Fact, get_fact_store
+        from memory.fact_store import get_fact_store
         from memory.short_term import get_channel_buffer
 
         store = get_fact_store()
         now = datetime.now(timezone.utc)
-        saved_count = 0
-
-        valid_items = [
-            item for item in raw_facts
-            if isinstance(item, dict) and item.get("content", "").strip()
+        parsed = [
+            item for item in (_parse_fact_item(raw) for raw in raw_facts) if item
         ]
 
         embeddings = await asyncio.gather(
-            *[asyncio.to_thread(generate_embedding, item["content"].strip()) for item in valid_items]
+            *[asyncio.to_thread(generate_embedding, item["content"]) for item in parsed]
         )
 
-        for item, embedding in zip(valid_items, embeddings):
-            content = item["content"].strip()
-            logger.debug(
-                f"Embedding生成: channel_id={channel_id}, "
-                f"content={content[:30]!r}, embedding={'あり' if embedding else 'なし'}"
-            )
+        saved_count = 0
+        for item, embedding in zip(parsed, embeddings):
             fact = Fact(
                 fact_id=str(uuid.uuid4()),
                 channel_id=channel_id,
-                content=content,
-                keywords=item.get("keywords", []),
-                source_user_ids=[
-                    int(uid) for uid in item.get("source_user_ids", [])
-                    if str(uid).isdigit()
-                ],
+                content=item["content"],
+                keywords=item["keywords"],
+                source_user_ids=item["source_user_ids"],
                 created_at=now,
-                shareable=bool(item.get("shareable", False)),
+                shareable=item["shareable"],
                 embedding=embedding,
             )
-            store.add_fact(fact)
-            saved_count += 1
+            if store.add_fact(fact):
+                saved_count += 1
 
         if saved_count > 0:
             store.persist_channel(channel_id)
 
-        # saved_count > 0: ファクトが1件以上保存された場合
-        # len(raw_facts) == 0: LLMが空配列を返した場合 = 抽出すべき事実がなかった正常終了
-        # どちらの場合もカウンタをリセットして次のサイクルを開始する
-        if saved_count > 0 or len(raw_facts) == 0:
-            get_channel_buffer().mark_reflected(channel_id)
+        if (parsed or len(raw_facts) == 0) and messages:
+            until = max(msg.timestamp for msg in messages)
+            get_channel_buffer().mark_reflected(channel_id, until=until)
+        logger.debug(
+            f"ファクト反映: channel_id={channel_id}, valid={len(parsed)}, saved={saved_count}"
+        )
 
     def _call_user_profile_llm(self, messages: list[ChannelMessage]) -> None:
         """ユーザープロファイル専用LLMコール。会話からユーザー特性を抽出してストアに反映
@@ -281,20 +363,9 @@ class ReflectionEngine:
                 logger.warning(f"ユーザープロファイルLLMが非配列を返した: {type(result)}")
                 return
 
-            store = get_user_profile_store()
-            updated_count = 0
-            for item in result:
-                if not isinstance(item, dict):
-                    continue
-                user_id = item.get("user_id")
-                if isinstance(user_id, int):
-                    store.update_from_reflection(user_id, item)
-                    updated_count += 1
-                elif isinstance(user_id, str) and user_id.isdigit():
-                    store.update_from_reflection(int(user_id), item)
-                    updated_count += 1
+            updated_count = _apply_user_profile_results(result, messages)
             if updated_count > 0:
-                store.persist_all()
+                get_user_profile_store().persist_all()
             logger.info(f"ユーザープロファイル反省会完了: {updated_count}件処理")
         except json.JSONDecodeError as e:
             logger.warning(f"ユーザープロファイルLLM JSONパースエラー: {e}")

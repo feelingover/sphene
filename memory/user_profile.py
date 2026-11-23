@@ -8,6 +8,15 @@ from datetime import datetime, timezone
 
 import config
 from log_utils.logger import logger
+from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
+
+# 反省会LLMの抽出値はプロンプトへ再注入されるため、フィールドごとに長さを制限する
+_MAX_NICKNAME_LENGTH = 32
+_MAX_TAG_LENGTH = 30
+_MAX_FACT_LENGTH = 100
+_MAX_NOTE_LENGTH = 200
+_MAX_SHORT_LENGTH = 30
+_ALLOWED_TONES = frozenset({"カジュアル", "フォーマル"})
 
 
 @dataclass
@@ -200,24 +209,48 @@ class UserProfileStore:
         profile = self._profiles.get(user_id)
         if not profile:
             return
-        for tag in extracted.get("tags") or []:
-            if isinstance(tag, str) and tag not in profile.tags:
+        for tag in sanitize_llm_text_list(
+            extracted.get("tags"), _MAX_TAG_LENGTH, config.USER_PROFILE_TAGS_LIMIT
+        ):
+            if tag not in profile.tags:
                 profile.tags.append(tag)
         profile.tags = profile.tags[-config.USER_PROFILE_TAGS_LIMIT:]
-        for fact in extracted.get("notable_facts") or []:
-            if isinstance(fact, str) and fact not in profile.notable_facts:
+        for fact in sanitize_llm_text_list(
+            extracted.get("notable_facts"),
+            _MAX_FACT_LENGTH,
+            config.USER_PROFILE_FACTS_LIMIT,
+        ):
+            if fact not in profile.notable_facts:
                 profile.notable_facts.append(fact)
         profile.notable_facts = profile.notable_facts[-config.USER_PROFILE_FACTS_LIMIT:]
-        if extracted.get("personality_notes"):
-            profile.personality_notes = extracted["personality_notes"]
-        if extracted.get("last_conversation_summary"):
-            profile.last_conversation_summary = extracted["last_conversation_summary"]
-        if extracted.get("preferred_tone"):
-            profile.preferred_tone = extracted["preferred_tone"]
-        if extracted.get("emotional_state_last"):
-            profile.emotional_state_last = extracted["emotional_state_last"]
-        if extracted.get("nickname"):
-            self.update_nickname(user_id, extracted["nickname"])
+        self._apply_reflection_scalars(profile, extracted)
+
+    def _apply_reflection_scalars(self, profile: UserProfile, extracted: dict) -> None:
+        """反省会抽出結果のうち単一値のフィールドを検証してプロファイルに反映する
+
+        Args:
+            profile: 更新対象のプロファイル
+            extracted: LLMが抽出した辞書
+        """
+        notes = sanitize_llm_text(extracted.get("personality_notes"), _MAX_NOTE_LENGTH)
+        if notes:
+            profile.personality_notes = notes
+        summary = sanitize_llm_text(
+            extracted.get("last_conversation_summary"), _MAX_NOTE_LENGTH
+        )
+        if summary:
+            profile.last_conversation_summary = summary
+        tone = sanitize_llm_text(extracted.get("preferred_tone"), _MAX_SHORT_LENGTH)
+        if tone in _ALLOWED_TONES:
+            profile.preferred_tone = tone
+        emotion = sanitize_llm_text(
+            extracted.get("emotional_state_last"), _MAX_SHORT_LENGTH
+        )
+        if emotion:
+            profile.emotional_state_last = emotion
+        nickname = sanitize_llm_text(extracted.get("nickname"), _MAX_NICKNAME_LENGTH)
+        if nickname:
+            self.update_nickname(profile.user_id, nickname)
 
     def update_nickname(self, user_id: int, nickname: str) -> None:
         """ユーザーのニックネームを更新する

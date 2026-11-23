@@ -596,6 +596,10 @@ class TestHandleMessageReflectionTrigger:
                 await _handle_message(bot, message)
 
         mock_engine.maybe_reflect.assert_called_once()
+        # 反省会には前回以降の差分メッセージだけを渡す
+        mock_buffer.get_messages_since_reflection.assert_called_once_with(message.channel.id)
+        _, passed_messages = mock_engine.maybe_reflect.call_args.args
+        assert passed_messages is mock_buffer.get_messages_since_reflection.return_value
 
     @pytest.mark.asyncio
     @patch("bot.events.config")

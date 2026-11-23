@@ -658,12 +658,12 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             from memory.reflection import get_reflection_engine
 
             engine = get_reflection_engine()
-            recent = buffer.get_recent_messages(message.channel.id, limit=100)
             if (
                 buffer.count_messages_since_reflection(message.channel.id)
                 >= config.REFLECTION_MAX_BUFFER_MESSAGES
             ):
-                engine.maybe_reflect(message.channel.id, recent)
+                pending = buffer.get_messages_since_reflection(message.channel.id)
+                engine.maybe_reflect(message.channel.id, pending)
 
         # 画像添付の検出
         images = []

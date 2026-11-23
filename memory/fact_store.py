@@ -5,6 +5,7 @@ import math
 import os
 import re
 import threading
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -129,6 +130,42 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+_NORMALIZE_STRIP_RE = re.compile(r"[\s\W_]+")
+
+
+def _normalize_fact_content(text: str) -> str:
+    """重複判定用にファクト本文を正規化する（NFKC・小文字化・空白/記号除去）"""
+    return _NORMALIZE_STRIP_RE.sub("", unicodedata.normalize("NFKC", text).lower())
+
+
+def _find_duplicate(fact: Fact, existing: list[Fact]) -> Fact | None:
+    """既存ファクトの中から重複するものを返す
+
+    正規化した本文が一致するか、両方にEmbeddingがありコサイン類似度が
+    FACT_DEDUP_SIMILARITY_THRESHOLD 以上なら重複とみなす。
+
+    Args:
+        fact: 判定対象のファクト
+        existing: 同じチャンネルの既存ファクト
+
+    Returns:
+        重複している既存ファクト。なければ None。
+    """
+    normalized = _normalize_fact_content(fact.content)
+    threshold = config.FACT_DEDUP_SIMILARITY_THRESHOLD
+    for other in existing:
+        if normalized and normalized == _normalize_fact_content(other.content):
+            return other
+        if (
+            fact.embedding
+            and other.embedding
+            and len(fact.embedding) == len(other.embedding)
+            and _cosine_similarity(fact.embedding, other.embedding) >= threshold
+        ):
+            return other
+    return None
+
+
 def extract_keywords(text: str) -> list[str]:
     """テキストからキーワードを抽出する（スペース/句読点区切り + 短文字除去 + ストップワード除去）"""
     # スペース・句読点・括弧などで分割
@@ -154,11 +191,27 @@ class FactStore:
         self._loaded_channels: set[int] = set()
         self._lock = threading.Lock()
 
-    def add_fact(self, fact: Fact) -> None:
-        """ファクトを追加する。上限超過時はdecay_factor最小のものを削除"""
+    def add_fact(self, fact: Fact) -> bool:
+        """ファクトを追加する。上限超過時はdecay_factor最小のものを削除
+
+        既存ファクトと内容が重複する場合は追加しない。
+
+        Args:
+            fact: 追加するファクト
+
+        Returns:
+            追加した場合は True、重複のためスキップした場合は False
+        """
         self._load_channel(fact.channel_id)
         with self._lock:
             facts = self._facts.setdefault(fact.channel_id, [])
+            duplicate = _find_duplicate(fact, facts)
+            if duplicate is not None:
+                logger.debug(
+                    f"重複ファクトをスキップ: channel_id={fact.channel_id}, "
+                    f"existing={duplicate.fact_id}"
+                )
+                return False
             facts.append(fact)
 
             max_facts = config.FACT_STORE_MAX_FACTS_PER_CHANNEL
@@ -170,6 +223,7 @@ class FactStore:
                 logger.debug(
                     f"ファクト上限超過により古いファクトを削除: channel_id={fact.channel_id}"
                 )
+        return True
 
     def search(
         self,
