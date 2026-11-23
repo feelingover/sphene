@@ -72,6 +72,7 @@ applyTo: "**"
 - 終了時の記憶永続化とバックグラウンドタスク参照の保持（2026/11, #132）: SIGTERM をループのシグナルハンドラで受け、executor 終了待ちより前に全記憶ストアを `persist_all`（チャンネルコンテキストは dirty のみ）、要約・反省会・リアクションのタスクを `utils/background_tasks.py` で強参照保持＋例外ログ
 - 並行保存の後勝ち防止（2026/11, #135）: FactStore・UserProfileStore にキー単位の保存ロック（`utils/keyed_lock.py`）を導入し、スナップショット取得から書き込み完了まで保持。古いスナップショットの書き込みが新しいファクトを上書きして dirty も消える競合を解消
 - 書き換えと書き出しの並行対策（2026/11, #147）: UserProfileStore の書き換えメソッドを `self._lock` 内で実行し、保存スナップショット（`UserProfile.snapshot()`）もロック内で取得。FactStore も保存・忘却クリーンアップで `Fact.snapshot()` をロック内で取り、`search` の参照頻度更新と混ざらないようにした
+- プロファイル読み取りの一貫性（2026/11, #153）: `UserProfileStore.get_profile` / `get_cached_profile` はロック内で取った `UserProfile.snapshot()` を返すようにし、注入用の文字列化と書き換えが並行しても新旧の値が混ざらないようにした。書き換えが必要な `record_message` は内部の `_get_or_load_profile` で生のオブジェクトを使う
 - LLMコンテキストのプロンプトインジェクション対策（2026/11, #136）: 直近会話は1発言1行に正規化し名前からロール表記・区切り記号を除去（`memory/sanitize.py` の `safe_author_name`）、翻訳は指示を `system_instruction` に分離し本文をエスケープした `<text>` タグで渡す、反省会の `source_user_ids` を会話参加者に限定
 - 国旗リアクション翻訳の堅牢化（2026/11, #138）: `on_raw_reaction_add` に切り替えキャッシュ外メッセージは `fetch_message` で取得、翻訳にユーザー（リアクションした人）単位・チャンネル単位のレート制限（超過時 ⏳、翻訳済みメッセージは枠を消費しない）、リアクション処理エラーのチャンネル通知をクールダウン付きにし送信失敗をログに記録
 - チャンネル設定保存の堅牢化（2026/11, #139）: 設定変更メソッドは保存失敗時に変更前の `config_data` へロールバック（`ChannelConfig._update_and_save`、インスタンス単位の RLock で変更〜保存〜ロールバックおよび再読み込みを直列化）、`atomic_write_json` は fsync・失敗時の一時ファイル削除・既存権限維持に対応（umask はプロセス全体を触らず os.open の mode で適用）、ローカル保存先を `LOCAL_STORAGE_DIR`（default: `storage`、`utils/file_utils.local_storage_path`）で指定可能に（チャンネル設定・記憶系すべて）
