@@ -13,6 +13,7 @@ from typing import Any, Callable, Optional
 
 import config
 from log_utils.logger import logger
+from utils.file_utils import local_storage_path
 from utils.firestore_client import get_firestore_client
 
 # シングルトンインスタンスを格納する変数
@@ -257,10 +258,12 @@ class ChannelConfig:
         if self.debug_mode:
             return
 
-        if self.storage_type == "firestore":
-            self._load_from_firestore()
-        else:
-            self._load_from_local()
+        # 更新中に config_data を差し替えて変更が失われないよう、更新と同じロックで直列化する
+        with self._lock:
+            if self.storage_type == "firestore":
+                self._load_from_firestore()
+            else:
+                self._load_from_local()
 
     def _load_from_local(self) -> None:
         """ローカルファイルから設定を読み込む"""
@@ -617,6 +620,4 @@ def _config_file_path(guild_id: str) -> str:
     Returns:
         str: LOCAL_STORAGE_DIR 配下の設定ファイルパス
     """
-    from utils.file_utils import local_storage_path
-
     return local_storage_path(f"channel_list.{guild_id}.json")

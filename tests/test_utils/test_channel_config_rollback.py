@@ -160,3 +160,31 @@ class TestLocalStoragePath:
             assert _local_path(1, 2) == os.path.join(str(tmp_path), "user_profile.1.2.json")
             assert FactStore()._save_to_local(42, []) is True
         assert (tmp_path / "facts.42.json").exists()
+
+
+class TestConcurrentReload:
+    """load_config が更新中の config_data を差し替えない"""
+
+    def test_reload_waits_for_in_flight_update(self, local_conf: ChannelConfig) -> None:
+        import threading
+
+        import utils.file_utils as fu
+
+        real_write = fu.atomic_write_json
+        loader: list[threading.Thread] = []
+
+        def _write(path: str, data: dict[str, Any], **kw: Any) -> None:
+            # 保存中に別スレッドから再読み込みを開始し、割り込めるだけの時間を与える
+            t = threading.Thread(target=local_conf.load_config)
+            t.start()
+            loader.append(t)
+            t.join(timeout=0.2)
+            real_write(path, data, **kw)
+
+        with patch("config.LOCAL_STORAGE_DIR", os.path.dirname(local_conf._get_config_file_path())):
+            with patch("utils.file_utils.atomic_write_json", side_effect=_write):
+                assert local_conf.add_channel(300, "a") is True
+            loader[0].join(timeout=5)
+
+        assert not loader[0].is_alive()
+        assert local_conf.is_channel_in_list(300) is True
