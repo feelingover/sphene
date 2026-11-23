@@ -149,8 +149,8 @@ class TestSearchItem:
     def test_name_only_search_backward_compatible(self, mock_client_class):
         """名前のみ検索（既存動作の後方互換確認）"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_item_result(name="エクサークコート")]
         )
@@ -171,8 +171,8 @@ class TestSearchItem:
     def test_job_filter_search(self, mock_client_class):
         """ジョブフィルタ付き検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_item_result(name="竜騎士の装備")]
         )
@@ -190,8 +190,8 @@ class TestSearchItem:
     def test_ilvl_range_search(self, mock_client_class):
         """IL範囲付き検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_item_result(ilvl=520)]
         )
@@ -213,8 +213,8 @@ class TestSearchItem:
     def test_all_filters_combined(self, mock_client_class):
         """全フィルタ組み合わせ"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_item_result(name="エクサークコート", ilvl=520)]
         )
@@ -233,8 +233,8 @@ class TestSearchItem:
     def test_pure_filter_search_no_name(self, mock_client_class):
         """名前なしの純フィルタ検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_item_result(name="装備A"), _make_item_result(row_id=12, name="装備B")]
         )
@@ -265,8 +265,8 @@ class TestSearchItem:
     def test_no_results(self, mock_client_class):
         """結果なし"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([])
 
         result = json.loads(search_item(query="存在しないアイテム"))
@@ -278,8 +278,8 @@ class TestSearchItem:
     def test_timeout_error(self, mock_client_class):
         """タイムアウトエラー"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
 
         result = json.loads(search_item(query="テスト"))
@@ -291,8 +291,8 @@ class TestSearchItem:
     def test_http_error(self, mock_client_class):
         """HTTPエラー"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_client.get.return_value = mock_response
@@ -309,8 +309,8 @@ class TestSearchItem:
     def test_filtered_limit_used_with_filters(self, mock_client_class):
         """フィルタ時のlimit=20確認"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([_make_item_result()])
 
         search_item(class_job="DRG")
@@ -322,8 +322,8 @@ class TestSearchItem:
     def test_default_limit_without_filters(self, mock_client_class):
         """フィルタなし時のlimit=5確認"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([_make_item_result()])
 
         search_item(query="テスト")
@@ -335,8 +335,8 @@ class TestSearchItem:
     def test_english_abbreviation_in_class_job(self, mock_client_class):
         """英語略称でのジョブ指定"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([_make_item_result()])
 
         result = json.loads(search_item(class_job="pld"))
@@ -348,8 +348,8 @@ class TestSearchItem:
     def test_ilvl_min_only_filter(self, mock_client_class):
         """IL下限のみ指定"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([_make_item_result()])
 
         result = json.loads(search_item(ilvl_min=600))
@@ -362,8 +362,8 @@ class TestSearchItem:
     def test_ilvl_max_only_filter(self, mock_client_class):
         """IL上限のみ指定"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([_make_item_result()])
 
         result = json.loads(search_item(ilvl_max=100))
@@ -493,8 +493,8 @@ class TestSearchAction:
     def test_name_only_search(self, mock_client_class):
         """名前のみ検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         
         # 検索結果と詳細取得（2段階）のレスポンスを定義
         res_list = _make_action_result(name="ボーパルスラスト")
@@ -525,8 +525,8 @@ class TestSearchAction:
     def test_job_filter_search(self, mock_client_class):
         """ジョブフィルタ付き検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         
         res_list = _make_action_result(name="桜花狂咲", class_job_abbr="DRG")
         
@@ -546,8 +546,8 @@ class TestSearchAction:
     def test_level_range_search(self, mock_client_class):
         """レベル範囲付き検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         
         res_list = _make_action_result(class_job_level=55)
         mock_search_res = MagicMock()
@@ -568,8 +568,8 @@ class TestSearchAction:
     def test_all_filters_combined(self, mock_client_class):
         """全フィルタ組み合わせ"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         
         res_list = _make_action_result(name="テストスキル", class_job_level=55)
         mock_search_res = MagicMock()
@@ -605,8 +605,8 @@ class TestSearchAction:
     def test_no_results(self, mock_client_class):
         """結果なし"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([])
 
         result = json.loads(search_action(query="存在しないアクション"))
@@ -618,8 +618,8 @@ class TestSearchAction:
     def test_timeout_error(self, mock_client_class):
         """タイムアウトエラー"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
 
         result = json.loads(search_action(query="テスト"))
@@ -631,8 +631,8 @@ class TestSearchAction:
     def test_http_error(self, mock_client_class):
         """HTTPエラー"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_client.get.return_value = mock_response
@@ -649,8 +649,8 @@ class TestSearchAction:
     def test_filtered_limit_used_with_filters(self, mock_client_class):
         """フィルタ時のlimit=20確認"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         
         res_list = _make_action_result()
         mock_search_res = MagicMock()
@@ -668,8 +668,8 @@ class TestSearchAction:
     def test_default_limit_without_filters(self, mock_client_class):
         """フィルタなし時のlimit=5確認"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         
         res_list = _make_action_result()
         mock_search_res = MagicMock()
@@ -687,8 +687,8 @@ class TestSearchAction:
     def test_english_abbreviation_in_class_job(self, mock_client_class):
         """英語略称でのジョブ指定"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         
         res_list = _make_action_result()
         mock_search_res = MagicMock()
@@ -861,8 +861,8 @@ class TestSearchRecipe:
     def test_name_only_search(self, mock_client_class):
         """名前のみ検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_recipe_result(item_name="ハイスチールインゴット")]
         )
@@ -881,8 +881,8 @@ class TestSearchRecipe:
     def test_craft_type_filter_japanese(self, mock_client_class):
         """日本語クラフタージョブフィルタ付き検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_recipe_result(item_name="インゴット", craft_type="Smithing")]
         )
@@ -899,8 +899,8 @@ class TestSearchRecipe:
     def test_craft_type_filter_english(self, mock_client_class):
         """英語クラフタージョブフィルタ付き検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_recipe_result(craft_type="Carpenter")]
         )
@@ -913,8 +913,8 @@ class TestSearchRecipe:
     def test_level_range_search(self, mock_client_class):
         """レベル範囲付き検索"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_recipe_result(recipe_level=55)]
         )
@@ -934,8 +934,8 @@ class TestSearchRecipe:
     def test_all_filters_combined(self, mock_client_class):
         """全フィルタ組み合わせ"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_recipe_result(item_name="テスト", craft_type="Smithing", recipe_level=55)]
         )
@@ -966,8 +966,8 @@ class TestSearchRecipe:
     def test_no_results(self, mock_client_class):
         """結果なし"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([])
 
         result = json.loads(search_recipe(query="存在しないレシピ"))
@@ -979,8 +979,8 @@ class TestSearchRecipe:
     def test_timeout_error(self, mock_client_class):
         """タイムアウトエラー"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
 
         result = json.loads(search_recipe(query="テスト"))
@@ -992,8 +992,8 @@ class TestSearchRecipe:
     def test_http_error(self, mock_client_class):
         """HTTPエラー"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_client.get.return_value = mock_response
@@ -1010,8 +1010,8 @@ class TestSearchRecipe:
     def test_filtered_limit_used_with_filters(self, mock_client_class):
         """フィルタ時のlimit=20確認"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([_make_recipe_result()])
 
         search_recipe(craft_type="鍛冶師")
@@ -1023,8 +1023,8 @@ class TestSearchRecipe:
     def test_default_limit_without_filters(self, mock_client_class):
         """フィルタなし時のlimit=5確認"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([_make_recipe_result()])
 
         search_recipe(query="テスト")
@@ -1263,8 +1263,8 @@ class TestSearchGameContent:
     def test_quest_search_success(self, mock_client_class):
         """Quest検索成功"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_game_content_result(
                 name="暁の血盟",
@@ -1288,8 +1288,8 @@ class TestSearchGameContent:
     def test_achievement_search_success(self, mock_client_class):
         """Achievement検索成功"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_game_content_result(
                 name="テスト達成",
@@ -1311,8 +1311,8 @@ class TestSearchGameContent:
     def test_fate_search_success(self, mock_client_class):
         """Fate検索成功"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_game_content_result(
                 name="テストFATE",
@@ -1333,8 +1333,8 @@ class TestSearchGameContent:
     def test_mount_search_success(self, mock_client_class):
         """Mount検索成功"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_game_content_result(
                 name="テストマウント",
@@ -1354,8 +1354,8 @@ class TestSearchGameContent:
     def test_minion_search_uses_companion_sheet(self, mock_client_class):
         """Minion検索はCompanionシートを使用する"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_game_content_result(name="テストミニオン")]
         )
@@ -1369,8 +1369,8 @@ class TestSearchGameContent:
     def test_quest_level_filter(self, mock_client_class):
         """Questカテゴリのレベルフィルタ（level_fieldあり）"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_game_content_result(name="テスト", level=70, level_field="Levelmain")]
         )
@@ -1390,8 +1390,8 @@ class TestSearchGameContent:
     def test_fate_level_filter(self, mock_client_class):
         """Fateカテゴリのレベルフィルタ（level_fieldあり）"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_game_content_result(name="テスト", level=50, level_field="Lvl")]
         )
@@ -1411,8 +1411,8 @@ class TestSearchGameContent:
     def test_achievement_level_filter_ignored(self, mock_client_class):
         """Achievementカテゴリはlevel_fieldがNone→レベルフィルタ無視"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_game_content_result(name="テスト達成", points=10)]
         )
@@ -1432,8 +1432,8 @@ class TestSearchGameContent:
     def test_mount_level_filter_ignored(self, mock_client_class):
         """Mountカテゴリはlevel_fieldがNone→レベルフィルタ無視"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response(
             [_make_game_content_result(name="テストマウント")]
         )
@@ -1452,8 +1452,8 @@ class TestSearchGameContent:
     def test_no_results(self, mock_client_class):
         """結果なし"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([])
 
         result = json.loads(search_game_content(query="存在しないクエスト", category="Quest"))
@@ -1465,8 +1465,8 @@ class TestSearchGameContent:
     def test_timeout_error(self, mock_client_class):
         """タイムアウトエラー"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
 
         result = json.loads(search_game_content(query="テスト", category="Quest"))
@@ -1478,8 +1478,8 @@ class TestSearchGameContent:
     def test_http_error(self, mock_client_class):
         """HTTPエラー"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_client.get.return_value = mock_response
@@ -1496,8 +1496,8 @@ class TestSearchGameContent:
     def test_multiple_results(self, mock_client_class):
         """複数件取得"""
         mock_client = MagicMock()
-        mock_client_class.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_class.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+        mock_client.is_closed = False
         mock_client.get.return_value = _make_mock_response([
             _make_game_content_result(name="クエストA"),
             _make_game_content_result(name="クエストB"),

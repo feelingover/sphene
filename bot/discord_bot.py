@@ -9,6 +9,7 @@ from ai.conversation import cleanup_expired_conversations, load_system_prompt
 from bot.commands import setup_commands
 from bot.events import setup_events
 from log_utils.logger import logger
+from xivapi.client import close_http_client
 
 
 class SpheneBot:
@@ -159,4 +160,7 @@ class SpheneBot:
         logger.info("Discordボットの起動を開始")
         # discord.py 独自のログハンドラは登録せず、アプリのルートロガー設定
         # （LOG_FORMAT / LOG_LEVEL）に一本化する。二重出力を防ぐため
-        self.bot.run(config.DISCORD_TOKEN, log_handler=None)
+        try:
+            self.bot.run(config.DISCORD_TOKEN, log_handler=None)
+        finally:
+            close_http_client()
