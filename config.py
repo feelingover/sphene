@@ -65,6 +65,16 @@ MENTION_RATE_LIMIT_PER_CHANNEL: int = int(os.getenv("MENTION_RATE_LIMIT_PER_CHAN
 MENTION_RATE_LIMIT_WINDOW_SECONDS: int = int(os.getenv("MENTION_RATE_LIMIT_WINDOW_SECONDS", "60"))
 # 国旗リアクション翻訳の重複抑止期間（秒）。同じメッセージ×言語はこの間1回だけ翻訳する
 TRANSLATION_DEDUP_SECONDS: int = int(os.getenv("TRANSLATION_DEDUP_SECONDS", "3600"))
+# 国旗リアクション翻訳のレート制限（リアクションしたユーザー単位/チャンネル単位、ウィンドウ内の上限回数。0で無効）
+TRANSLATION_RATE_LIMIT_PER_USER: int = int(os.getenv("TRANSLATION_RATE_LIMIT_PER_USER", "5"))
+TRANSLATION_RATE_LIMIT_PER_CHANNEL: int = int(os.getenv("TRANSLATION_RATE_LIMIT_PER_CHANNEL", "15"))
+TRANSLATION_RATE_LIMIT_WINDOW_SECONDS: int = int(
+    os.getenv("TRANSLATION_RATE_LIMIT_WINDOW_SECONDS", "60")
+)
+# リアクション処理のエラーをチャンネルに通知する最短間隔（秒）。連投を防ぐ
+REACTION_ERROR_NOTIFY_COOLDOWN_SECONDS: int = int(
+    os.getenv("REACTION_ERROR_NOTIFY_COOLDOWN_SECONDS", "300")
+)
 
 # Gen AI APIの1リクエストあたりのタイムアウト（秒）
 # 混雑時は長く待つと正確な応答が返ることが多いため長めに設定している

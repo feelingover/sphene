@@ -44,6 +44,19 @@ _channel_mention_limiter = SlidingWindowRateLimiter(
     config.MENTION_RATE_LIMIT_PER_CHANNEL, config.MENTION_RATE_LIMIT_WINDOW_SECONDS
 )
 
+# 国旗リアクション翻訳のレート制限（ユーザー単位はギルドごと、チャンネル単位は全員合計）
+_user_translation_limiter = SlidingWindowRateLimiter(
+    config.TRANSLATION_RATE_LIMIT_PER_USER, config.TRANSLATION_RATE_LIMIT_WINDOW_SECONDS
+)
+_channel_translation_limiter = SlidingWindowRateLimiter(
+    config.TRANSLATION_RATE_LIMIT_PER_CHANNEL, config.TRANSLATION_RATE_LIMIT_WINDOW_SECONDS
+)
+
+# リアクション処理のエラー通知はチャンネルごとにクールダウン期間内1回まで
+_reaction_error_notify_limiter = SlidingWindowRateLimiter(
+    1, config.REACTION_ERROR_NOTIFY_COOLDOWN_SECONDS
+)
+
 # 翻訳済み・翻訳中の (メッセージID, 翻訳先言語) → 記録時刻 (monotonic)
 _translated_messages: dict[tuple[int, str], float] = {}
 
@@ -1086,80 +1099,210 @@ async def translate_and_reply(
         )
 
 
-async def _handle_reaction(
-    bot: commands.Bot, reaction: discord.Reaction, user: discord.User
-) -> None:
-    """リアクション追加時の処理
+# 国旗リアクション絵文字 → 翻訳先言語
+_TRANSLATION_FLAGS: dict[str, str] = {
+    "🇺🇸": "english",
+    "flag_us": "english",
+    "🇯🇵": "japanese",
+    "flag_jp": "japanese",
+}
+
+
+def _is_translation_claimed(key: tuple[int, str]) -> bool:
+    """(メッセージID, 言語) が重複抑止期間内に翻訳済み・翻訳中かを判定する（記録はしない）
+
+    Args:
+        key: (メッセージID, 翻訳先言語)
+
+    Returns:
+        翻訳済み・翻訳中の場合True
+    """
+    claimed_at = _translated_messages.get(key)
+    if claimed_at is None:
+        return False
+    return time.monotonic() - claimed_at < config.TRANSLATION_DEDUP_SECONDS
+
+
+def _acquire_translation_quota(guild_id: int, user_id: int, channel_id: int) -> bool:
+    """翻訳のレート制限枠を確保する
+
+    ユーザー単位（ギルドごと）・チャンネル単位の両方に空きがある場合のみ枠を消費する。
+
+    Args:
+        guild_id: ギルドID
+        user_id: リアクションを付けたユーザーのID
+        channel_id: チャンネルID
+
+    Returns:
+        翻訳を続けてよい場合True
+    """
+    user_key = (guild_id, user_id)
+    if not (
+        _user_translation_limiter.is_allowed(user_key)
+        and _channel_translation_limiter.is_allowed(channel_id)
+    ):
+        logger.warning(
+            f"翻訳のレート制限超過のためスキップ: ギルドID={guild_id}, "
+            f"チャンネルID={channel_id}, ユーザーID={user_id}"
+        )
+        return False
+    _user_translation_limiter.record(user_key)
+    _channel_translation_limiter.record(channel_id)
+    return True
+
+
+def _resolve_channel(
+    bot: commands.Bot, payload: discord.RawReactionActionEvent
+) -> discord.abc.Messageable:
+    """リアクションが付いたチャンネルを返す（キャッシュに無ければ PartialMessageable）"""
+    channel = bot.get_channel(payload.channel_id)
+    if isinstance(channel, discord.abc.Messageable):
+        return channel
+    return bot.get_partial_messageable(payload.channel_id, guild_id=payload.guild_id)
+
+
+async def _fetch_reacted_message(
+    bot: commands.Bot, payload: discord.RawReactionActionEvent
+) -> discord.Message | None:
+    """リアクションが付いたメッセージを取得する
+
+    メッセージキャッシュにあればそれを使い、無ければ API から取得する。
 
     Args:
         bot: Discordクライアント
-        reaction: 追加されたリアクション
-        user: リアクションを追加したユーザー
+        payload: リアクション追加イベント
+
+    Returns:
+        取得できたメッセージ。削除済み・権限不足などで取得できない場合None
     """
+    cached = discord.utils.get(bot.cached_messages, id=payload.message_id)
+    if cached is not None:
+        return cached
     try:
-        # デバッグ用のログ追加：リアクション検出時の詳細情報
-        logger.debug(
-            f"リアクション検出: 絵文字={str(reaction.emoji)}, メッセージID={reaction.message.id}, "
-            f"ユーザーID={user.id}, メッセージ作成日時={reaction.message.created_at}"
+        return await _resolve_channel(bot, payload).fetch_message(payload.message_id)
+    except discord.HTTPException:
+        logger.warning(
+            f"翻訳対象メッセージの取得に失敗: メッセージID={payload.message_id}, "
+            f"チャンネルID={payload.channel_id}",
+            exc_info=True,
         )
-        # ボット自身のリアクションは無視
-        if user.bot:
-            return
+        return None
 
-        # リアクション追加されたメッセージを取得
-        message = reaction.message
 
-        # メッセージがギルドに所属していない場合は処理しない
-        if message.guild is None:
-            return
+async def _add_rate_limited_reaction(
+    bot: commands.Bot, payload: discord.RawReactionActionEvent
+) -> None:
+    """レート制限超過を ⏳ リアクションで伝える（失敗はログのみ）"""
+    channel = bot.get_partial_messageable(payload.channel_id, guild_id=payload.guild_id)
+    try:
+        await channel.get_partial_message(payload.message_id).add_reaction(_RATE_LIMITED_EMOJI)
+    except discord.HTTPException:
+        logger.warning("レート制限リアクションの追加に失敗しました", exc_info=True)
 
-        guild_id = message.guild.id
 
-        # ギルド固有の設定を取得して発言可能かチェック
-        channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
-        channel_id = message.channel.id
-        can_speak = channel_config.can_bot_speak(channel_id)
+async def _notify_reaction_error(
+    bot: commands.Bot, payload: discord.RawReactionActionEvent
+) -> None:
+    """リアクション処理の失敗をチャンネルに通知する
 
-        if not can_speak:
-            logger.debug(
-                f"リアクション処理スキップ: ギルドID={guild_id}, チャンネルID={channel_id}, 発言不可"
-            )
-            return
+    連投を防ぐため、チャンネルごとに REACTION_ERROR_NOTIFY_COOLDOWN_SECONDS に1回までとする。
+    送信失敗はログに残す。
 
-        # 翻訳機能が有効かチェック
-        translation_enabled = channel_config.get_translation_enabled()
-        if not translation_enabled:
-            logger.debug(
-                f"翻訳機能が無効のためスキップ: ギルドID={guild_id}, チャンネルID={channel_id}"
-            )
-            return
+    Args:
+        bot: Discordクライアント
+        payload: 処理に失敗したリアクション追加イベント
+    """
+    if not _reaction_error_notify_limiter.is_allowed(payload.channel_id):
+        logger.debug(f"エラー通知を抑止: チャンネルID={payload.channel_id}")
+        return
+    _reaction_error_notify_limiter.record(payload.channel_id)
+    try:
+        await _resolve_channel(bot, payload).send("リアクション処理中にエラーが発生しました 😢")
+    except discord.HTTPException:
+        logger.warning("リアクションのエラー通知の送信に失敗しました", exc_info=True)
 
-        # 絵文字によって処理を分岐
-        emoji_str = str(reaction.emoji)
 
-        # アメリカ国旗絵文字のチェック
-        if emoji_str == "🇺🇸" or emoji_str == "flag_us":
-            logger.info(
-                f"アメリカ国旗リアクション検出: ユーザーID={user.id}, メッセージID={message.id}"
-            )
-            await translate_and_reply(message, "english")
+async def _translation_allowed_in_channel(guild_id: int, channel_id: int) -> bool:
+    """チャンネルで発言可能かつ翻訳機能が有効かを判定する"""
+    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
+    if not channel_config.can_bot_speak(channel_id):
+        logger.debug(
+            f"リアクション処理スキップ: ギルドID={guild_id}, チャンネルID={channel_id}, 発言不可"
+        )
+        return False
+    if not channel_config.get_translation_enabled():
+        logger.debug(
+            f"翻訳機能が無効のためスキップ: ギルドID={guild_id}, チャンネルID={channel_id}"
+        )
+        return False
+    return True
 
-        # 日本国旗絵文字のチェック
-        elif emoji_str == "🇯🇵" or emoji_str == "flag_jp":
-            logger.info(
-                f"日本国旗リアクション検出: ユーザーID={user.id}, メッセージID={message.id}"
-            )
-            await translate_and_reply(message, "japanese")
 
+async def _process_translation_reaction(
+    bot: commands.Bot, payload: discord.RawReactionActionEvent, guild_id: int, target_language: str
+) -> None:
+    """国旗リアクションに応じて翻訳する（チャンネル設定・重複・レート制限を確認してから）
+
+    Args:
+        bot: Discordクライアント
+        payload: リアクション追加イベント
+        guild_id: ギルドID
+        target_language: 翻訳先言語
+    """
+    if not await _translation_allowed_in_channel(guild_id, payload.channel_id):
+        return
+    # 翻訳済みなら枠を消費せず、メッセージ取得もしない（最終的な重複判定は translate_and_reply）
+    if _is_translation_claimed((payload.message_id, target_language)):
+        logger.info(
+            f"翻訳済み・翻訳中のためスキップ: メッセージID={payload.message_id}, 言語={target_language}"
+        )
+        return
+    if not _acquire_translation_quota(guild_id, payload.user_id, payload.channel_id):
+        await _add_rate_limited_reaction(bot, payload)
+        return
+
+    message = await _fetch_reacted_message(bot, payload)
+    if message is None:
+        return
+    logger.info(
+        f"国旗リアクション検出: 言語={target_language}, ユーザーID={payload.user_id}, "
+        f"メッセージID={message.id}"
+    )
+    await translate_and_reply(message, target_language)
+
+
+async def _handle_raw_reaction(
+    bot: commands.Bot, payload: discord.RawReactionActionEvent
+) -> None:
+    """リアクション追加時の処理
+
+    メッセージキャッシュに無い（Bot 再起動前など）メッセージにも反応できるよう、
+    raw イベントで受けて必要に応じてメッセージを取得する。
+
+    Args:
+        bot: Discordクライアント
+        payload: リアクション追加イベント
+    """
+    logger.debug(
+        f"リアクション検出: 絵文字={payload.emoji}, メッセージID={payload.message_id}, "
+        f"ユーザーID={payload.user_id}"
+    )
+    # DM・ボット（自分自身を含む）のリアクションは無視
+    if payload.guild_id is None:
+        return
+    if (payload.member is not None and payload.member.bot) or (
+        bot.user is not None and payload.user_id == bot.user.id
+    ):
+        return
+    target_language = _TRANSLATION_FLAGS.get(str(payload.emoji))
+    if target_language is None:
+        return
+
+    try:
+        await _process_translation_reaction(bot, payload, payload.guild_id, target_language)
     except Exception as e:
         logger.error(f"リアクション処理エラー: {str(e)}", exc_info=True)
-        # エラーが発生した場合、可能であればチャンネルにメッセージを送信
-        try:
-            await reaction.message.channel.send(
-                "リアクション処理中にエラーが発生しました 😢"
-            )
-        except Exception:
-            pass
+        await _notify_reaction_error(bot, payload)
 
 
 def setup_events(bot: commands.Bot, command_group: app_commands.Group) -> None:
@@ -1198,9 +1341,9 @@ def setup_events(bot: commands.Bot, command_group: app_commands.Group) -> None:
         await _handle_message(bot, message)
 
     @bot.event
-    async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> None:
-        """リアクション追加時に呼ばれるイベント"""
-        await _handle_reaction(bot, reaction, user)
+    async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
+        """リアクション追加時に呼ばれるイベント（キャッシュ外のメッセージも含む）"""
+        await _handle_raw_reaction(bot, payload)
 
     @bot.tree.error
     async def on_app_command_error(

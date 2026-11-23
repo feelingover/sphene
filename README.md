@@ -126,6 +126,8 @@ VANGUARD（自律応答）と Living Memory（記憶システム）はデフォ�
 
 注: 翻訳機能は管理者によって有効/無効を切り替えることができます。
 同じメッセージ・同じ言語の翻訳は、一定時間（`TRANSLATION_DEDUP_SECONDS`、デフォルト1時間）内は1回だけ行います。
+Bot 再起動前の古いメッセージにも翻訳できます。
+短時間に翻訳が集中した場合は翻訳せず、⏳ リアクションを付けます（リアクションしたユーザーごと・チャンネルごとの上限は `TRANSLATION_RATE_LIMIT_PER_USER` / `TRANSLATION_RATE_LIMIT_PER_CHANNEL` / `TRANSLATION_RATE_LIMIT_WINDOW_SECONDS` で設定）。
 
 ### スラッシュコマンド
 

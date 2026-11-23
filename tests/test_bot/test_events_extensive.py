@@ -351,26 +351,6 @@ class TestEventsExtensive:
         mock_get_judge().record_response.assert_not_called()
         mock_buffer.add_message.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_handle_reaction_exception(self):
-        """リアクション処理中の例外ハンドリングテスト"""
-        bot = MagicMock()
-        reaction = MagicMock()
-        reaction.message.channel.send = AsyncMock()
-        reaction.emoji = "🇺🇸"
-        user = MagicMock()
-        user.bot = False
-        
-        with patch("bot.events.config_manager") as mock_cm:
-            # get_config で例外を発生させる
-            mock_cm.get_config.side_effect = Exception("Reaction Error")
-            from bot.events import _handle_reaction
-            await _handle_reaction(bot, reaction, user)
-            
-            reaction.message.channel.send.assert_called_once()
-            args, _ = reaction.message.channel.send.call_args
-            assert "エラーが発生しました" in args[0]
-
     def test_setup_events(self):
         """setup_events がイベントを登録することを確認"""
         bot = MagicMock()
