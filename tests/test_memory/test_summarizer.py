@@ -418,7 +418,7 @@ class TestSummarizerApplyResult:
             _make_message(author_name="Bob"),
         ]
 
-        summarizer._apply_result(context, result, messages)
+        summarizer._apply_result(context, result, messages, context.message_count_since_update)
 
         assert context.summary == "新しい要約"
         assert context.mood == "楽しい"
@@ -436,7 +436,7 @@ class TestSummarizerApplyResult:
         result = {"summary": "要約", "mood": "", "topic_keywords": []}
         messages = [_make_message()]
 
-        summarizer._apply_result(context, result, messages)
+        summarizer._apply_result(context, result, messages, context.message_count_since_update)
 
         assert context.message_count_since_update == 0
 
@@ -451,7 +451,7 @@ class TestSummarizerApplyResult:
         result = {"summary": "要約", "mood": "", "topic_keywords": []}
         messages = [_make_message()]
 
-        summarizer._apply_result(context, result, messages)
+        summarizer._apply_result(context, result, messages, context.message_count_since_update)
 
         assert context.last_updated > old_time
         assert context.last_updated.tzinfo == timezone.utc
@@ -468,7 +468,7 @@ class TestSummarizerApplyResult:
         result = {}  # キーなし
         messages = [_make_message()]
 
-        summarizer._apply_result(context, result, messages)
+        summarizer._apply_result(context, result, messages, context.message_count_since_update)
 
         assert context.summary == "元の要約"
         assert context.mood == "元の雰囲気"
@@ -488,7 +488,7 @@ class TestSummarizerApplyResult:
             _make_message(author_name="Alice"),  # 重複
         ]
 
-        summarizer._apply_result(context, result, messages)
+        summarizer._apply_result(context, result, messages, context.message_count_since_update)
 
         assert context.active_users == ["Alice", "Bob"]
 

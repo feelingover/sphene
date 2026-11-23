@@ -113,8 +113,10 @@ class Summarizer:
             f"要約トリガー: channel_id={channel_id}, "
             f"count={ctx.message_count_since_update}"
         )
+        # 要約中に増えたカウントを消さないよう、開始時点の値だけを完了時に差し引く
+        consumed_count = ctx.message_count_since_update
         track_background_task(asyncio.create_task(
-            self._run_summarize(channel_id, ctx, recent_messages),
+            self._run_summarize(channel_id, ctx, recent_messages, consumed_count),
             name=f"summarize_{channel_id}",
         ))
 
@@ -123,14 +125,26 @@ class Summarizer:
         channel_id: int,
         context: ChannelContext,
         messages: list[ChannelMessage],
+        consumed_count: int,
     ) -> None:
-        """要約の実行本体（非同期ラッパー）"""
+        """要約の実行本体（非同期ラッパー）
+
+        Args:
+            channel_id: チャンネルID
+            context: 要約対象のチャンネルコンテキスト
+            messages: 要約対象のメッセージ
+            consumed_count: 要約開始時点のメッセージカウント（完了時に差し引く）
+        """
         try:
+            if not messages:
+                # TTL 切れ等でメッセージが無いだけなので失敗扱いにしない
+                await self._skip_empty(channel_id, context, consumed_count)
+                return
             result = await asyncio.to_thread(
                 self._call_summarize_llm, context, messages
             )
             if result:
-                self._apply_result(context, result, messages)
+                self._apply_result(context, result, messages, consumed_count)
                 store = get_channel_context_store()
                 await asyncio.to_thread(store.save_context, context)
                 self._backoff.reset(channel_id)
@@ -148,6 +162,19 @@ class Summarizer:
         finally:
             with self._running_lock:
                 self._running.discard(channel_id)
+
+    async def _skip_empty(
+        self, channel_id: int, context: ChannelContext, consumed_count: int
+    ) -> None:
+        """要約対象メッセージが無い場合にカウントだけ消化して保存する"""
+        _consume_message_count(context, consumed_count)
+        store = get_channel_context_store()
+        await asyncio.to_thread(store.save_context, context)
+        self._backoff.reset(channel_id)
+        logger.debug(
+            f"要約スキップ（対象メッセージなし）: channel_id={channel_id}, "
+            f"remaining={context.message_count_since_update}"
+        )
 
     def _call_summarize_llm(
         self, context: ChannelContext, messages: list[ChannelMessage]
@@ -195,8 +222,16 @@ class Summarizer:
         context: ChannelContext,
         result: dict,
         messages: list[ChannelMessage],
+        consumed_count: int,
     ) -> None:
-        """要約結果をContextに適用してカウンタをリセットする"""
+        """要約結果をContextに適用し、要約済みのカウントを差し引く
+
+        Args:
+            context: 適用先のチャンネルコンテキスト
+            result: 検証済みの要約結果
+            messages: 要約対象のメッセージ（active_users の抽出に使う）
+            consumed_count: 要約開始時点のメッセージカウント
+        """
         from datetime import datetime, timezone
 
         if result.get("summary") is not None:
@@ -207,7 +242,15 @@ class Summarizer:
             context.topic_keywords = result["topic_keywords"]
         context.active_users = _extract_active_users(messages)
         context.last_updated = datetime.now(timezone.utc)
-        context.message_count_since_update = 0
+        _consume_message_count(context, consumed_count)
+
+
+def _consume_message_count(context: ChannelContext, consumed_count: int) -> None:
+    """要約開始時点のカウント分だけ差し引く（要約中に増えた分は残す）"""
+    context.message_count_since_update = max(
+        0, context.message_count_since_update - consumed_count
+    )
+    context.dirty = True
 
 
 def _format_messages_for_summary(messages: list[ChannelMessage]) -> str:
