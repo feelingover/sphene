@@ -460,3 +460,28 @@ class TestGetChannelContextStore:
         store = get_channel_context_store()
         assert isinstance(store, ChannelContextStore)
         mod._store = None  # テスト後にクリーンアップ
+
+
+class TestChannelContextStoreConcurrency:
+    """ChannelContextStore の並行アクセステスト"""
+
+    def test_get_context_keeps_first_registered_instance(self):
+        """並行ロードで後から来たインスタンスより先着を優先すること"""
+        store = ChannelContextStore()
+        first = ChannelContext(channel_id=1)
+
+        def _load(channel_id: int) -> ChannelContext:
+            store._contexts[channel_id] = first
+            return ChannelContext(channel_id=channel_id)
+
+        with patch.object(store, "_load_context", side_effect=_load):
+            assert store.get_context(1) is first
+
+    def test_get_all_contexts_returns_snapshot(self):
+        """get_all_contexts はコピーを返し、走査中の追加の影響を受けないこと"""
+        store = ChannelContextStore()
+        with patch.object(store, "_load_context", return_value=None):
+            store.get_context(1)
+            snapshot = store.get_all_contexts()
+            store.get_context(2)
+        assert list(snapshot) == [1]

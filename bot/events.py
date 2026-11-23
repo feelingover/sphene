@@ -118,8 +118,12 @@ async def _collect_ai_context(
     if config.LIVING_MEMORY_ENABLED:
         from memory.user_profile import get_user_profile_store
 
-        profile = get_user_profile_store().get_profile(
-            message.author.id, message.author.display_name
+        guild_id = message.guild.id if message.guild else 0
+        profile = await asyncio.to_thread(
+            get_user_profile_store().get_profile,
+            guild_id,
+            message.author.id,
+            message.author.display_name,
         )
         user_profile_str = "\n\n".join(filter(None, [
             profile.format_for_familiarity(),
@@ -135,7 +139,9 @@ async def _collect_ai_context(
         query_embedding = None
         if config.VECTOR_SEARCH_ENABLED and message.content:
             query_embedding = await asyncio.to_thread(generate_embedding, message.content)
-        facts = get_fact_store().search(
+        # 初回は永続化先からの読み込みが発生し、類似度計算も重いためスレッドで実行する
+        facts = await asyncio.to_thread(
+            get_fact_store().search,
             channel_id=message.channel.id,
             keywords=keywords,
             user_ids=[message.author.id],
@@ -237,13 +243,17 @@ def _post_response_update(
     if config.LIVING_MEMORY_ENABLED and topic_keywords:
         from memory.user_profile import get_user_profile_store
 
-        get_user_profile_store().update_last_topic(message.author.id, topic_keywords)
+        guild_id = message.guild.id if message.guild else 0
+        get_user_profile_store().update_last_topic(
+            guild_id, message.author.id, topic_keywords
+        )
 
     if bot_user is not None:
         get_channel_buffer().add_message(
             ChannelMessage(
                 message_id=0,
                 channel_id=message.channel.id,
+                guild_id=message.guild.id if message.guild else None,
                 author_id=bot_user.id,
                 author_name=bot_user.display_name,
                 content=answer,
@@ -323,6 +333,7 @@ async def _try_autonomous_response(
     channel_msg = ChannelMessage(
         message_id=message.id,
         channel_id=message.channel.id,
+        guild_id=message.guild.id if message.guild else None,
         author_id=message.author.id,
         author_name=message.author.display_name,
         content=message.content or "",
@@ -511,6 +522,7 @@ async def _process_short_ack(
                 ChannelMessage(
                     message_id=0,
                     channel_id=message.channel.id,
+                    guild_id=message.guild.id if message.guild else None,
                     author_id=bot.user.id,
                     author_name=bot.user.display_name,
                     content=answer,
@@ -576,6 +588,28 @@ async def _process_autonomous_response(
 config_manager = ChannelConfigManager.get_instance()
 
 
+def _prefetch_memory(message: discord.Message) -> None:
+    """記憶ストアのキャッシュを温める（ワーカースレッドで実行する）
+
+    チャンネルコンテキスト・ユーザープロファイル・ファクトは初回アクセス時に
+    永続化先（Firestore等）から同期的に読み込まれる。イベントループを止めないよう、
+    以降の同期呼び出しがキャッシュに当たる状態をここで作っておく。
+
+    Args:
+        message: Discordメッセージオブジェクト
+    """
+    from memory.channel_context import get_channel_context_store
+    from memory.fact_store import get_fact_store
+    from memory.user_profile import get_user_profile_store
+
+    guild_id = message.guild.id if message.guild else 0
+    get_channel_context_store().get_context(message.channel.id)
+    get_user_profile_store().get_profile(
+        guild_id, message.author.id, message.author.display_name
+    )
+    get_fact_store().ensure_loaded(message.channel.id)
+
+
 async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
     """メッセージ受信イベントの処理
 
@@ -599,8 +633,8 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
 
         guild_id = message.guild.id
 
-        # ギルド固有の設定を取得
-        channel_config = config_manager.get_config(guild_id)
+        # ギルド固有の設定を取得（初回は永続化先から読み込むためスレッドで実行）
+        channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
         # チャンネル設定に基づいて発言可能かどうかをチェック
         channel_id = message.channel.id
@@ -628,12 +662,17 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             ChannelMessage(
                 message_id=message.id,
                 channel_id=message.channel.id,
+                guild_id=message.guild.id if message.guild else None,
                 author_id=message.author.id,
                 author_name=message.author.display_name,
                 content=message.content or "",
                 timestamp=message.created_at,
             )
         )
+
+        # 記憶ストアの初回読み込み（Firestore等の同期I/O）をイベントループ外で済ませる
+        if config.LIVING_MEMORY_ENABLED:
+            await asyncio.to_thread(_prefetch_memory, message)
 
         # チャンネルコンテキスト: メッセージカウント + 要約トリガー
         if config.LIVING_MEMORY_ENABLED:
@@ -650,7 +689,10 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             from memory.user_profile import get_user_profile_store
 
             get_user_profile_store().record_message(
-                message.author.id, message.channel.id, message.author.display_name
+                guild_id,
+                message.author.id,
+                message.channel.id,
+                message.author.display_name,
             )
 
         # バッファ量ベースの反省会トリガー
@@ -681,7 +723,7 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             if config.LIVING_MEMORY_ENABLED:
                 from memory.user_profile import get_user_profile_store
 
-                get_user_profile_store().record_bot_mention(message.author.id)
+                get_user_profile_store().record_bot_mention(guild_id, message.author.id)
 
             await process_conversation(message, question, is_reply, images)
             # エンゲージメント記録（自律応答のスコアブーストに使用）
@@ -735,7 +777,7 @@ async def _handle_on_ready(
     for guild in bot.guilds:
         logger.info(f"ギルド {guild.name} (ID: {guild.id}) の設定をチェック")
         try:
-            config_manager.get_config(guild.id)
+            await asyncio.to_thread(config_manager.get_config, guild.id)
         except Exception as e:
             logger.error(
                 f"ギルドID {guild.id} の設定初期化中にエラー: {str(e)}", exc_info=True
@@ -750,7 +792,7 @@ async def _handle_on_guild_join(guild: discord.Guild) -> None:
     """
     logger.info(f"新しいギルド {guild.name} (ID: {guild.id}) に参加しました")
     try:
-        config_manager.create_guild_config(guild.id)
+        await asyncio.to_thread(config_manager.create_guild_config, guild.id)
         logger.info(f"ギルドID {guild.id} の設定ファイルを作成しました")
     except Exception as e:
         logger.error(f"ギルドID {guild.id} の設定ファイル作成中にエラー: {str(e)}")
@@ -764,7 +806,7 @@ async def _handle_on_guild_remove(guild: discord.Guild) -> None:
     """
     logger.info(f"ギルド {guild.name} (ID: {guild.id}) から脱退しました")
     try:
-        success = config_manager.delete_guild_config(guild.id)
+        success = await asyncio.to_thread(config_manager.delete_guild_config, guild.id)
         if success:
             logger.info(f"ギルドID {guild.id} の設定ファイルを削除しました")
         else:
@@ -899,7 +941,7 @@ async def _handle_reaction(
         guild_id = message.guild.id
 
         # ギルド固有の設定を取得して発言可能かチェック
-        channel_config = config_manager.get_config(guild_id)
+        channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
         channel_id = message.channel.id
         can_speak = channel_config.can_bot_speak(channel_id)
 

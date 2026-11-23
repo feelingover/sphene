@@ -27,6 +27,7 @@ class ChannelMessage:
     timestamp: datetime
     is_bot: bool = False
     attachments: list[str] = field(default_factory=list)
+    guild_id: int | None = None
 
 
 class ChannelMessageBuffer:

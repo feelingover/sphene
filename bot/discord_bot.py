@@ -1,3 +1,4 @@
+import asyncio
 import sys
 
 import discord
@@ -92,7 +93,7 @@ class SpheneBot:
             try:
                 from memory.user_profile import get_user_profile_store
 
-                get_user_profile_store().persist_all()
+                await asyncio.to_thread(get_user_profile_store().persist_all)
                 logger.debug("ユーザープロファイルを永続化しました")
             except Exception as e:
                 logger.error(f"ユーザープロファイル永続化エラー: {str(e)}", exc_info=True)
@@ -139,10 +140,12 @@ class SpheneBot:
                         pending = buffer.get_messages_since_reflection(channel_id)
                         engine.maybe_reflect(channel_id, pending)
 
-                get_fact_store().persist_all()
+                await asyncio.to_thread(get_fact_store().persist_all)
                 logger.debug("ファクトストアを永続化しました")
 
-                removed = get_fact_store().cleanup_low_relevance_facts()
+                removed = await asyncio.to_thread(
+                    get_fact_store().cleanup_low_relevance_facts
+                )
                 if removed:
                     total = sum(removed.values())
                     logger.info(f"ファクト忘却クリーンアップ完了: 合計{total}件削除 {removed}")

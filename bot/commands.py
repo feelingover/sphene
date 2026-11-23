@@ -1,3 +1,5 @@
+import asyncio
+
 import discord
 from discord import app_commands, ui
 
@@ -40,14 +42,14 @@ class ModeSelect(ui.Select):
             await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
             return
         # 保存済みのguild_idを使用
-        channel_config = config_manager.get_config(self.guild_id)
+        channel_config = await asyncio.to_thread(config_manager.get_config, self.guild_id)
 
         selected_mode = self.values[0]
-        success = channel_config.set_behavior(selected_mode)
+        success = await asyncio.to_thread(channel_config.set_behavior, selected_mode)
 
         if success:
             # 設定保存後にリストを再読み込み
-            channel_config.load_config()
+            await asyncio.to_thread(channel_config.load_config)
             mode_name = "限定モード" if selected_mode == "allow" else "全体モード"
             await interaction.response.send_message(
                 f"✅ 評価モードを「{mode_name}」に変更しました！\n"
@@ -87,16 +89,16 @@ class TranslationSelect(ui.Select):
             await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
             return
         # 保存済みのguild_idを使用
-        channel_config = config_manager.get_config(self.guild_id)
+        channel_config = await asyncio.to_thread(config_manager.get_config, self.guild_id)
 
         selected_value = (
             self.values[0] == "true"
         )  # "true" または "false" を boolean に変換
-        success = channel_config.set_translation_enabled(selected_value)
+        success = await asyncio.to_thread(channel_config.set_translation_enabled, selected_value)
 
         if success:
             # 設定保存後にリストを再読み込み
-            channel_config.load_config()
+            await asyncio.to_thread(channel_config.load_config)
             status = "有効" if selected_value else "無効"
             await interaction.response.send_message(
                 f"✅ 翻訳機能を「{status}」に設定しました！"
@@ -139,13 +141,13 @@ class ClearConfirmView(ui.View):
             await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
             return
         # 保存済みのguild_idを使用
-        channel_config = config_manager.get_config(self.guild_id)
+        channel_config = await asyncio.to_thread(config_manager.get_config, self.guild_id)
 
-        success = channel_config.clear_channels()
+        success = await asyncio.to_thread(channel_config.clear_channels)
 
         if success:
             # 設定保存後にリストを再読み込み
-            channel_config.load_config()
+            await asyncio.to_thread(channel_config.load_config)
             await interaction.response.send_message(
                 f"✅ {channel_config.get_list_display_name()}をクリアしました！"
             )
@@ -174,7 +176,7 @@ async def cmd_mode(interaction: discord.Interaction) -> None:
 
     # ギルド固有の設定を取得
     guild_id = interaction.guild.id
-    channel_config = config_manager.get_config(guild_id)
+    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     # 現在のモード情報表示
     current_mode = channel_config.get_mode_display_name()
@@ -250,7 +252,7 @@ async def cmd_list_channels(
 
     # ギルド固有の設定を取得
     guild_id = interaction.guild.id
-    channel_config = config_manager.get_config(guild_id)
+    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     # 現在のモードを取得
     behavior = channel_config.get_behavior()
@@ -309,7 +311,7 @@ async def cmd_add_channel(interaction: discord.Interaction) -> None:
 
     # ギルド固有の設定を取得
     guild_id = interaction.guild.id
-    channel_config = config_manager.get_config(guild_id)
+    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     channel = interaction.channel
     if channel is None:
@@ -331,12 +333,12 @@ async def cmd_add_channel(interaction: discord.Interaction) -> None:
     )
 
     # リストに追加
-    success = channel_config.add_channel(channel_id, safe_channel_name)
+    success = await asyncio.to_thread(channel_config.add_channel, channel_id, safe_channel_name)
     list_name = channel_config.get_list_display_name()
 
     if success:
         # 設定保存後にリストを再読み込み
-        channel_config.load_config()
+        await asyncio.to_thread(channel_config.load_config)
         await interaction.response.send_message(
             f"✅ チャンネル「{channel_name}」を{list_name}に追加しました！"
         )
@@ -358,7 +360,7 @@ async def cmd_remove_channel(interaction: discord.Interaction) -> None:
 
     # ギルド固有の設定を取得
     guild_id = interaction.guild.id
-    channel_config = config_manager.get_config(guild_id)
+    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     channel = interaction.channel
     if channel is None:
@@ -375,12 +377,12 @@ async def cmd_remove_channel(interaction: discord.Interaction) -> None:
         channel_name = f"チャンネルID: {channel_id}"
 
     # リストから削除
-    success = channel_config.remove_channel(channel_id)
+    success = await asyncio.to_thread(channel_config.remove_channel, channel_id)
     list_name = channel_config.get_list_display_name()
 
     if success:
         # 設定保存後にリストを再読み込み
-        channel_config.load_config()
+        await asyncio.to_thread(channel_config.load_config)
         # チャンネルがリストにまだ存在するかチェック
         if channel_config.is_channel_in_list(channel_id):
             # 削除に失敗している場合（まだリストに存在する）
@@ -410,7 +412,7 @@ async def cmd_clear_channels(interaction: discord.Interaction) -> None:
 
     # ギルド固有の設定を取得
     guild_id = interaction.guild.id
-    channel_config = config_manager.get_config(guild_id)
+    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     list_name = channel_config.get_list_display_name()
 
@@ -435,7 +437,7 @@ async def cmd_translation(interaction: discord.Interaction) -> None:
 
     # ギルド固有の設定を取得
     guild_id = interaction.guild.id
-    channel_config = config_manager.get_config(guild_id)
+    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     # 現在の翻訳機能状態を取得
     is_enabled = channel_config.get_translation_enabled()

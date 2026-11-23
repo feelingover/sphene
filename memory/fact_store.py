@@ -318,6 +318,14 @@ class FactStore:
             elif storage_type == "firestore":
                 self._save_to_firestore(channel_id, facts)
 
+    def ensure_loaded(self, channel_id: int) -> None:
+        """チャンネルのファクトを永続化先から読み込み済みにする（I/Oを伴う）
+
+        Args:
+            channel_id: チャンネルID
+        """
+        self._load_channel(channel_id)
+
     def _load_channel(self, channel_id: int) -> None:
         """初回アクセス時に永続化先からファクトを遅延ロードする。
 

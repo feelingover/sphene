@@ -527,5 +527,31 @@ class TestPostResponseUpdate:
 
             _post_response_update(message, "answer", ["kw1"], bot_user)
 
-            mock_profile_store.update_last_topic.assert_called_once_with(200, ["kw1"])
+            mock_profile_store.update_last_topic.assert_called_once_with(
+                message.guild.id, 200, ["kw1"]
+            )
             mock_buffer.add_message.assert_called_once()
+
+
+class TestPrefetchMemory:
+    """_prefetch_memory のテスト"""
+
+    def test_warms_all_memory_stores(self):
+        """チャンネルコンテキスト・プロファイル・ファクトを読み込み済みにすること"""
+        from bot.events import _prefetch_memory
+
+        message = MagicMock()
+        message.guild.id = 10
+        message.channel.id = 20
+        message.author.id = 30
+        message.author.display_name = "User"
+        ctx_store, profile_store, fact_store = MagicMock(), MagicMock(), MagicMock()
+
+        with patch("memory.channel_context.get_channel_context_store", return_value=ctx_store), \
+             patch("memory.user_profile.get_user_profile_store", return_value=profile_store), \
+             patch("memory.fact_store.get_fact_store", return_value=fact_store):
+            _prefetch_memory(message)
+
+        ctx_store.get_context.assert_called_once_with(20)
+        profile_store.get_profile.assert_called_once_with(10, 30, "User")
+        fact_store.ensure_loaded.assert_called_once_with(20)

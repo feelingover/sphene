@@ -82,7 +82,7 @@ class Summarizer:
             if result:
                 self._apply_result(context, result, messages)
                 store = get_channel_context_store()
-                store.save_context(context)
+                await asyncio.to_thread(store.save_context, context)
                 logger.info(
                     f"要約完了: channel_id={channel_id}, "
                     f"summary={result.get('summary', '')[:50]}"
