@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from memory.fact_store import Fact
+    from memory.short_term import ChannelMessageBuffer
 
 import discord
 from discord import app_commands
@@ -153,8 +154,8 @@ async def _collect_ai_context(
             f"keywords={keywords}, vector={'あり' if query_embedding else 'なし'}, hits={len(facts)}"
         )
         if facts:
-            lines = ["【関連する過去の記憶】"] + [f"- {f.content}" for f in facts]
-            relevant_facts_str = "\n".join(lines)
+            # 見出しは build_context_section 側で付与する
+            relevant_facts_str = "\n".join(f"- {f.content}" for f in facts)
 
     return channel_context, channel_summary, topic_keywords, user_profile_str, relevant_facts_str
 
@@ -617,6 +618,8 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         bot: Discordクライアント
         message: Discordメッセージオブジェクト
     """
+    # ボットが話しかけられた場合のみ、失敗をチャンネルに通知する
+    addressed = False
     try:
         # 自分自身やボットのメッセージは無視
         if message.author == bot.user or message.author.bot:
@@ -653,59 +656,7 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             )
             return  # 処理を中断
 
-        # 短期記憶: 全メッセージをチャンネルバッファに追加
-        from memory.short_term import ChannelMessage, get_channel_buffer
-
-        buffer = get_channel_buffer()
-
-        buffer.add_message(
-            ChannelMessage(
-                message_id=message.id,
-                channel_id=message.channel.id,
-                guild_id=message.guild.id if message.guild else None,
-                author_id=message.author.id,
-                author_name=message.author.display_name,
-                content=message.content or "",
-                timestamp=message.created_at,
-            )
-        )
-
-        # 記憶ストアの初回読み込み（Firestore等の同期I/O）をイベントループ外で済ませる
-        if config.LIVING_MEMORY_ENABLED:
-            await asyncio.to_thread(_prefetch_memory, message)
-
-        # チャンネルコンテキスト: メッセージカウント + 要約トリガー
-        if config.LIVING_MEMORY_ENABLED:
-            from memory.channel_context import get_channel_context_store
-            from memory.summarizer import get_summarizer
-
-            ctx = get_channel_context_store().get_context(message.channel.id)
-            ctx.increment_message_count()
-            recent = buffer.get_recent_messages(message.channel.id, limit=20)
-            get_summarizer().maybe_summarize(message.channel.id, recent)
-
-        # ユーザープロファイル: メッセージ記録
-        if config.LIVING_MEMORY_ENABLED:
-            from memory.user_profile import get_user_profile_store
-
-            get_user_profile_store().record_message(
-                guild_id,
-                message.author.id,
-                message.channel.id,
-                message.author.display_name,
-            )
-
-        # バッファ量ベースの反省会トリガー
-        if config.LIVING_MEMORY_ENABLED:
-            from memory.reflection import get_reflection_engine
-
-            engine = get_reflection_engine()
-            if (
-                buffer.count_messages_since_reflection(message.channel.id)
-                >= config.REFLECTION_MAX_BUFFER_MESSAGES
-            ):
-                pending = buffer.get_messages_since_reflection(message.channel.id)
-                engine.maybe_reflect(message.channel.id, pending)
+        await _record_memory(message, guild_id)
 
         # 画像添付の検出
         images = []
@@ -719,6 +670,7 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         # ボットが呼ばれたかどうかをチェック
         is_mentioned, question, is_reply = await is_bot_mentioned(bot, message)
         if is_mentioned:
+            addressed = True
             # ユーザープロファイル: ボットメンション記録
             if config.LIVING_MEMORY_ENABLED:
                 from memory.user_profile import get_user_profile_store
@@ -739,7 +691,84 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
 
     except Exception as e:
         logger.error(f"メッセージ処理中にエラー発生: {str(e)}", exc_info=True)
+        if addressed:
+            await _notify_processing_error(message)
+
+
+async def _notify_processing_error(message: discord.Message) -> None:
+    """メッセージ処理の失敗をチャンネルに通知する（送信失敗はログのみ）
+
+    Args:
+        message: 処理に失敗したDiscordメッセージ
+    """
+    try:
         await message.channel.send("ごめん！メッセージ処理中にエラーが発生しちゃった...😢")
+    except discord.HTTPException:
+        logger.warning("エラー通知の送信に失敗しました", exc_info=True)
+
+
+async def _record_memory(message: discord.Message, guild_id: int) -> None:
+    """メッセージを短期記憶・記憶ストアに記録する
+
+    記憶の記録は応答の前提ではないため、失敗してもログだけ残して応答処理は続ける。
+
+    Args:
+        message: Discordメッセージオブジェクト
+        guild_id: ギルドID
+    """
+    try:
+        from memory.short_term import ChannelMessage, get_channel_buffer
+
+        buffer = get_channel_buffer()
+        buffer.add_message(
+            ChannelMessage(
+                message_id=message.id,
+                channel_id=message.channel.id,
+                guild_id=guild_id,
+                author_id=message.author.id,
+                author_name=message.author.display_name,
+                content=message.content or "",
+                timestamp=message.created_at,
+            )
+        )
+        if config.LIVING_MEMORY_ENABLED:
+            # 記憶ストアの初回読み込み（Firestore等の同期I/O）をイベントループ外で済ませる
+            await asyncio.to_thread(_prefetch_memory, message)
+            _record_living_memory(message, guild_id, buffer)
+    except Exception:
+        logger.error("記憶の記録中にエラーが発生しました", exc_info=True)
+
+
+def _record_living_memory(
+    message: discord.Message, guild_id: int, buffer: "ChannelMessageBuffer"
+) -> None:
+    """チャンネルコンテキスト・ユーザープロファイルを更新し、要約・反省会をトリガーする
+
+    Args:
+        message: Discordメッセージオブジェクト
+        guild_id: ギルドID
+        buffer: チャンネルバッファ
+    """
+    from memory.channel_context import get_channel_context_store
+    from memory.reflection import get_reflection_engine
+    from memory.summarizer import get_summarizer
+    from memory.user_profile import get_user_profile_store
+
+    channel_id = message.channel.id
+    get_channel_context_store().get_context(channel_id).increment_message_count()
+    get_summarizer().maybe_summarize(
+        channel_id, buffer.get_recent_messages(channel_id, limit=20)
+    )
+    get_user_profile_store().record_message(
+        guild_id, message.author.id, channel_id, message.author.display_name
+    )
+    if (
+        buffer.count_messages_since_reflection(channel_id)
+        >= config.REFLECTION_MAX_BUFFER_MESSAGES
+    ):
+        get_reflection_engine().maybe_reflect(
+            channel_id, buffer.get_messages_since_reflection(channel_id)
+        )
 
 
 async def _handle_setup_hook(

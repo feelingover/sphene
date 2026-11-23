@@ -263,12 +263,78 @@ class TestEventHandling:
         # コマンド実行
         await _handle_message(bot, message)
 
-        # アサーション - エラーメッセージが送信されること
-        message.channel.send.assert_called_once()
-        args, kwargs = message.channel.send.call_args
-        # セキュリティ改善により、エラー詳細は非公開（一般的なメッセージのみ）
-        assert "エラー" in args[0]
-        assert args[0] == "ごめん！メッセージ処理中にエラーが発生しちゃった...😢"
+        # 話しかけられていないメッセージの失敗はチャンネルに通知しない（ログのみ）
+        message.channel.send.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("bot.events.is_bot_mentioned")
+    @patch("bot.events.process_conversation")
+    @patch("bot.events.config_manager")
+    @patch("bot.events._record_memory", new_callable=AsyncMock)
+    async def test_handle_message_error_notified_when_mentioned(
+        self, _mock_record, mock_config_manager, mock_process_conversation, mock_is_bot_mentioned
+    ):
+        """メンションされた応答処理で失敗した場合は固定文言で通知すること"""
+        mock_config_manager.get_config.return_value.can_bot_speak.return_value = True
+        mock_is_bot_mentioned.return_value = (True, "質問", False)
+        mock_process_conversation.side_effect = Exception("内部詳細")
+        message = MagicMock()
+        message.author.bot = False
+        message.attachments = []
+        message.channel.send = AsyncMock()
+        bot = MagicMock()
+
+        await _handle_message(bot, message)
+
+        message.channel.send.assert_awaited_once_with(
+            "ごめん！メッセージ処理中にエラーが発生しちゃった...😢"
+        )
+
+    @pytest.mark.asyncio
+    @patch("bot.events.is_bot_mentioned")
+    @patch("bot.events.process_conversation")
+    @patch("bot.events.config_manager")
+    @patch("bot.events._record_memory", new_callable=AsyncMock)
+    async def test_handle_message_error_notice_send_failure_is_swallowed(
+        self, _mock_record, mock_config_manager, mock_process_conversation, mock_is_bot_mentioned
+    ):
+        """エラー通知の送信自体が失敗しても例外を投げないこと"""
+        import discord
+
+        mock_config_manager.get_config.return_value.can_bot_speak.return_value = True
+        mock_is_bot_mentioned.return_value = (True, "質問", False)
+        mock_process_conversation.side_effect = Exception("boom")
+        message = MagicMock()
+        message.author.bot = False
+        message.attachments = []
+        message.channel.send = AsyncMock(
+            side_effect=discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "no perm")
+        )
+
+        await _handle_message(MagicMock(), message)
+
+    @pytest.mark.asyncio
+    @patch("bot.events.is_bot_mentioned")
+    @patch("bot.events.process_conversation")
+    @patch("bot.events.config_manager")
+    async def test_memory_failure_does_not_block_response(
+        self, mock_config_manager, mock_process_conversation, mock_is_bot_mentioned
+    ):
+        """記憶の記録に失敗しても応答処理は続くこと"""
+        mock_config_manager.get_config.return_value.can_bot_speak.return_value = True
+        mock_is_bot_mentioned.return_value = (True, "質問", False)
+        message = MagicMock()
+        message.author.bot = False
+        message.attachments = []
+        message.channel.send = AsyncMock()
+
+        with patch(
+            "memory.short_term.get_channel_buffer", side_effect=Exception("buffer broken")
+        ):
+            await _handle_message(MagicMock(), message)
+
+        mock_process_conversation.assert_awaited_once()
+        message.channel.send.assert_not_called()
 
 
 class TestDispatchResponse:
@@ -529,8 +595,7 @@ class TestCollectAiContextFacts:
                     from bot.events import _collect_ai_context
                     _, _, _, _, relevant_facts_str = await _collect_ai_context(message)
 
-        assert "関連する過去の記憶" in relevant_facts_str
-        assert "Aさんは先週Rustを始めた" in relevant_facts_str
+        assert relevant_facts_str == "- Aさんは先週Rustを始めた"
 
     @pytest.mark.asyncio
     @patch("config.LIVING_MEMORY_ENABLED", False)

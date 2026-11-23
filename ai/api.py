@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any, TYPE_CHECKING
 
+import httpx
 from google.genai import types, errors as genai_errors
 from google.api_core import exceptions as google_exceptions
 from tenacity import (
@@ -24,30 +25,39 @@ if TYPE_CHECKING:
     from ai.router import ToolMode
 
 
+# リトライ対象の HTTP ステータス
+# 408: Request Timeout, 429: Too Many Requests, 500: Internal Server Error,
+# 502: Bad Gateway, 503: Service Unavailable, 504: Gateway Timeout
+_RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
+_RETRYABLE_GOOGLE_EXCEPTIONS = (
+    google_exceptions.TooManyRequests,
+    google_exceptions.ResourceExhausted,
+    google_exceptions.ServiceUnavailable,
+    google_exceptions.InternalServerError,
+    google_exceptions.DeadlineExceeded,
+)
+
+
 def _should_retry_api_error(exception: BaseException) -> bool:
-    """リトライすべきエラーかどうかを判定する"""
+    """リトライすべきエラーかどうかを判定する
+
+    例外の型とステータスコードで判定する。メッセージ文字列の一致には頼らない
+    （"500" を含むだけのバリデーションエラー等を誤ってリトライしないため）。
+
+    Args:
+        exception: 発生した例外
+
+    Returns:
+        リトライすべきなら True
+    """
     if isinstance(exception, genai_errors.APIError):
-        # 429: Too Many Requests, 500: Internal Server Error, 503: Service Unavailable, 504: Gateway Timeout
-        return exception.code in (429, 500, 503, 504)
-
-    # google.api_core.exceptions も念のためハンドル
-    if isinstance(
-        exception,
-        (
-            google_exceptions.TooManyRequests,
-            google_exceptions.ResourceExhausted,
-            google_exceptions.ServiceUnavailable,
-            google_exceptions.InternalServerError,
-            google_exceptions.DeadlineExceeded,
-        ),
-    ):
+        return exception.code in _RETRYABLE_STATUS_CODES
+    if isinstance(exception, _RETRYABLE_GOOGLE_EXCEPTIONS):
         return True
-
-    # エラーメッセージに 429 が含まれている場合もリトライを検討（SDKがラップしていないケース用）
-    error_str = str(exception)
-    if "429" in error_str or "503" in error_str or "500" in error_str:
+    # タイムアウト・接続断などのネットワークエラー（SDK は httpx を使用）
+    if isinstance(exception, (httpx.TransportError, ConnectionError, TimeoutError)):
         return True
-
     return False
 
 
@@ -120,6 +130,9 @@ def _handle_api_error(error: Exception) -> str:
         error, (google_exceptions.TooManyRequests, google_exceptions.ResourceExhausted)
     ):
         return "ごめんね、今ちょっとAIが混み合ってるみたい…💦 少し時間を置いてからもう一度話しかけてみてね！"
+    if isinstance(error, (httpx.TimeoutException, TimeoutError)):
+        logger.error(f"APIタイムアウト: {error}", exc_info=True)
+        return "ごめんね、AIが混み合ってて時間内に返事が来なかったみたい…⏳ 少し時間を置いてからもう一度話しかけてみてね！"
     logger.error(f"APIエラー: {error}", exc_info=True)
     return "ごめん！AIとの通信中にエラーが発生しちゃった...😢"
 

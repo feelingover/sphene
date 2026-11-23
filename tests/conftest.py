@@ -47,6 +47,9 @@ def mock_discord_interaction() -> MagicMock:
     # レスポンスメソッドを非同期モックに
     interaction.response = MagicMock()
     interaction.response.send_message = AsyncMock()
+    interaction.response.is_done = MagicMock(return_value=False)
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
     interaction.user.id = 12345
     return interaction
 
