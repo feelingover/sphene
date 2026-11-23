@@ -52,7 +52,9 @@ def test_sphene_bot_run() -> None:
     """SpheneBot の実行メソッドをテスト"""
     with patch("bot.discord_bot.commands.Bot") as mock_bot_cls, patch(
         "bot.discord_bot.config"
-    ) as mock_config:
+    ) as mock_config, patch(
+        "bot.discord_bot._persist_memory_on_shutdown"
+    ) as mock_persist:
 
         # モックの設定
         mock_bot = MagicMock()
@@ -68,3 +70,5 @@ def test_sphene_bot_run() -> None:
             bot.run()
             # discord.py 独自のログハンドラは登録しない（二重出力防止）
             mock_bot.run.assert_called_once_with(mock_config.DISCORD_TOKEN, log_handler=None)
+            # 終了時に記憶を永続化する
+            mock_persist.assert_called_once()

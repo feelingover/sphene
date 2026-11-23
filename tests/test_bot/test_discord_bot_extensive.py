@@ -66,7 +66,9 @@ class TestBotAndApp:
         """bot.run が呼ばれることを確認"""
         with patch("discord.ext.commands.Bot") as mock_bot_class:
             bot_instance = mock_bot_class.return_value
-            with patch("bot.discord_bot.load_system_prompt"):
+            with patch("bot.discord_bot.load_system_prompt"), patch(
+                "bot.discord_bot._persist_memory_on_shutdown"
+            ):
                 sphene_bot = SpheneBot()
                 sphene_bot.run()
                 bot_instance.run.assert_called_once()

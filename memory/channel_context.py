@@ -26,10 +26,13 @@ class ChannelContext:
     # 永続化先の読み込みに失敗した一時コンテキストなら True（シリアライズしない）。
     # 保存すると既存の要約を上書きしてしまうため、save_context はこれを拒否する
     load_failed: bool = field(default=False, compare=False, repr=False)
+    # 永続化先と差分があれば True（persist_all は dirty なものだけ書き込む）
+    dirty: bool = field(default=False, compare=False, repr=False)
 
     def increment_message_count(self) -> None:
         """メッセージカウンタをインクリメントする"""
         self.message_count_since_update += 1
+        self.dirty = True
 
     def should_summarize_by_count(self) -> bool:
         """メッセージ数によるトリガー判定"""
@@ -147,25 +150,62 @@ class ChannelContextStore:
             self._load_backoff.reset(channel_id)
             return self._contexts.setdefault(channel_id, ctx)
 
-    def save_context(self, context: ChannelContext) -> None:
+    def save_context(self, context: ChannelContext) -> bool:
         """コンテキストを永続化する（I/Oを伴うためワーカースレッドで呼ぶこと）
 
         読み込みに失敗した一時コンテキストは、既存の要約を上書きしないよう保存しない。
+
+        Returns:
+            保存に成功したら True（保存を見送った・失敗した場合は False）
         """
         if context.load_failed:
             logger.warning(
                 f"読み込みに失敗したチャンネルコンテキストのため保存を見送りました: "
                 f"channel_id={context.channel_id}"
             )
-            return
+            return False
         with self._lock:
             self._contexts[context.channel_id] = context
+        # 書き込み前に落とすことで、書き込み中の更新を取りこぼさない（失敗時は戻す）
+        context.dirty = False
         storage_type = config.STORAGE_TYPE
 
+        saved = False
         if storage_type == "local":
-            self._save_to_local(context)
+            saved = self._save_to_local(context)
         elif storage_type == "firestore":
-            self._save_to_firestore(context)
+            saved = self._save_to_firestore(context)
+        if not saved:
+            context.dirty = True
+        return saved
+
+    def persist_all(self) -> int:
+        """未保存の変更があるコンテキストだけを永続化する（終了時用）
+
+        要約間のメッセージカウンタなど、未保存の状態を失わないために使う。
+        1チャンネルの書き込み失敗で他チャンネルの保存を止めない。
+
+        Returns:
+            保存に失敗したコンテキスト数
+        """
+        failed = 0
+        for context in self.get_all_contexts().values():
+            if not context.dirty:
+                continue
+            try:
+                saved = self.save_context(context)
+            except Exception as e:
+                saved = False
+                logger.error(
+                    f"チャンネルコンテキストの永続化に失敗しました: "
+                    f"channel_id={context.channel_id}, error={str(e)}",
+                    exc_info=True,
+                )
+            if not saved:
+                failed += 1
+        if failed:
+            logger.warning(f"チャンネルコンテキストの永続化に失敗: {failed}件")
+        return failed
 
     def _load_context(self, channel_id: int) -> ChannelContext | None:
         """永続化先からコンテキストを読み込む"""
@@ -191,17 +231,19 @@ class ChannelContextStore:
             ) from e
         return None
 
-    def _save_to_local(self, context: ChannelContext) -> None:
-        """ローカルファイルにアトミック書き込み"""
+    def _save_to_local(self, context: ChannelContext) -> bool:
+        """ローカルファイルにアトミック書き込み（成功したら True）"""
         from utils.file_utils import atomic_write_json
 
         file_path = f"storage/channel_context.{context.channel_id}.json"
         try:
             atomic_write_json(file_path, context.to_dict())
+            return True
         except Exception as e:
             logger.error(
                 f"チャンネルコンテキストのローカル保存エラー: {e}", exc_info=True
             )
+            return False
 
     def _load_from_firestore(self, channel_id: int) -> ChannelContext | None:
         """Firestoreからコンテキストを読み込む"""
@@ -225,8 +267,8 @@ class ChannelContextStore:
             ) from e
         return None
 
-    def _save_to_firestore(self, context: ChannelContext) -> None:
-        """Firestoreにコンテキストを保存する"""
+    def _save_to_firestore(self, context: ChannelContext) -> bool:
+        """Firestoreにコンテキストを保存する（成功したら True）"""
         try:
             from utils.firestore_client import get_firestore_client
 
@@ -234,10 +276,12 @@ class ChannelContextStore:
             db.collection(config.FIRESTORE_COLLECTION_CHANNEL_CONTEXTS).document(
                 str(context.channel_id)
             ).set(context.to_dict())
+            return True
         except Exception as e:
             logger.error(
                 f"Firestoreへのコンテキスト保存エラー: {e}", exc_info=True
             )
+            return False
 
 
 # シングルトン

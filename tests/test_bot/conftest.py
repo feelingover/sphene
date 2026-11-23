@@ -2,9 +2,18 @@
 
 from collections.abc import Iterator
 
+from unittest.mock import patch
+
 import pytest
 
 import bot.events as events
+
+
+@pytest.fixture(autouse=True)
+def _keep_test_process_sigterm() -> Iterator[None]:
+    """SpheneBot.run の終了処理がテストプロセス自体の SIGTERM を無視に変えないようにする"""
+    with patch("bot.discord_bot._ignore_sigterm"):
+        yield
 
 
 @pytest.fixture(autouse=True)

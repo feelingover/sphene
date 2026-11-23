@@ -25,6 +25,7 @@ from ai.conversation import (
     channel_conversations,
 )
 from log_utils.logger import logger
+from utils.background_tasks import track_background_task
 from utils.channel_config import ChannelConfigManager
 from utils.rate_limit import SlidingWindowRateLimiter
 from utils.text_utils import split_message, truncate_text
@@ -405,10 +406,10 @@ async def _try_autonomous_response(
 
     # リアクション先行実行（返信とは独立。LLM生成を待たない）
     if result.should_react:
-        asyncio.create_task(
+        track_background_task(asyncio.create_task(
             _send_reaction(message, result.reaction_emojis, record=False),
             name="reaction_task",
-        )
+        ))
 
     if result.score >= config.JUDGE_LLM_THRESHOLD_HIGH:
         # 高スコア: 即応答（react_only でリアクション済みなら _dispatch_response が重複を防ぐ）
@@ -441,10 +442,10 @@ async def _try_autonomous_response(
         )
         # LLMがリアクションを追加すべきと判定し、ルールベースでは未実行の場合
         if llm_should_react and not result.should_react:
-            asyncio.create_task(
+            track_background_task(asyncio.create_task(
                 _send_reaction(message, llm_emojis, record=False),
                 name="reaction_task",
-            )
+            ))
         if should_respond and llm_response_type != "none":
             logger.info(
                 f"自律応答決定(LLM Judge): チャンネル={message.channel.id}, "

@@ -81,7 +81,7 @@ class TestReflectionEngineMaybeReflect:
 
         loop = asyncio.get_running_loop()
 
-        def capture_running(coro):
+        def capture_running(coro, **kwargs):
             captured_running.append(100 in engine._running)
             coro.close()
             return MagicMock()
