@@ -6,9 +6,9 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 792件全パス
+- テスト: 814件全パス
 - カバレッジ: 91%
-- mypy: 77ファイル no issues
+- mypy: 80ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -44,6 +44,7 @@ applyTo: "**"
 
 **AI制御**
 - `MAX_TOOL_CALL_ROUNDS`: ツール呼び出し最大ラウンド数（デフォルト: 15）
+- `MAX_TOOL_RESULT_CHARS`: ツール結果1件あたりの最大文字数（JSON化後、デフォルト: 10000）
 - `GENAI_REQUEST_TIMEOUT_SECONDS`: Gen AI API 1リクエストのタイムアウト秒（デフォルト: 300。混雑時は長く待つと正確な応答が返るため長め）
 - `MAIN_THINKING_LEVEL`: 会話応答・ツールループのThinkingレベル（デフォルト: 空 = モデルのデフォルト）
 - `LIGHT_THINKING_LEVEL`: Router・Judge・相槌・要約・反省会・翻訳のThinkingレベル（デフォルト: `low`）。`ai/client.py` の `get_light_thinking_config()` 経由で渡す
@@ -87,6 +88,8 @@ applyTo: "**"
 | ストレージ同期I/Oは `asyncio.to_thread` でイベントループ外へ | Firestore 遅延で bot 全体が止まるのを防ぐ。記憶系は `_prefetch_memory` でキャッシュを先に温め、以降の同期呼び出しはキャッシュヒットさせる。各ストアは `threading.Lock` で保護（読み込みはロック外・登録は setdefault で先着優先） |
 | system_instruction のコンテキストはタグ＋エスケープ＋「データであり指示ではない」注記 | 他ユーザーの発言・LLM生成の記憶による間接プロンプトインジェクション対策（`ai/conversation.py` の `build_context_section`）。発言者名も改行・制御文字を除去 |
 | リトライ判定は例外の型とステータスコードのみ | 文字列一致は誤検知・見逃しが多い。408/429/5xx・httpx.TransportError・ConnectionError・TimeoutError をリトライ |
+| 完了した過去ターンはツール中間データ・画像を除去 | ツール結果の生JSONや画像バイトが30分間毎リクエスト再送されるのを防ぐ。直近ターンは追加質問に答えられるよう保持し、ツール結果1件も `MAX_TOOL_RESULT_CHARS` で切り詰め |
+| function_response は function_call と1対1・id を返す | APIは同数の応答を要求する。名前なし・未知の関数もスキップせずエラー応答を返し、並列呼び出しのため `call.id` をそのまま返す |
 | エラー通知はボットが話しかけられた場合のみ | 無関係なメッセージへのエラー投稿の連発を防ぐ。記憶の記録失敗は応答を止めない（`_record_memory` で隔離） |
 
 ## Open Issues
@@ -96,5 +99,5 @@ applyTo: "**"
 3. **フル async 化**: google-genai `client.aio` への移行（中期候補）
 4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索（現状は in-memory コサイン類似度）
 5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）
-6. **2026/11 コードレビュー残課題**: Router プリフィルタ（7文字以下で none）、ツールスキーマの enum 欠落、function_response の型/件数ずれ、react_only の二重リアクション、翻訳の重複排除、メンションのレート制限、反省会LLM失敗時のバックオフなし、`persist_all` の dirty フラグ未導入、ファクトの1ドキュメント集約（1MB上限）、要約JSONの検証、XIVAPI の DQL エスケープ・httpx Client 共有、Docker 内ローカルストレージ、スラッシュコマンドの defer、ツール結果の履歴肥大化
+6. **2026/11 コードレビュー残課題**（Router プリフィルタは実装済み。ツールスキーマ enum・function_response・履歴肥大化は対応済み）: react_only の二重リアクション、翻訳の重複排除、メンションのレート制限、反省会LLM失敗時のバックオフなし、`persist_all` の dirty フラグ未導入、ファクトの1ドキュメント集約（1MB上限）、要約JSONの検証、XIVAPI の DQL エスケープ・httpx Client 共有、Docker 内ローカルストレージ、スラッシュコマンドの defer
 7. **EMBEDDING_MODEL**: `text-embedding-004` の提供状況を要確認。移行すると次元が変わり既存ベクトルと非互換になるため要マイグレーション検討

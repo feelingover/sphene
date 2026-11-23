@@ -14,6 +14,7 @@ from ai.api import (
     call_genai_with_tools as _call_genai_with_tools,
     _execute_tool_calls,
     _handle_api_error,
+    rebuild_contents,
 )
 from ai.router import detect_tool_mode
 from config import (
@@ -129,6 +130,39 @@ def _is_user_message(content: types.Content) -> bool:
     if content.role != "user":
         return False
     return not any(p.function_response for p in (content.parts or []))
+
+
+_IMAGE_PLACEHOLDER = "（画像が添付されていました）"
+
+
+def _compact_part(part: types.Part) -> types.Part | None:
+    """過去ターンのpartを軽量化する (function系partは除去、画像はプレースホルダーに置換)"""
+    if part.function_call or part.function_response:
+        return None
+    if part.inline_data is not None:
+        return types.Part.from_text(text=_IMAGE_PLACEHOLDER)
+    return part
+
+
+def _compact_past_turns(history: list[types.Content]) -> list[types.Content]:
+    """直近ターンより前の履歴からツール呼び出しの中間データと画像を取り除く
+
+    ツール結果 (XIVAPIの生JSON等) や画像バイトは毎リクエスト再送されるため、
+    完了したターンでは最終的なテキスト応答だけを残す。直近ターンは
+    追加の質問に答えられるようそのまま残す。
+
+    Args:
+        history: 会話履歴
+
+    Returns:
+        過去ターンを軽量化した履歴
+    """
+    user_indices = [i for i, content in enumerate(history) if _is_user_message(content)]
+    if not user_indices or user_indices[-1] == 0:
+        return history
+    latest_turn_start = user_indices[-1]
+    past = rebuild_contents(history[:latest_turn_start], _compact_part)
+    return [*past, *history[latest_turn_start:]]
 
 
 class Sphene:
@@ -263,7 +297,7 @@ class Sphene:
             )
             
             if success:
-                self.history = updated_history
+                self.history = _compact_past_turns(updated_history)
                 self.trim_conversation_history()
             else:
                 # 失敗時はユーザー発言ごとロールバックし、壊れた履歴を次の会話に持ち越さない
