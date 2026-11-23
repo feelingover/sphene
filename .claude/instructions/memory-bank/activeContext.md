@@ -6,9 +6,9 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 840件全パス
+- テスト: 860件全パス
 - カバレッジ: 91%
-- mypy: 82ファイル no issues
+- mypy: 86ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -45,6 +45,8 @@ applyTo: "**"
 **AI制御**
 - `MAX_TOOL_CALL_ROUNDS`: ツール呼び出し最大ラウンド数（デフォルト: 15）
 - `MAX_TOOL_RESULT_CHARS`: ツール結果1件あたりの最大文字数（JSON化後、デフォルト: 10000）
+- `MENTION_RATE_LIMIT_PER_USER` / `MENTION_RATE_LIMIT_PER_CHANNEL` / `MENTION_RATE_LIMIT_WINDOW_SECONDS`: 呼びかけのレート制限（デフォルト: 5 / 20 回 / 60秒、0で無効）
+- `TRANSLATION_DEDUP_SECONDS`: 国旗リアクション翻訳の重複抑止期間（デフォルト: 3600）
 - `GENAI_REQUEST_TIMEOUT_SECONDS`: Gen AI API 1リクエストのタイムアウト秒（デフォルト: 300。混雑時は長く待つと正確な応答が返るため長め）
 - `MAIN_THINKING_LEVEL`: 会話応答・ツールループのThinkingレベル（デフォルト: 空 = モデルのデフォルト）
 - `LIGHT_THINKING_LEVEL`: Router・Judge・相槌・要約・反省会・翻訳のThinkingレベル（デフォルト: `low`）。`ai/client.py` の `get_light_thinking_config()` 経由で渡す
@@ -92,6 +94,8 @@ applyTo: "**"
 | function_response は function_call と1対1・id を返す | APIは同数の応答を要求する。名前なし・未知の関数もスキップせずエラー応答を返し、並列呼び出しのため `call.id` をそのまま返す |
 | XIVAPI の DQL 文字列は引用符・バックスラッシュ・制御文字を除去 | XIVAPI v2 のクエリ言語に文字列エスケープ構文が定義されていないため。LLM由来の数値も `int` に正規化してから埋め込む |
 | XIVAPI の httpx.Client はプロセス共有 | 接続・TLSセッションを再利用（action 検索は1回で最大6リクエスト）。`httpx.Client` はスレッドセーフ。終了時に `close_http_client()` |
+| 呼びかけのレート制限はユーザー（ギルド単位）とチャンネルの2段 | 1回の呼びかけで Router＋最大16回の生成＋embedding が走るため。両方に空きがある時だけ枠を消費し、超過時は ⏳ リアクションのみ（状態はインメモリ。複数レプリカ間では共有しない） |
+| 翻訳は (メッセージID, 言語) を一定時間1回に制限 | 複数ユーザーの同じ国旗・付け直しで LLM 呼び出しと返信が重複するのを防ぐ。翻訳中から記録し、失敗時は記録を外して再試行可能にする |
 | エラー通知はボットが話しかけられた場合のみ | 無関係なメッセージへのエラー投稿の連発を防ぐ。記憶の記録失敗は応答を止めない（`_record_memory` で隔離） |
 
 ## Open Issues
@@ -101,5 +105,5 @@ applyTo: "**"
 3. **フル async 化**: google-genai `client.aio` への移行（中期候補）
 4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索（現状は in-memory コサイン類似度）
 5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）
-6. **2026/11 コードレビュー残課題**（Router プリフィルタは実装済み。ツールスキーマ enum・function_response・履歴肥大化・XIVAPI は対応済み）: react_only の二重リアクション、翻訳の重複排除、メンションのレート制限、反省会LLM失敗時のバックオフなし、`persist_all` の dirty フラグ未導入、ファクトの1ドキュメント集約（1MB上限）、要約JSONの検証、Docker 内ローカルストレージ、スラッシュコマンドの defer
+6. **2026/11 コードレビュー残課題**（Router プリフィルタは実装済み。ツールスキーマ enum・function_response・履歴肥大化・XIVAPI・二重リアクション・翻訳の重複排除・メンションのレート制限は対応済み）: 反省会LLM失敗時のバックオフなし、`persist_all` の dirty フラグ未導入、ファクトの1ドキュメント集約（1MB上限）、要約JSONの検証、Docker 内ローカルストレージ、スラッシュコマンドの defer
 7. **EMBEDDING_MODEL**: `text-embedding-004` の提供状況を要確認。移行すると次元が変わり既存ベクトルと非互換になるため要マイグレーション検討

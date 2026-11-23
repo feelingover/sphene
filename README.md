@@ -95,6 +95,8 @@ kubectl create secret docker-registry regcred --docker-server=ghcr.io --docker-u
 
 応答を生成している間は、Discord上に「（ボット名）が入力中...」と表示されます（自律応答・相槌・翻訳も同様）。
 
+短時間に呼びかけが集中した場合は応答せず、⏳ リアクションを付けます（ユーザーごと・チャンネルごとの上限は `MENTION_RATE_LIMIT_PER_USER` / `MENTION_RATE_LIMIT_PER_CHANNEL` / `MENTION_RATE_LIMIT_WINDOW_SECONDS` で設定）。
+
 ### 自律応答
 
 VANGUARD（自律応答）と Living Memory（記憶システム）はデフォルト有効です。ボットは明示的に呼びかけられなくても、会話の流れに応じて自然に参加します。
@@ -116,6 +118,7 @@ VANGUARD（自律応答）と Living Memory（記憶システム）はデフォ�
 2. **日本語に翻訳**: メッセージに 🇯🇵 リアクションを追加
 
 注: 翻訳機能は管理者によって有効/無効を切り替えることができます。
+同じメッセージ・同じ言語の翻訳は、一定時間（`TRANSLATION_DEDUP_SECONDS`、デフォルト1時間）内は1回だけ行います。
 
 ### スラッシュコマンド
 

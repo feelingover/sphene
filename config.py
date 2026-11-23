@@ -59,6 +59,13 @@ MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "15"))
 # ツール結果1件あたりの最大文字数（JSON化後）。超えた分は切り詰めて履歴の肥大化を防ぐ
 MAX_TOOL_RESULT_CHARS: int = int(os.getenv("MAX_TOOL_RESULT_CHARS", "10000"))
 
+# メンション・名前呼び・リプライによる会話のレート制限（ウィンドウ内の上限回数。0で無効）
+MENTION_RATE_LIMIT_PER_USER: int = int(os.getenv("MENTION_RATE_LIMIT_PER_USER", "5"))
+MENTION_RATE_LIMIT_PER_CHANNEL: int = int(os.getenv("MENTION_RATE_LIMIT_PER_CHANNEL", "20"))
+MENTION_RATE_LIMIT_WINDOW_SECONDS: int = int(os.getenv("MENTION_RATE_LIMIT_WINDOW_SECONDS", "60"))
+# 国旗リアクション翻訳の重複抑止期間（秒）。同じメッセージ×言語はこの間1回だけ翻訳する
+TRANSLATION_DEDUP_SECONDS: int = int(os.getenv("TRANSLATION_DEDUP_SECONDS", "3600"))
+
 # Gen AI APIの1リクエストあたりのタイムアウト（秒）
 # 混雑時は長く待つと正確な応答が返ることが多いため長めに設定している
 GENAI_REQUEST_TIMEOUT_SECONDS: int = int(os.getenv("GENAI_REQUEST_TIMEOUT_SECONDS", "300"))

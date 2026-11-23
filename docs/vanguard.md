@@ -8,19 +8,19 @@
 ```
 メッセージ受信
 │
-├─ @メンション / リプライ / 名前呼び → 即応答 + エンゲージメント記録
+├─ @メンション / リプライ / 名前呼び → レート制限内なら即応答 + エンゲージメント記録（超過時は ⏳ リアクションのみ）
 │
 └─ それ以外 → RuleBasedJudge でスコアリング
                   │
                   ├─ should_react=True → asyncio.create_task でリアクション先行実行（返信と並列）
                   │
-                  ├─ スコア >= LLM_THRESHOLD_HIGH → 即応答 (react_only 以外)
+                  ├─ スコア >= LLM_THRESHOLD_HIGH → 即応答 (react_only でリアクション済みならクールダウン記録のみ)
                   ├─ スコア <= LLM_THRESHOLD_LOW  → スキップ（リアクション済みの場合あり）
                   └─ 中間スコア → LLM Judge で二次判定
                                     │
                                     ├─ llm_should_react=True かつ ルールベースが未リアクション
                                     │     → asyncio.create_task でリアクション発火
-                                    ├─ respond: true  → 応答 (タイプもLLMが決定)
+                                    ├─ respond: true  → 応答 (タイプもLLMが決定。react_only でリアクション済みなら重ねない)
                                     └─ respond: false → スキップ
 ```
 

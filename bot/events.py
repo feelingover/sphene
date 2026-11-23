@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import random
 import re
+import time
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -25,10 +26,25 @@ from ai.conversation import (
 )
 from log_utils.logger import logger
 from utils.channel_config import ChannelConfigManager
+from utils.rate_limit import SlidingWindowRateLimiter
 from utils.text_utils import split_message, truncate_text
 
 # リアクション用の絵文字リスト
 _REACTION_EMOJIS = ["👀", "😊", "👍", "🤔", "✨", "💡"]
+
+# レート制限超過時に付けるリアクション
+_RATE_LIMITED_EMOJI = "⏳"
+
+# メンション等による会話のレート制限（ユーザー単位はギルドごと、チャンネル単位は全員合計）
+_user_mention_limiter = SlidingWindowRateLimiter(
+    config.MENTION_RATE_LIMIT_PER_USER, config.MENTION_RATE_LIMIT_WINDOW_SECONDS
+)
+_channel_mention_limiter = SlidingWindowRateLimiter(
+    config.MENTION_RATE_LIMIT_PER_CHANNEL, config.MENTION_RATE_LIMIT_WINDOW_SECONDS
+)
+
+# 翻訳済み・翻訳中の (メッセージID, 翻訳先言語) → 記録時刻 (monotonic)
+_translated_messages: dict[tuple[int, str], float] = {}
 
 # bot の型ヒントを commands.Bot に変更
 def _bot_role_mention_ids(bot: commands.Bot, message: discord.Message) -> list[int]:
@@ -395,17 +411,15 @@ async def _try_autonomous_response(
         )
 
     if result.score >= config.JUDGE_LLM_THRESHOLD_HIGH:
-        # 高スコア: 即応答
-        # react_only かつリアクション済みの場合のみスキップ（ダブルリアクション防止）
-        if result.response_type != "react_only" or not result.should_react:
-            logger.info(
-                f"自律応答決定(高スコア): チャンネル={message.channel.id}, "
-                f"スコア={result.score}, 理由={result.reason}"
-            )
-            await _dispatch_response(
-                bot, message, images, result.response_type,
-                already_reacted=result.should_react,
-            )
+        # 高スコア: 即応答（react_only でリアクション済みなら _dispatch_response が重複を防ぐ）
+        logger.info(
+            f"自律応答決定(高スコア): チャンネル={message.channel.id}, "
+            f"スコア={result.score}, 理由={result.reason}"
+        )
+        await _dispatch_response(
+            bot, message, images, result.response_type,
+            already_reacted=result.should_react,
+        )
         return
 
     if result.score <= config.JUDGE_LLM_THRESHOLD_LOW:
@@ -470,7 +484,13 @@ async def _dispatch_response(
         already_reacted: True の場合、リアクション済みとしてフォールバック処理を抑制する
     """
     if response_type == "react_only":
-        await _send_reaction(message)
+        if already_reacted:
+            # 先行リアクション済み。重ねて付けず、応答としてクールダウンだけ記録する
+            from memory.judge import get_judge
+
+            get_judge().record_response(message.channel.id)
+        else:
+            await _send_reaction(message)
     elif response_type == "short_ack":
         await _process_short_ack(bot, message, already_reacted=already_reacted)
     else:
@@ -708,6 +728,8 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         # ボットが呼ばれたかどうかをチェック
         is_mentioned, question, is_reply = await is_bot_mentioned(bot, message)
         if is_mentioned:
+            if not await _acquire_mention_quota(message, guild_id):
+                return
             addressed = True
             # ユーザープロファイル: ボットメンション記録
             if config.LIVING_MEMORY_ENABLED:
@@ -731,6 +753,39 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         logger.error(f"メッセージ処理中にエラー発生: {str(e)}", exc_info=True)
         if addressed:
             await _notify_processing_error(message)
+
+
+async def _acquire_mention_quota(message: discord.Message, guild_id: int) -> bool:
+    """メンション等による会話のレート制限枠を確保する
+
+    ユーザー単位・チャンネル単位の両方に空きがある場合のみ枠を消費する。
+    超過時は応答せず、⏳ リアクションで混雑を伝える。
+
+    Args:
+        message: Discordメッセージ
+        guild_id: ギルドID
+
+    Returns:
+        会話処理を続けてよい場合True
+    """
+    user_key = (guild_id, message.author.id)
+    channel_key = message.channel.id
+    if _user_mention_limiter.is_allowed(user_key) and _channel_mention_limiter.is_allowed(
+        channel_key
+    ):
+        _user_mention_limiter.record(user_key)
+        _channel_mention_limiter.record(channel_key)
+        return True
+
+    logger.warning(
+        f"メンションのレート制限超過のため応答をスキップ: ギルドID={guild_id}, "
+        f"チャンネルID={channel_key}, ユーザーID={message.author.id}"
+    )
+    try:
+        await message.add_reaction(_RATE_LIMITED_EMOJI)
+    except discord.HTTPException:
+        logger.warning("レート制限リアクションの追加に失敗しました", exc_info=True)
+    return False
 
 
 async def _notify_processing_error(message: discord.Message) -> None:
@@ -922,6 +977,27 @@ async def send_translation_response(
             await message.channel.send(chunk)
 
 
+def _claim_translation(key: tuple[int, str]) -> bool:
+    """(メッセージID, 言語) の翻訳権を取得する
+
+    TRANSLATION_DEDUP_SECONDS 以内に翻訳済み・翻訳中のキーは取得できない。
+    イベントループ上でのみ呼ぶため、判定と記録の間に他の処理は割り込まない。
+
+    Returns:
+        翻訳を実行してよい場合True
+    """
+    now = time.monotonic()
+    expired = [
+        k for k, t in _translated_messages.items() if now - t >= config.TRANSLATION_DEDUP_SECONDS
+    ]
+    for k in expired:
+        del _translated_messages[k]
+    if key in _translated_messages:
+        return False
+    _translated_messages[key] = now
+    return True
+
+
 async def translate_and_reply(
     message: discord.Message, target_language: str = "english"
 ) -> None:
@@ -951,6 +1027,13 @@ async def translate_and_reply(
         f"メッセージ: {truncate_text(content)}"
     )
 
+    dedup_key = (message.id, target_language)
+    if not _claim_translation(dedup_key):
+        logger.info(
+            f"翻訳済み・翻訳中のためスキップ: メッセージID={message.id}, 言語={target_language}"
+        )
+        return
+
     # 言語に応じて翻訳関数とフラグを選択
     from utils.text_utils import translate_to_english, translate_to_japanese
 
@@ -963,8 +1046,15 @@ async def translate_and_reply(
         language_flag = "🇺🇸"
 
     # 翻訳実行（生成中は入力中インジケーターを表示）
-    async with _typing_indicator(message.channel):
-        translated_text = await translate_func(content)
+    try:
+        async with _typing_indicator(message.channel):
+            translated_text = await translate_func(content)
+    except BaseException:
+        _translated_messages.pop(dedup_key, None)
+        raise
+    if not translated_text:
+        # 失敗時は再リアクションで再試行できるよう記録を外す
+        _translated_messages.pop(dedup_key, None)
 
     if translated_text:
         # 適切な方法で翻訳結果を送信
