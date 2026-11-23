@@ -158,8 +158,14 @@ class UserProfileStore:
 
     def __init__(self) -> None:
         self._profiles: dict[ProfileKey, UserProfile] = {}
+        # 永続化先と差分があるプロファイル（persist_all はここに含まれるものだけ書き込む）
+        self._dirty: set[ProfileKey] = set()
         # イベントループとワーカースレッド（反省会・定期永続化）から並行アクセスされる
         self._lock = threading.Lock()
+
+    def _mark_dirty(self, guild_id: int, user_id: int) -> None:
+        with self._lock:
+            self._dirty.add((guild_id, user_id))
 
     def get_profile(
         self, guild_id: int, user_id: int, display_name: str = ""
@@ -216,6 +222,7 @@ class UserProfileStore:
         limit = config.CHANNELS_ACTIVE_LIMIT
         if len(profile.channels_active) > limit:
             profile.channels_active = profile.channels_active[-limit:]
+        self._mark_dirty(guild_id, user_id)
 
     def record_bot_mention(self, guild_id: int, user_id: int) -> None:
         """ボットへのメンション時にカウンタを更新する
@@ -227,6 +234,7 @@ class UserProfileStore:
         profile = self.get_cached_profile(guild_id, user_id)
         if profile:
             profile.mentioned_bot_count += 1
+            self._mark_dirty(guild_id, user_id)
 
     def update_last_topic(
         self, guild_id: int, user_id: int, topic_keywords: list[str]
@@ -241,6 +249,7 @@ class UserProfileStore:
         profile = self.get_cached_profile(guild_id, user_id)
         if profile and topic_keywords:
             profile.last_topic = list(topic_keywords)
+            self._mark_dirty(guild_id, user_id)
 
     def update_from_reflection(
         self, guild_id: int, user_id: int, extracted: dict
@@ -270,6 +279,7 @@ class UserProfileStore:
                 profile.notable_facts.append(fact)
         profile.notable_facts = profile.notable_facts[-config.USER_PROFILE_FACTS_LIMIT:]
         self._apply_reflection_scalars(profile, extracted)
+        self._mark_dirty(guild_id, user_id)
 
     def _apply_reflection_scalars(self, profile: UserProfile, extracted: dict) -> None:
         """反省会抽出結果のうち単一値のフィールドを検証してプロファイルに反映する
@@ -309,21 +319,41 @@ class UserProfileStore:
         profile = self.get_cached_profile(guild_id, user_id)
         if profile:
             profile.nickname = nickname
+            self._mark_dirty(guild_id, user_id)
             logger.info(
                 f"ニックネーム更新: guild_id={guild_id}, user_id={user_id}, "
                 f"nickname={nickname!r}"
             )
 
     def persist_all(self) -> None:
-        """全プロファイルを永続化する（定期タスク・反省会からワーカースレッドで呼ばれる）"""
+        """変更のあったプロファイルだけを永続化する（定期タスク・反省会からワーカースレッドで呼ばれる）
+
+        書き込みに失敗したプロファイルは次回の persist_all で再試行する。
+        """
         with self._lock:
-            snapshot = list(self._profiles.values())
+            dirty, self._dirty = self._dirty, set()
+            snapshot = [(key, self._profiles[key]) for key in dirty if key in self._profiles]
+        failed = {key for key, profile in snapshot if not self._save_profile(profile)}
+        if failed:
+            with self._lock:
+                self._dirty |= failed
+        if snapshot:
+            logger.debug(
+                f"ユーザープロファイル永続化: {len(snapshot) - len(failed)}/{len(snapshot)}件"
+            )
+
+    def _save_profile(self, profile: UserProfile) -> bool:
+        """設定された永続化先にプロファイルを書き込む
+
+        Returns:
+            書き込みに成功した（または永続化しない設定の）場合True
+        """
         storage_type = config.STORAGE_TYPE
-        for profile in snapshot:
-            if storage_type == "local":
-                self._save_to_local(profile)
-            elif storage_type == "firestore":
-                self._save_to_firestore(profile)
+        if storage_type == "local":
+            return self._save_to_local(profile)
+        if storage_type == "firestore":
+            return self._save_to_firestore(profile)
+        return True
 
     def _new_profile(
         self, guild_id: int, user_id: int, display_name: str
@@ -386,17 +416,19 @@ class UserProfileStore:
             logger.error(f"ユーザープロファイル読み込みエラー: {e}", exc_info=True)
         return None
 
-    def _save_to_local(self, profile: "UserProfile") -> None:
+    def _save_to_local(self, profile: "UserProfile") -> bool:
         """ローカルファイルにアトミック書き込み"""
         from utils.file_utils import atomic_write_json
 
         file_path = _local_path(profile.guild_id, profile.user_id)
         try:
             atomic_write_json(file_path, profile.to_dict())
+            return True
         except Exception as e:
             logger.error(
                 f"ユーザープロファイルのローカル保存エラー: {e}", exc_info=True
             )
+            return False
 
     def _load_from_firestore(
         self, doc_id: str, guild_id: int, user_id: int
@@ -423,7 +455,7 @@ class UserProfileStore:
             )
         return None
 
-    def _save_to_firestore(self, profile: "UserProfile") -> None:
+    def _save_to_firestore(self, profile: "UserProfile") -> bool:
         """Firestoreにプロファイルを保存する"""
         try:
             from utils.firestore_client import get_firestore_client
@@ -432,10 +464,12 @@ class UserProfileStore:
             db.collection(config.FIRESTORE_COLLECTION_USER_PROFILES).document(
                 _doc_id(profile.guild_id, profile.user_id)
             ).set(profile.to_dict())
+            return True
         except Exception as e:
             logger.error(
                 f"Firestoreへのプロファイル保存エラー: {e}", exc_info=True
             )
+            return False
 
 
 def _doc_id(guild_id: int, user_id: int) -> str:
