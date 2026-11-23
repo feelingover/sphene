@@ -9,6 +9,7 @@ from google.genai import types
 import config
 from ai.client import _get_genai_client, get_light_thinking_config, get_lite_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
+from ai.api import light_retry_policy
 from log_utils.logger import logger
 
 ToolMode = Literal["grounding", "function_calling", "none"]
@@ -79,6 +80,7 @@ def _call_router_llm(message: str, context: str | None) -> ToolMode:
             thinking_config=get_light_thinking_config(),
             response_mime_type="application/json",
         ),
+        policy=light_retry_policy(),
     )
 
     content = response.text

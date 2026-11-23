@@ -38,6 +38,7 @@ applyTo: "**"
 - 記憶系LLMの耐障害性（2026/11）: 要約・反省会の失敗時に指数バックオフ（`memory/backoff.py`、`MEMORY_LLM_BACKOFF_*`）、反省会は `REFLECTION_MAX_FAILURES` 回連続失敗で対象メッセージを破棄・全件不正も失敗扱い・プロファイル更新はチェックポイント確定時のみ、要約JSONの型・長さ検証とサニタイズ
 - 記憶ストアの永続化コスト削減（2026/11）: ファクトストア・ユーザープロファイルの `persist_all` を dirty なキーのみに限定（失敗時は再試行）、Firestore ドキュメントサイズの見積もり（`estimate_document_size`）とファクト／アーカイブの1MiB上限ガード、アーカイブから embedding を除去
 - 運用系の修正（2026/11）: スラッシュコマンド・ビューのコールバックで I/O 前に `defer(thinking=True)`（3秒の応答期限切れ対策）、Dockerfile で `/app/storage` を実行ユーザー所有で作成し `VOLUME` 宣言・README にボリュームマウント手順
+- Gen AI API のリトライ予算の制限（2026/11、#133）: `RetryPolicy` でメイン（会話応答・要約・反省会）と軽量（Router・Judge・相槌）のリトライ設定を分離、タイムアウト系の再試行回数を別枠で制限、ツールループ全体で上限時刻を共有しリクエスト単位のタイムアウトを残り時間で絞る
 
 ### リビングメモリー (Living Memory)
 - 短期記憶: チャンネルバッファ（dequeリングバッファ、TTL管理）

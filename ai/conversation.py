@@ -11,6 +11,7 @@ from google.genai import types
 from ai.client import _get_genai_client, get_light_thinking_config, get_model_name
 from ai.api import (
     generate_content_with_retry as _generate_content_with_retry,
+    light_retry_policy,
     call_genai_with_tools as _call_genai_with_tools,
     _execute_tool_calls,
     _handle_api_error,
@@ -374,6 +375,7 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
                 max_output_tokens=1000,
                 thinking_config=get_light_thinking_config(),
             ),
+            policy=light_retry_policy(),
         )
 
         candidate = response.candidates[0] if response.candidates else None
