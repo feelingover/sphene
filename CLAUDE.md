@@ -43,6 +43,7 @@ utils/
   channel_config.py       # Channel permissions (local/Firestore)
   file_utils.py           # atomic_write_json
   firestore_client.py     # Firestore client (singleton)
+  rate_limit.py           # Sliding-window rate limiter (mention throttling)
   text_utils.py           # Text processing, translation
 log_utils/logger.py       # Logging config
 storage/                  # Local file storage (prompts, configs)
