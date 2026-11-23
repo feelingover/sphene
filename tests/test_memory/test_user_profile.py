@@ -356,13 +356,25 @@ class TestUserProfileStoreBasicStorage:
         assert profile.interaction_count == 0
 
     def test_get_profile_returns_cached(self):
-        """2回目以降はキャッシュから返される"""
+        """2回目以降はキャッシュから返され、ストア経由の更新が反映される"""
+        store = UserProfileStore()
+        with patch.object(store, "_load_profile", return_value=None) as load:
+            store.get_profile(GUILD_ID, 1, "User")
+            store.record_message(GUILD_ID, 1, 100, "User")
+            p2 = store.get_profile(GUILD_ID, 1, "User")
+        assert load.call_count == 1
+        assert p2.interaction_count == 1
+
+    def test_get_profile_returns_snapshot(self):
+        """返り値を書き換えてもキャッシュには影響しない"""
         store = UserProfileStore()
         p1 = store.get_profile(GUILD_ID, 1, "User")
         p1.interaction_count = 99
+        p1.tags.append("x")
         p2 = store.get_profile(GUILD_ID, 1, "User")
-        assert p2.interaction_count == 99
-        assert p1 is p2
+        assert p1 is not p2
+        assert p2.interaction_count == 0
+        assert p2.tags == []
 
 
 class TestUserProfileStoreLocalStorage:
@@ -903,4 +915,5 @@ class TestGuildScopedProfiles:
             return UserProfile(user_id=user_id, display_name="Second", guild_id=guild_id)
 
         with patch.object(store, "_load_profile", side_effect=_load):
-            assert store.get_profile(1, 500) is first
+            assert store.get_profile(1, 500).display_name == "First"
+        assert store._profiles[(1, 500)] is first

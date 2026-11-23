@@ -100,7 +100,7 @@ class UserProfile:
         return "\n".join(parts)
 
     def snapshot(self) -> "UserProfile":
-        """リストフィールドまで複製したコピーを返す（保存時のスナップショット用）"""
+        """リストフィールドまで複製したコピーを返す（保存・読み取り時のスナップショット用）"""
         return replace(
             self,
             channels_active=list(self.channels_active),
@@ -192,13 +192,42 @@ class UserProfileStore:
         永続化先の読み込みでブロックするため、イベントループからは
         ``asyncio.to_thread`` 経由で呼ぶこと（キャッシュ済みなら即時に返る）。
 
+        戻り値は ``self._lock`` 内で取ったスナップショットのため、ワーカースレッドでの
+        書き換えと並行しても、ある時点の一貫した状態を読める。スナップショットを
+        書き換えてもキャッシュには反映されない（更新は ``record_message`` 等を使う）。
+
         Args:
             guild_id: ギルドID
             user_id: DiscordユーザーID
             display_name: 新規作成時の表示名
 
         Returns:
-            プロファイル
+            プロファイルのスナップショット
+        """
+        profile = self._get_or_load_profile(guild_id, user_id, display_name)
+        with self._lock:
+            return profile.snapshot()
+
+    def get_cached_profile(self, guild_id: int, user_id: int) -> UserProfile | None:
+        """キャッシュ済みプロファイルのスナップショットを返す（I/O は行わない）"""
+        with self._lock:
+            profile = self._profiles.get((guild_id, user_id))
+            return profile.snapshot() if profile is not None else None
+
+    def _get_or_load_profile(
+        self, guild_id: int, user_id: int, display_name: str
+    ) -> UserProfile:
+        """キャッシュ上の生のプロファイルを返す（なければ読み込み or 新規作成）
+
+        戻り値の読み書きは必ず ``self._lock`` 内で行うこと。
+
+        Args:
+            guild_id: ギルドID
+            user_id: DiscordユーザーID
+            display_name: 新規作成時の表示名
+
+        Returns:
+            キャッシュ上のプロファイル（読み込み失敗時は未キャッシュの一時プロファイル）
         """
         key = (guild_id, user_id)
         with self._lock:
@@ -230,11 +259,6 @@ class UserProfileStore:
             self._load_backoff.reset(key)
             return self._profiles.setdefault(key, profile)
 
-    def get_cached_profile(self, guild_id: int, user_id: int) -> UserProfile | None:
-        """キャッシュ済みのプロファイルを返す（I/O は行わない）"""
-        with self._lock:
-            return self._profiles.get((guild_id, user_id))
-
     def record_message(
         self, guild_id: int, user_id: int, channel_id: int, display_name: str
     ) -> None:
@@ -246,8 +270,8 @@ class UserProfileStore:
             channel_id: メッセージが投稿されたチャンネルID
             display_name: ユーザーの表示名
         """
-        # get_profile は I/O を伴うことがあるのでロック外で呼ぶ
-        profile = self.get_profile(guild_id, user_id, display_name)
+        # 読み込みは I/O を伴うことがあるのでロック外で呼ぶ
+        profile = self._get_or_load_profile(guild_id, user_id, display_name)
         with self._lock:
             profile.interaction_count += 1
             profile.display_name = display_name

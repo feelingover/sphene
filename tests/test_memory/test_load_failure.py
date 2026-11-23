@@ -195,7 +195,7 @@ class TestUserProfileLoadFailure:
 
         clock.now = 30
         assert store.get_profile(1, 10, "user").nickname == "あだ名"
-        assert store.get_cached_profile(1, 10) is stored
+        assert store._profiles[(1, 10)] is stored
 
     @patch("memory.user_profile.config")
     def test_legacy_load_failure_is_also_treated_as_failure(self, mock_config: MagicMock) -> None:
