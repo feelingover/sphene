@@ -13,6 +13,7 @@ import config
 from ai.client import get_genai_client, get_light_thinking_config, get_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
+from memory.backoff import FailureBackoff
 from memory.fact_store import Fact
 from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
 from memory.short_term import ChannelMessage
@@ -166,6 +167,9 @@ class ReflectionEngine:
     def __init__(self) -> None:
         self._running: set[int] = set()
         self._lock = threading.Lock()
+        self._backoff = FailureBackoff(
+            config.MEMORY_LLM_BACKOFF_BASE_SECONDS, config.MEMORY_LLM_BACKOFF_MAX_SECONDS
+        )
 
     def maybe_reflect(
         self, channel_id: int, recent_messages: list[ChannelMessage]
@@ -181,6 +185,10 @@ class ReflectionEngine:
                 f"反省会スキップ（メッセージ不足）: channel_id={channel_id}, "
                 f"count={len(recent_messages)}, min={config.REFLECTION_MIN_MESSAGES}"
             )
+            return
+
+        if self._backoff.is_blocked(channel_id):
+            logger.debug(f"反省会スキップ（失敗後のバックオフ中）: channel_id={channel_id}")
             return
 
         with self._lock:
@@ -203,19 +211,27 @@ class ReflectionEngine:
     async def _run_reflect(
         self, channel_id: int, messages: list[ChannelMessage]
     ) -> None:
-        """asyncio.to_thread で _call_reflection_llm を実行し、結果を _apply_facts に渡す"""
+        """反省会LLMを実行してファクトを保存し、成否に応じてバックオフを更新する
+
+        失敗（LLM呼び出し失敗・有効なファクトが0件）時はバックオフし、
+        REFLECTION_MAX_FAILURES 回連続で失敗したメッセージ群は諦めてチェックポイントを進める。
+        ユーザープロファイルの更新はチェックポイントが進んだ（メッセージ群の処理が
+        確定した）場合のみ行い、再試行のたびに同じ会話で更新しないようにする。
+        """
         try:
             raw_facts = await asyncio.to_thread(self._call_reflection_llm, messages)
-            if raw_facts is not None:
-                await self._apply_facts(channel_id, raw_facts, messages)
+            completed = raw_facts is not None and await self._apply_facts(
+                channel_id, raw_facts, messages
+            )
+            if completed:
+                self._backoff.reset(channel_id)
                 logger.info(
-                    f"反省会完了: channel_id={channel_id}, "
-                    f"facts={len(raw_facts)}"
+                    f"反省会完了: channel_id={channel_id}, facts={len(raw_facts or [])}"
                 )
             else:
-                logger.warning(f"反省会結果が空: channel_id={channel_id}")
+                completed = self._handle_reflection_failure(channel_id, messages)
 
-            if config.LIVING_MEMORY_ENABLED:
+            if completed and config.LIVING_MEMORY_ENABLED:
                 await asyncio.to_thread(self._call_user_profile_llm, messages)
         except Exception as e:
             logger.error(
@@ -224,6 +240,33 @@ class ReflectionEngine:
         finally:
             with self._lock:
                 self._running.discard(channel_id)
+
+    def _handle_reflection_failure(
+        self, channel_id: int, messages: list[ChannelMessage]
+    ) -> bool:
+        """反省会の失敗を記録し、上限に達したらメッセージ群を諦める
+
+        Returns:
+            メッセージ群を諦めてチェックポイントを進めた場合True
+        """
+        from memory.short_term import get_channel_buffer
+
+        failures = self._backoff.record_failure(channel_id)
+        if failures < config.REFLECTION_MAX_FAILURES or not messages:
+            logger.warning(
+                f"反省会失敗（バックオフ）: channel_id={channel_id}, "
+                f"連続失敗={failures}/{config.REFLECTION_MAX_FAILURES}"
+            )
+            return False
+
+        logger.warning(
+            f"反省会が{failures}回連続で失敗したため対象メッセージを破棄: "
+            f"channel_id={channel_id}, messages={len(messages)}"
+        )
+        until = max(msg.timestamp for msg in messages)
+        get_channel_buffer().mark_reflected(channel_id, until=until)
+        self._backoff.reset(channel_id)
+        return True
 
     def _call_reflection_llm(
         self, messages: list[ChannelMessage]
@@ -275,7 +318,7 @@ class ReflectionEngine:
         channel_id: int,
         raw_facts: list[dict],
         messages: list[ChannelMessage],
-    ) -> None:
+    ) -> bool:
         """LLM結果を検証してFactに変換し、FactStore.add_fact()で保存する
 
         有効なファクトを1件以上処理できた場合（重複でスキップした場合を含む）、
@@ -286,6 +329,10 @@ class ReflectionEngine:
             channel_id: チャンネルID
             raw_facts: LLMが返したJSON配列
             messages: 反省会の対象メッセージ
+
+        Returns:
+            チェックポイントを進めた（反省会として成功した）場合True。
+            LLMが不正な要素しか返さなかった場合はFalse
         """
         from ai.client import generate_embedding
         from memory.fact_store import get_fact_store
@@ -320,12 +367,19 @@ class ReflectionEngine:
         if saved_count > 0:
             await asyncio.to_thread(store.persist_channel, channel_id)
 
-        if (parsed or len(raw_facts) == 0) and messages:
-            until = max(msg.timestamp for msg in messages)
-            get_channel_buffer().mark_reflected(channel_id, until=until)
         logger.debug(
             f"ファクト反映: channel_id={channel_id}, valid={len(parsed)}, saved={saved_count}"
         )
+        if not parsed and raw_facts:
+            logger.warning(
+                f"反省会LLMが有効なファクトを返さなかった: channel_id={channel_id}, "
+                f"items={len(raw_facts)}"
+            )
+            return False
+        if messages:
+            until = max(msg.timestamp for msg in messages)
+            get_channel_buffer().mark_reflected(channel_id, until=until)
+        return True
 
     def _call_user_profile_llm(self, messages: list[ChannelMessage]) -> None:
         """ユーザープロファイル専用LLMコール。会話からユーザー特性を抽出してストアに反映

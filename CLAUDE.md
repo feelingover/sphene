@@ -36,6 +36,7 @@ memory/                   # Living Memory + VANGUARD judge (docs/living-memory.m
   channel_context.py, summarizer.py   # Rolling summary
   user_profile.py, fact_store.py      # Long-term memory
   reflection.py           # Fact extraction (反省会)
+  backoff.py              # Failure backoff for summary/reflection LLM
   judge.py, llm_judge.py  # Autonomous response judge
 xivapi/
   client.py               # XIVAPI v2 search

@@ -35,6 +35,7 @@ applyTo: "**"
 - ツール呼び出しの堅牢化（2026/11）: ツールスキーマの enum が変換時に落ちていた不具合を修正（`craft_type` に enum 追加、`search_game_content` にレベル範囲を公開）、function_response を function_call と1対1にし id を返却・非dict結果を包む、ツール結果の文字数上限（`MAX_TOOL_RESULT_CHARS`）、完了した過去ターンからツール中間データと画像を除去
 - XIVAPI クライアントの強化（2026/11）: DQL 文字列から引用符・バックスラッシュ・制御文字を除去してクエリ注入を防止、レベル値を整数に正規化（`600.0` 等）、httpx.Client をプロセス共有して接続を再利用
 - Discord イベントのガード（2026/11）: LLM Judge 経由の react_only で二重リアクションになる不具合を修正（リアクション済みならクールダウン記録のみ）、国旗リアクション翻訳の重複抑止（`TRANSLATION_DEDUP_SECONDS`）、呼びかけのレート制限（`utils/rate_limit.py`、ユーザー/チャンネル単位）
+- 記憶系LLMの耐障害性（2026/11）: 要約・反省会の失敗時に指数バックオフ（`memory/backoff.py`、`MEMORY_LLM_BACKOFF_*`）、反省会は `REFLECTION_MAX_FAILURES` 回連続失敗で対象メッセージを破棄・全件不正も失敗扱い・プロファイル更新はチェックポイント確定時のみ、要約JSONの型・長さ検証とサニタイズ
 
 ### リビングメモリー (Living Memory)
 - 短期記憶: チャンネルバッファ（dequeリングバッファ、TTL管理）
