@@ -47,6 +47,8 @@ applyTo: "**"
 - `MAX_TOOL_RESULT_CHARS`: ツール結果1件あたりの最大文字数（JSON化後、デフォルト: 10000）
 - `MENTION_RATE_LIMIT_PER_USER` / `MENTION_RATE_LIMIT_PER_CHANNEL` / `MENTION_RATE_LIMIT_WINDOW_SECONDS`: 呼びかけのレート制限（デフォルト: 5 / 20 回 / 60秒、0で無効）
 - `TRANSLATION_DEDUP_SECONDS`: 国旗リアクション翻訳の重複抑止期間（デフォルト: 3600）
+- `TRANSLATION_RATE_LIMIT_PER_USER` / `TRANSLATION_RATE_LIMIT_PER_CHANNEL` / `TRANSLATION_RATE_LIMIT_WINDOW_SECONDS`: 国旗リアクション翻訳のレート制限（リアクションしたユーザー単位、デフォルト: 5 / 15 回 / 60秒、0で無効）
+- `REACTION_ERROR_NOTIFY_COOLDOWN_SECONDS`: リアクション処理エラーのチャンネル通知の最短間隔（デフォルト: 300）
 - `GENAI_REQUEST_TIMEOUT_SECONDS`: Gen AI API 1リクエストのタイムアウト秒（デフォルト: 300。混雑時は長く待つと正確な応答が返るため長め）
 - `GENAI_MAIN_MAX_ATTEMPTS` / `GENAI_MAIN_TIMEOUT_RETRIES` / `GENAI_MAIN_TOTAL_TIMEOUT_SECONDS`: 会話応答・要約・反省会のリトライ設定（デフォルト: 5回 / タイムアウト再試行1回 / 全体600秒。会話応答はツールループ全体で予算を共有）
 - `GENAI_LIGHT_REQUEST_TIMEOUT_SECONDS` / `GENAI_LIGHT_MAX_ATTEMPTS` / `GENAI_LIGHT_TIMEOUT_RETRIES` / `GENAI_LIGHT_TOTAL_TIMEOUT_SECONDS`: Router・LLM Judge・相槌のリトライ設定（デフォルト: 30秒 / 2回 / 0回 / 45秒）

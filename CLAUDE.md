@@ -86,6 +86,12 @@ storage/                  # Local file storage (prompts, configs)
   - テスト結果（パス件数）
   - ドキュメント更新の有無
 
+## PR Merge
+
+- マージは必ずスカッシュマージ（`gh pr merge <PR番号> --squash`）
+- マージ後は `git checkout main && git pull` でmainに戻し、ローカルの作業ブランチを削除する（`git branch -D <branch>`）
+- リモートブランチはマージ時に自動削除されるため手動削除は不要
+
 ## Code Review
 
 - レビュー指摘を出す前に、実際のコード構造と一致しているか確認する（ループの種類、データフローのパターンなど）。実際のコードを引用してから修正案を提示すること
