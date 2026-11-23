@@ -19,6 +19,7 @@ from bot.commands import (
     handle_command_error,
     _format_channel_info,
 )
+from tests.test_bot.interaction_helpers import attach_response_state
 
 
 class TestCommandsExtensive:
@@ -35,6 +36,7 @@ class TestCommandsExtensive:
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         mock_member = MagicMock(spec=discord.Member)
         mock_member.guild_permissions = MagicMock()
         mock_member.guild_permissions.administrator = True
@@ -46,8 +48,8 @@ class TestCommandsExtensive:
             await select.callback(interaction)
         
         mock_config.set_behavior.assert_called_once_with("allow")
-        interaction.response.send_message.assert_called_once()
-        assert "限定モード" in interaction.response.send_message.call_args[0][0]
+        interaction.followup.send.assert_called_once()
+        assert "限定モード" in interaction.followup.send.call_args[0][0]
 
     @pytest.mark.asyncio
     @patch("bot.commands.config_manager")
@@ -60,6 +62,7 @@ class TestCommandsExtensive:
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         mock_member = MagicMock(spec=discord.Member)
         mock_member.guild_permissions = MagicMock()
         mock_member.guild_permissions.administrator = True
@@ -71,8 +74,8 @@ class TestCommandsExtensive:
             await select.callback(interaction)
         
         mock_config.set_translation_enabled.assert_called_once_with(True)
-        interaction.response.send_message.assert_called_once()
-        assert "有効" in interaction.response.send_message.call_args[0][0]
+        interaction.followup.send.assert_called_once()
+        assert "有効" in interaction.followup.send.call_args[0][0]
 
     @pytest.mark.asyncio
     @patch("bot.commands.config_manager")
@@ -85,6 +88,7 @@ class TestCommandsExtensive:
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         mock_member = MagicMock(spec=discord.Member)
         mock_member.guild_permissions = MagicMock()
         mock_member.guild_permissions.administrator = True
@@ -97,8 +101,8 @@ class TestCommandsExtensive:
         await view.confirm.callback(interaction)
         
         mock_config.clear_channels.assert_called_once()
-        interaction.response.send_message.assert_called_once()
-        assert "クリアしました" in interaction.response.send_message.call_args[0][0]
+        interaction.followup.send.assert_called_once()
+        assert "クリアしました" in interaction.followup.send.call_args[0][0]
 
     @pytest.mark.asyncio
     @patch("bot.commands.config_manager")
@@ -107,6 +111,7 @@ class TestCommandsExtensive:
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         mock_member = MagicMock(spec=discord.Member)
         mock_member.guild_permissions = MagicMock()
         mock_member.guild_permissions.administrator = False
@@ -129,6 +134,7 @@ class TestCommandsExtensive:
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.user = MagicMock()  # discord.Member ではない
 
         select = ModeSelect(guild_id=123)
@@ -148,6 +154,7 @@ class TestCommandsExtensive:
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         mock_member = MagicMock(spec=discord.Member)
         mock_member.guild_permissions = MagicMock()
         mock_member.guild_permissions.administrator = False
@@ -170,6 +177,7 @@ class TestCommandsExtensive:
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.user = MagicMock()  # discord.Member ではない
 
         select = TranslationSelect(guild_id=123)
@@ -189,6 +197,7 @@ class TestCommandsExtensive:
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         mock_member = MagicMock(spec=discord.Member)
         mock_member.guild_permissions = MagicMock()
         mock_member.guild_permissions.administrator = False
@@ -209,6 +218,7 @@ class TestCommandsExtensive:
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.user = MagicMock()  # discord.Member ではない
 
         view = ClearConfirmView(guild_id=123)
@@ -240,8 +250,8 @@ class TestCommandsExtensive:
         # 2ページ目を表示
         await cmd_list_channels(bot, interaction, page=2)
         
-        interaction.response.send_message.assert_called_once()
-        content = interaction.response.send_message.call_args[0][0]
+        interaction.followup.send.assert_called_once()
+        content = interaction.followup.send.call_args[0][0]
         assert "ページ: 2/2" in content
         assert "Ch10" in content
         assert "Ch14" in content
@@ -262,8 +272,8 @@ class TestCommandsExtensive:
         
         await cmd_remove_channel(interaction)
         
-        interaction.response.send_message.assert_called_once()
-        assert "削除に失敗しました" in interaction.response.send_message.call_args[0][0]
+        interaction.followup.send.assert_called_once()
+        assert "削除に失敗しました" in interaction.followup.send.call_args[0][0]
 
     def test_format_channel_info_edge_cases(self):
         """チャンネル情報の整形エッジケーステスト"""

@@ -22,6 +22,13 @@ WORKDIR /app/
 COPY --from=builder /app/.venv /app/.venv
 COPY --link . /app/
 
+# STORAGE_TYPE=local のデータ（チャンネル設定・記憶ストア）は /app/storage に書き込む。
+# ソースは root 所有のまま、書き込み先だけ実行ユーザーの所有にする。
+# .dockerignore で storage/ はイメージに含めないため、ここで作成する
+RUN mkdir -p /app/storage && chown ${USER_ID}:${GROUP_ID} /app/storage
+# 再起動・再作成でデータが消えないよう、ボリュームのマウント先として宣言する
+VOLUME ["/app/storage"]
+
 ENV PATH="/app/.venv/bin:$PATH"
 
 USER ${USER_NAME}

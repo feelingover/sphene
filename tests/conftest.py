@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from discord import Client, Interaction
 from pytest import MonkeyPatch
+from tests.test_bot.interaction_helpers import attach_response_state
 
 
 @pytest.fixture()
@@ -46,10 +47,8 @@ def mock_discord_interaction() -> MagicMock:
     interaction = MagicMock(spec=Interaction)
     # レスポンスメソッドを非同期モックに
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.is_done = MagicMock(return_value=False)
     interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
+    attach_response_state(interaction)
     interaction.user.id = 12345
     return interaction
 

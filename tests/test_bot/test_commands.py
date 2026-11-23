@@ -49,10 +49,10 @@ async def test_cmd_list_channels(
         mock_config_manager.get_config.assert_called_once_with(54321)
 
         # レスポンスが送信されたかチェック
-        mock_discord_interaction.response.send_message.assert_called_once()
+        mock_discord_interaction.followup.send.assert_called_once()
 
         # レスポンスに必要な情報が含まれているかチェック
-        args = mock_discord_interaction.response.send_message.call_args[0][0]
+        args = mock_discord_interaction.followup.send.call_args[0][0]
         assert "拒否チャンネルリスト" in args
         assert "123456789" in args
 
@@ -88,7 +88,7 @@ async def test_cmd_list_channels_no_restrictions(
         mock_config_manager.get_config.assert_called_once_with(54321)
 
         # レスポンスに「全てのチャンネルで発言可能」が含まれているか
-        args = mock_discord_interaction.response.send_message.call_args[0][0]
+        args = mock_discord_interaction.followup.send.call_args[0][0]
         assert "全てのチャンネルで発言可能" in args
 
 
@@ -133,7 +133,7 @@ async def test_handle_command_error_after_response_uses_followup(
     mock_discord_interaction: MagicMock,
 ) -> None:
     """応答済みのインタラクションでは followup で通知すること"""
-    mock_discord_interaction.response.is_done.return_value = True
+    await mock_discord_interaction.response.defer()  # 応答済み状態にする
     error = app_commands.AppCommandError("内部詳細")
 
     await handle_command_error(mock_discord_interaction, error)

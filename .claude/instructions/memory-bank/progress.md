@@ -37,6 +37,7 @@ applyTo: "**"
 - Discord イベントのガード（2026/11）: LLM Judge 経由の react_only で二重リアクションになる不具合を修正（リアクション済みならクールダウン記録のみ）、国旗リアクション翻訳の重複抑止（`TRANSLATION_DEDUP_SECONDS`）、呼びかけのレート制限（`utils/rate_limit.py`、ユーザー/チャンネル単位）
 - 記憶系LLMの耐障害性（2026/11）: 要約・反省会の失敗時に指数バックオフ（`memory/backoff.py`、`MEMORY_LLM_BACKOFF_*`）、反省会は `REFLECTION_MAX_FAILURES` 回連続失敗で対象メッセージを破棄・全件不正も失敗扱い・プロファイル更新はチェックポイント確定時のみ、要約JSONの型・長さ検証とサニタイズ
 - 記憶ストアの永続化コスト削減（2026/11）: ファクトストア・ユーザープロファイルの `persist_all` を dirty なキーのみに限定（失敗時は再試行）、Firestore ドキュメントサイズの見積もり（`estimate_document_size`）とファクト／アーカイブの1MiB上限ガード、アーカイブから embedding を除去
+- 運用系の修正（2026/11）: スラッシュコマンド・ビューのコールバックで I/O 前に `defer(thinking=True)`（3秒の応答期限切れ対策）、Dockerfile で `/app/storage` を実行ユーザー所有で作成し `VOLUME` 宣言・README にボリュームマウント手順
 
 ### リビングメモリー (Living Memory)
 - 短期記憶: チャンネルバッファ（dequeリングバッファ、TTL管理）

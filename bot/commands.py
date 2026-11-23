@@ -12,6 +12,37 @@ from utils.channel_config import ChannelConfigManager
 config_manager = ChannelConfigManager.get_instance()
 
 
+async def _defer(interaction: discord.Interaction) -> None:
+    """設定の読み書き (Firestore 等) の前に応答を保留し、3秒の応答期限切れを防ぐ
+
+    Args:
+        interaction: インタラクションオブジェクト
+    """
+    if not interaction.response.is_done():
+        await interaction.response.defer(thinking=True)
+
+
+async def _reply(
+    interaction: discord.Interaction, content: str, view: ui.View | None = None
+) -> None:
+    """インタラクションに返信する（defer 済みなら followup で送る）
+
+    Args:
+        interaction: インタラクションオブジェクト
+        content: 送信する本文
+        view: 添付するビュー（任意）
+    """
+    if interaction.response.is_done():
+        if view is None:
+            await interaction.followup.send(content)
+        else:
+            await interaction.followup.send(content, view=view)
+    elif view is None:
+        await interaction.response.send_message(content)
+    else:
+        await interaction.response.send_message(content, view=view)
+
+
 class ModeSelect(ui.Select):
     """評価モード選択ドロップダウン"""
 
@@ -41,6 +72,7 @@ class ModeSelect(ui.Select):
         if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
             return
+        await _defer(interaction)
         # 保存済みのguild_idを使用
         channel_config = await asyncio.to_thread(config_manager.get_config, self.guild_id)
 
@@ -51,12 +83,13 @@ class ModeSelect(ui.Select):
             # 設定保存後にリストを再読み込み
             await asyncio.to_thread(channel_config.load_config)
             mode_name = "限定モード" if selected_mode == "allow" else "全体モード"
-            await interaction.response.send_message(
+            await _reply(
+                interaction,
                 f"✅ 評価モードを「{mode_name}」に変更しました！\n"
                 f"現在のリストは「{channel_config.get_list_display_name()}」として扱われます"
             )
         else:
-            await interaction.response.send_message("❌ 評価モードの変更に失敗しました")
+            await _reply(interaction, "❌ 評価モードの変更に失敗しました")
 
 
 class TranslationSelect(ui.Select):
@@ -88,6 +121,7 @@ class TranslationSelect(ui.Select):
         if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
             return
+        await _defer(interaction)
         # 保存済みのguild_idを使用
         channel_config = await asyncio.to_thread(config_manager.get_config, self.guild_id)
 
@@ -100,11 +134,13 @@ class TranslationSelect(ui.Select):
             # 設定保存後にリストを再読み込み
             await asyncio.to_thread(channel_config.load_config)
             status = "有効" if selected_value else "無効"
-            await interaction.response.send_message(
+            await _reply(
+                interaction,
                 f"✅ 翻訳機能を「{status}」に設定しました！"
             )
         else:
-            await interaction.response.send_message(
+            await _reply(
+                interaction,
                 "❌ 翻訳機能の設定変更に失敗しました"
             )
 
@@ -140,6 +176,7 @@ class ClearConfirmView(ui.View):
         if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
             return
+        await _defer(interaction)
         # 保存済みのguild_idを使用
         channel_config = await asyncio.to_thread(config_manager.get_config, self.guild_id)
 
@@ -148,18 +185,19 @@ class ClearConfirmView(ui.View):
         if success:
             # 設定保存後にリストを再読み込み
             await asyncio.to_thread(channel_config.load_config)
-            await interaction.response.send_message(
+            await _reply(
+                interaction,
                 f"✅ {channel_config.get_list_display_name()}をクリアしました！"
             )
         else:
-            await interaction.response.send_message("❌ リストのクリアに失敗しました")
+            await _reply(interaction, "❌ リストのクリアに失敗しました")
 
     @discord.ui.button(label="いいえ", style=discord.ButtonStyle.secondary)
     async def cancel(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         """キャンセルボタンのコールバック"""
-        await interaction.response.send_message("✅ キャンセルしました")
+        await _reply(interaction, "✅ キャンセルしました")
 
 
 async def cmd_mode(interaction: discord.Interaction) -> None:
@@ -169,20 +207,23 @@ async def cmd_mode(interaction: discord.Interaction) -> None:
         interaction: インタラクションオブジェクト
     """
     if not interaction.guild:
-        await interaction.response.send_message(
+        await _reply(
+            interaction,
             "❌ このコマンドはサーバー内でのみ使用できます"
         )
         return
 
-    # ギルド固有の設定を取得
+    # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
+    await _defer(interaction)
     channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     # 現在のモード情報表示
     current_mode = channel_config.get_mode_display_name()
     list_type = channel_config.get_list_display_name()
 
-    await interaction.response.send_message(
+    await _reply(
+        interaction,
         f"🔄 **現在の評価モード**: {current_mode}\n"
         f"📋 **現在のリスト**: {list_type}\n\n"
         "👇 変更する場合は、下のメニューから選択してください",
@@ -245,13 +286,15 @@ async def cmd_list_channels(
         page: 表示するページ番号（1始まり）
     """
     if not interaction.guild:
-        await interaction.response.send_message(
+        await _reply(
+            interaction,
             "❌ このコマンドはサーバー内でのみ使用できます"
         )
         return
 
-    # ギルド固有の設定を取得
+    # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
+    await _defer(interaction)
     channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     # 現在のモードを取得
@@ -294,7 +337,7 @@ async def cmd_list_channels(
         channel_info += f"\nページ: {page}/{total_pages}"
 
     # メッセージ送信
-    await interaction.response.send_message(channel_info)
+    await _reply(interaction, channel_info)
 
 
 async def cmd_add_channel(interaction: discord.Interaction) -> None:
@@ -304,18 +347,21 @@ async def cmd_add_channel(interaction: discord.Interaction) -> None:
         interaction: インタラクションオブジェクト
     """
     if not interaction.guild:
-        await interaction.response.send_message(
+        await _reply(
+            interaction,
             "❌ このコマンドはサーバー内でのみ使用できます"
         )
         return
 
-    # ギルド固有の設定を取得
+    # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
+    await _defer(interaction)
     channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     channel = interaction.channel
     if channel is None:
-        await interaction.response.send_message(
+        await _reply(
+            interaction,
             "❌ チャンネル情報を取得できませんでした"
         )
         return
@@ -339,11 +385,12 @@ async def cmd_add_channel(interaction: discord.Interaction) -> None:
     if success:
         # 設定保存後にリストを再読み込み
         await asyncio.to_thread(channel_config.load_config)
-        await interaction.response.send_message(
+        await _reply(
+            interaction,
             f"✅ チャンネル「{channel_name}」を{list_name}に追加しました！"
         )
     else:
-        await interaction.response.send_message("❌ チャンネルの追加に失敗しました")
+        await _reply(interaction, "❌ チャンネルの追加に失敗しました")
 
 
 async def cmd_remove_channel(interaction: discord.Interaction) -> None:
@@ -353,18 +400,21 @@ async def cmd_remove_channel(interaction: discord.Interaction) -> None:
         interaction: インタラクションオブジェクト
     """
     if not interaction.guild:
-        await interaction.response.send_message(
+        await _reply(
+            interaction,
             "❌ このコマンドはサーバー内でのみ使用できます"
         )
         return
 
-    # ギルド固有の設定を取得
+    # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
+    await _defer(interaction)
     channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     channel = interaction.channel
     if channel is None:
-        await interaction.response.send_message(
+        await _reply(
+            interaction,
             "❌ チャンネル情報を取得できませんでした"
         )
         return
@@ -386,16 +436,18 @@ async def cmd_remove_channel(interaction: discord.Interaction) -> None:
         # チャンネルがリストにまだ存在するかチェック
         if channel_config.is_channel_in_list(channel_id):
             # 削除に失敗している場合（まだリストに存在する）
-            await interaction.response.send_message(
+            await _reply(
+                interaction,
                 f"❌ チャンネル「{channel_name}」の削除に失敗しました（まだ{list_name}に含まれています）"
             )
         else:
             # 削除成功（もうリストに存在しない）
-            await interaction.response.send_message(
+            await _reply(
+                interaction,
                 f"✅ チャンネル「{channel_name}」を{list_name}から削除しました！"
             )
     else:
-        await interaction.response.send_message("❌ チャンネルの削除に失敗しました")
+        await _reply(interaction, "❌ チャンネルの削除に失敗しました")
 
 
 async def cmd_clear_channels(interaction: discord.Interaction) -> None:
@@ -405,18 +457,21 @@ async def cmd_clear_channels(interaction: discord.Interaction) -> None:
         interaction: インタラクションオブジェクト
     """
     if not interaction.guild:
-        await interaction.response.send_message(
+        await _reply(
+            interaction,
             "❌ このコマンドはサーバー内でのみ使用できます"
         )
         return
 
-    # ギルド固有の設定を取得
+    # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
+    await _defer(interaction)
     channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     list_name = channel_config.get_list_display_name()
 
-    await interaction.response.send_message(
+    await _reply(
+        interaction,
         f"❓ {list_name}をクリアしますか？\n" f"この操作は元に戻せません。",
         view=ClearConfirmView(guild_id),
     )
@@ -430,13 +485,15 @@ async def cmd_translation(interaction: discord.Interaction) -> None:
         interaction: インタラクションオブジェクト
     """
     if not interaction.guild:
-        await interaction.response.send_message(
+        await _reply(
+            interaction,
             "❌ このコマンドはサーバー内でのみ使用できます"
         )
         return
 
-    # ギルド固有の設定を取得
+    # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
+    await _defer(interaction)
     channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
 
     # 現在の翻訳機能状態を取得
@@ -449,7 +506,8 @@ async def cmd_translation(interaction: discord.Interaction) -> None:
         "🇯🇵 日本国旗リアクションで日本語翻訳\n"
     )
 
-    await interaction.response.send_message(
+    await _reply(
+        interaction,
         f"🌐 **翻訳機能**: 現在「{status}」です\n\n"
         f"{help_text}\n"
         "👇 設定を変更する場合は、下のメニューから選択してください",
