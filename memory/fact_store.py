@@ -7,7 +7,7 @@ import re
 import threading
 import unicodedata
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -83,6 +83,14 @@ class Fact:
             "access_count": self.access_count,
             "last_accessed_at": self.last_accessed_at.isoformat() if self.last_accessed_at else None,
         }
+
+    def snapshot(self) -> "Fact":
+        """保存時のスナップショット用コピーを返す
+
+        search で書き換わる access_count / last_accessed_at を固定するためのもの。
+        keywords などのリストは作成後に書き換えないため共有する。
+        """
+        return replace(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Fact":
@@ -355,7 +363,8 @@ class FactStore:
                     # 書き込む内容がないので dirty も外す（ファクト追加時に再び立つ）
                     self._dirty.discard(channel_id)
                     return None
-                facts = list(self._facts[channel_id])
+                # search による access_count 等の書き換えと排他にするため、ロック内で複製する
+                facts = [f.snapshot() for f in self._facts[channel_id]]
                 self._dirty.discard(channel_id)
 
             if self._save_channel(channel_id, facts):
@@ -526,7 +535,8 @@ class FactStore:
 
         for channel_id in channel_ids:
             with self._lock:
-                facts = list(self._facts.get(channel_id, []))
+                # スコア計算・アーカイブ中に search が access_count を書き換えないよう複製する
+                facts = [f.snapshot() for f in self._facts.get(channel_id, [])]
 
             remove: list[tuple[float, Fact]] = []
             for fact in facts:

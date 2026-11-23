@@ -3,7 +3,7 @@
 import json
 import os
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 import config
@@ -99,6 +99,16 @@ class UserProfile:
             parts.append(f"直近の感情状態: {self.emotional_state_last}")
         return "\n".join(parts)
 
+    def snapshot(self) -> "UserProfile":
+        """リストフィールドまで複製したコピーを返す（保存時のスナップショット用）"""
+        return replace(
+            self,
+            channels_active=list(self.channels_active),
+            last_topic=list(self.last_topic),
+            tags=list(self.tags),
+            notable_facts=list(self.notable_facts),
+        )
+
     def to_dict(self) -> dict:
         """シリアライゼーション用の辞書を返す"""
         return {
@@ -174,10 +184,6 @@ class UserProfileStore:
         # ロックは _profiles と同じだけ増える。_profiles に追い出し処理を入れるときは一緒に掃除する。
         self._save_locks: KeyedLock[ProfileKey] = KeyedLock()
 
-    def _mark_dirty(self, guild_id: int, user_id: int) -> None:
-        with self._lock:
-            self._dirty.add((guild_id, user_id))
-
     def get_profile(
         self, guild_id: int, user_id: int, display_name: str = ""
     ) -> UserProfile:
@@ -240,17 +246,16 @@ class UserProfileStore:
             channel_id: メッセージが投稿されたチャンネルID
             display_name: ユーザーの表示名
         """
+        # get_profile は I/O を伴うことがあるのでロック外で呼ぶ
         profile = self.get_profile(guild_id, user_id, display_name)
-        profile.interaction_count += 1
-        profile.display_name = display_name
-        profile.last_interaction = datetime.now(timezone.utc)
-        if channel_id in profile.channels_active:
-            profile.channels_active.remove(channel_id)
-        profile.channels_active.append(channel_id)
-        limit = config.CHANNELS_ACTIVE_LIMIT
-        if len(profile.channels_active) > limit:
-            profile.channels_active = profile.channels_active[-limit:]
-        self._mark_dirty(guild_id, user_id)
+        with self._lock:
+            profile.interaction_count += 1
+            profile.display_name = display_name
+            profile.last_interaction = datetime.now(timezone.utc)
+            channels = [c for c in profile.channels_active if c != channel_id]
+            channels.append(channel_id)
+            profile.channels_active = channels[-config.CHANNELS_ACTIVE_LIMIT:]
+            self._dirty.add((guild_id, user_id))
 
     def record_bot_mention(self, guild_id: int, user_id: int) -> None:
         """ボットへのメンション時にカウンタを更新する
@@ -259,10 +264,12 @@ class UserProfileStore:
             guild_id: ギルドID
             user_id: DiscordユーザーID
         """
-        profile = self.get_cached_profile(guild_id, user_id)
-        if profile:
-            profile.mentioned_bot_count += 1
-            self._mark_dirty(guild_id, user_id)
+        key = (guild_id, user_id)
+        with self._lock:
+            profile = self._profiles.get(key)
+            if profile:
+                profile.mentioned_bot_count += 1
+                self._dirty.add(key)
 
     def update_last_topic(
         self, guild_id: int, user_id: int, topic_keywords: list[str]
@@ -274,10 +281,14 @@ class UserProfileStore:
             user_id: DiscordユーザーID
             topic_keywords: チャンネルコンテキストから取得した話題キーワード
         """
-        profile = self.get_cached_profile(guild_id, user_id)
-        if profile and topic_keywords:
-            profile.last_topic = list(topic_keywords)
-            self._mark_dirty(guild_id, user_id)
+        if not topic_keywords:
+            return
+        key = (guild_id, user_id)
+        with self._lock:
+            profile = self._profiles.get(key)
+            if profile:
+                profile.last_topic = list(topic_keywords)
+                self._dirty.add(key)
 
     def update_from_reflection(
         self, guild_id: int, user_id: int, extracted: dict
@@ -289,52 +300,32 @@ class UserProfileStore:
             user_id: DiscordユーザーID
             extracted: LLMが抽出した辞書（tags, notable_facts, personality_notes 等）
         """
-        profile = self.get_cached_profile(guild_id, user_id)
-        if not profile:
-            return
-        for tag in sanitize_llm_text_list(
+        # 検証・正規化はロック外で済ませ、反映だけをロック内で行う
+        tags = sanitize_llm_text_list(
             extracted.get("tags"), _MAX_TAG_LENGTH, config.USER_PROFILE_TAGS_LIMIT
-        ):
-            if tag not in profile.tags:
-                profile.tags.append(tag)
-        profile.tags = profile.tags[-config.USER_PROFILE_TAGS_LIMIT:]
-        for fact in sanitize_llm_text_list(
+        )
+        facts = sanitize_llm_text_list(
             extracted.get("notable_facts"),
             _MAX_FACT_LENGTH,
             config.USER_PROFILE_FACTS_LIMIT,
-        ):
-            if fact not in profile.notable_facts:
-                profile.notable_facts.append(fact)
-        profile.notable_facts = profile.notable_facts[-config.USER_PROFILE_FACTS_LIMIT:]
-        self._apply_reflection_scalars(profile, extracted)
-        self._mark_dirty(guild_id, user_id)
-
-    def _apply_reflection_scalars(self, profile: UserProfile, extracted: dict) -> None:
-        """反省会抽出結果のうち単一値のフィールドを検証してプロファイルに反映する
-
-        Args:
-            profile: 更新対象のプロファイル
-            extracted: LLMが抽出した辞書
-        """
-        notes = sanitize_llm_text(extracted.get("personality_notes"), _MAX_NOTE_LENGTH)
-        if notes:
-            profile.personality_notes = notes
-        summary = sanitize_llm_text(
-            extracted.get("last_conversation_summary"), _MAX_NOTE_LENGTH
         )
-        if summary:
-            profile.last_conversation_summary = summary
-        tone = sanitize_llm_text(extracted.get("preferred_tone"), _MAX_SHORT_LENGTH)
-        if tone in _ALLOWED_TONES:
-            profile.preferred_tone = tone
-        emotion = sanitize_llm_text(
-            extracted.get("emotional_state_last"), _MAX_SHORT_LENGTH
-        )
-        if emotion:
-            profile.emotional_state_last = emotion
-        nickname = sanitize_llm_text(extracted.get("nickname"), _MAX_NICKNAME_LENGTH)
-        if nickname:
-            self.update_nickname(profile.guild_id, profile.user_id, nickname)
+        scalars = _sanitize_reflection_scalars(extracted)
+        key = (guild_id, user_id)
+        with self._lock:
+            profile = self._profiles.get(key)
+            if not profile:
+                return
+            profile.tags = _merge_unique(
+                profile.tags, tags, config.USER_PROFILE_TAGS_LIMIT
+            )
+            profile.notable_facts = _merge_unique(
+                profile.notable_facts, facts, config.USER_PROFILE_FACTS_LIMIT
+            )
+            for name, value in scalars.items():
+                setattr(profile, name, value)
+            self._dirty.add(key)
+        if "nickname" in scalars:
+            _log_nickname_update(guild_id, user_id, scalars["nickname"])
 
     def update_nickname(self, guild_id: int, user_id: int, nickname: str) -> None:
         """ユーザーのニックネームを更新する
@@ -344,14 +335,14 @@ class UserProfileStore:
             user_id: DiscordユーザーID
             nickname: 設定するニックネーム
         """
-        profile = self.get_cached_profile(guild_id, user_id)
-        if profile:
+        key = (guild_id, user_id)
+        with self._lock:
+            profile = self._profiles.get(key)
+            if not profile:
+                return
             profile.nickname = nickname
-            self._mark_dirty(guild_id, user_id)
-            logger.info(
-                f"ニックネーム更新: guild_id={guild_id}, user_id={user_id}, "
-                f"nickname={nickname!r}"
-            )
+            self._dirty.add(key)
+        _log_nickname_update(guild_id, user_id, nickname)
 
     def persist_all(self) -> None:
         """変更のあったプロファイルだけを永続化する（定期タスク・反省会からワーカースレッドで呼ばれる）
@@ -386,10 +377,12 @@ class UserProfileStore:
                 self._dirty.discard(key)
                 # キャッシュにないキー（読み込み失敗中の一時プロファイル）は保存しない
                 profile = self._profiles.get(key)
-            if profile is None:
+                # 書き換えと排他にするため、スナップショットはロック内で取る
+                snapshot = profile.snapshot() if profile is not None else None
+            if snapshot is None:
                 return None
 
-            if self._save_profile(profile):
+            if self._save_profile(snapshot):
                 return True
             with self._lock:
                 self._dirty.add(key)
@@ -525,6 +518,51 @@ class UserProfileStore:
                 f"Firestoreへのプロファイル保存エラー: {e}", exc_info=True
             )
             return False
+
+
+def _merge_unique(current: list[str], additions: list[str], limit: int) -> list[str]:
+    """重複を除いて追記し、末尾 limit 件に切り詰めた新しいリストを返す"""
+    merged = list(current)
+    for item in additions:
+        if item not in merged:
+            merged.append(item)
+    return merged[-limit:]
+
+
+def _sanitize_reflection_scalars(extracted: dict) -> dict[str, str]:
+    """反省会抽出結果のうち単一値のフィールドを検証し、反映すべき値だけを返す
+
+    Args:
+        extracted: LLMが抽出した辞書
+
+    Returns:
+        {UserProfile のフィールド名: 値}（無効・空の値は含まない）
+    """
+    values: dict[str, str | None] = {
+        "personality_notes": sanitize_llm_text(
+            extracted.get("personality_notes"), _MAX_NOTE_LENGTH
+        ),
+        "last_conversation_summary": sanitize_llm_text(
+            extracted.get("last_conversation_summary"), _MAX_NOTE_LENGTH
+        ),
+        "emotional_state_last": sanitize_llm_text(
+            extracted.get("emotional_state_last"), _MAX_SHORT_LENGTH
+        ),
+        "nickname": sanitize_llm_text(extracted.get("nickname"), _MAX_NICKNAME_LENGTH),
+    }
+    result = {name: value for name, value in values.items() if value is not None}
+    tone = sanitize_llm_text(extracted.get("preferred_tone"), _MAX_SHORT_LENGTH)
+    if tone is not None and tone in _ALLOWED_TONES:
+        result["preferred_tone"] = tone
+    return result
+
+
+def _log_nickname_update(guild_id: int, user_id: int, nickname: str) -> None:
+    """ニックネーム更新をログに残す"""
+    logger.info(
+        f"ニックネーム更新: guild_id={guild_id}, user_id={user_id}, "
+        f"nickname={nickname!r}"
+    )
 
 
 def _doc_id(guild_id: int, user_id: int) -> str:
