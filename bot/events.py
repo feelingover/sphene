@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import random
+import re
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -30,6 +31,44 @@ from utils.text_utils import split_message, truncate_text
 _REACTION_EMOJIS = ["👀", "😊", "👍", "🤔", "✨", "💡"]
 
 # bot の型ヒントを commands.Bot に変更
+def _bot_role_mention_ids(bot: commands.Bot, message: discord.Message) -> list[int]:
+    """メッセージ内でメンションされた、このボットの管理ロールのIDを返す
+
+    Discord の入力補完で ``@ボット名`` を選ぶと、ボット本人ではなく
+    ボット連携時に自動作成される管理ロール宛てのメンションになることがある。
+
+    Args:
+        bot: Discordクライアント
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        このボットの管理ロールのIDリスト（該当なしなら空）
+    """
+    if bot.user is None:
+        return []
+    bot_id = bot.user.id
+    return [
+        role.id
+        for role in message.role_mentions
+        if role.tags is not None and role.tags.bot_id == bot_id
+    ]
+
+
+def _strip_bot_mentions(content: str, bot_id: int, role_ids: list[int]) -> str:
+    """本文からボット本人・ボット管理ロールへのメンション記法を取り除く
+
+    Args:
+        content: メッセージ本文
+        bot_id: ボットのユーザーID
+        role_ids: ボットの管理ロールID
+
+    Returns:
+        メンションを除いた本文
+    """
+    patterns = [rf"<@!?{bot_id}>"] + [rf"<@&{role_id}>" for role_id in role_ids]
+    return re.sub("|".join(patterns), "", content).strip()
+
+
 async def is_bot_mentioned(
     bot: commands.Bot, message: discord.Message
 ) -> tuple[bool, str, bool]:
@@ -48,11 +87,10 @@ async def is_bot_mentioned(
     content: str = message.content
     user_id = str(message.author.id)
 
-    # メンションされた場合
-    if bot.user and bot.user in message.mentions:
-        # bot.userがNoneではないことを確認済みなので、安全にidにアクセス可能
-        bot_id = bot.user.id
-        question = content.replace(f"<@{bot_id}>", "").strip()
+    # メンションされた場合（ボット本人 or ボットの管理ロール宛て）
+    bot_role_ids = _bot_role_mention_ids(bot, message)
+    if bot.user and (bot.user in message.mentions or bot_role_ids):
+        question = _strip_bot_mentions(content, bot.user.id, bot_role_ids)
         preview = truncate_text(question)
         logger.debug(
             f"メンション検出: ユーザーID {user_id}, チャンネルID {message.channel.id}, メッセージ: {preview}"
