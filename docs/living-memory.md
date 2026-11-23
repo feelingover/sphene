@@ -127,6 +127,12 @@
 - `FACT_STORE_CLEANUP_THRESHOLD`: この値を下回る `effective_relevance_score` のファクトを15分ごとに削除 (デフォルト: 0.05)
 - `FACT_ACCESS_BOOST_WEIGHT`: 参照頻度ブーストの重み係数。`log1p(access_count) * weight` がスコアに加算される (デフォルト: 0.1)
 - `FACT_STORE_ARCHIVE_ENABLED`: `true` にすると削除ファクトをアーカイブストレージに保存する。`false` の場合はログ出力のみ (デフォルト: false)
+  - アーカイブには embedding を保存しない（読み戻されず、`EMBEDDING_MODEL` に依存するため。必要になったら本文から再生成する）。既存アーカイブに残る embedding も次回書き込み時に除去する
+  - Firestore では件数上限（`FACT_ARCHIVE_MAX_ENTRIES`）に加え、ドキュメントサイズ上限（1MiB）に収まるよう古い順に切り捨てる
+
+### 長期記憶: 永続化
+- ファクトストア・ユーザープロファイルは変更のあったチャンネル／プロファイルだけを定期（15分ごと）に書き込む（dirty フラグ）。書き込みに失敗したものは次回再試行する
+- Firestore のファクトは1チャンネル1ドキュメント。推定サイズが上限（1MiB）を超える場合は関連度（`effective_relevance_score`）の低いファクトから保存対象外にして警告ログを出す（メモリ上のファクトは変更しない）。警告が出る場合は `FACT_STORE_MAX_FACTS_PER_CHANNEL` を下げる
 
 ### 長期記憶: ベクトル検索 (Vector Search)
 - `VECTOR_SEARCH_ENABLED`: ハイブリッド検索（キーワード + コサイン類似度）を有効にするか。`LIVING_MEMORY_ENABLED=true`が必要 (デフォルト: false)

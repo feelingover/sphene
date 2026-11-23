@@ -189,6 +189,8 @@ class FactStore:
     def __init__(self) -> None:
         self._facts: dict[int, list[Fact]] = {}
         self._loaded_channels: set[int] = set()
+        # 永続化先と差分があるチャンネル（persist_all はここに含まれるものだけ書き込む）
+        self._dirty: set[int] = set()
         self._lock = threading.Lock()
 
     def add_fact(self, fact: Fact) -> bool:
@@ -213,6 +215,7 @@ class FactStore:
                 )
                 return False
             facts.append(fact)
+            self._dirty.add(fact.channel_id)
 
             max_facts = config.FACT_STORE_MAX_FACTS_PER_CHANNEL
             if len(facts) > max_facts:
@@ -281,6 +284,9 @@ class FactStore:
             for fact in results:
                 fact.access_count += 1
                 fact.last_accessed_at = now
+            if results:
+                # 参照頻度は忘却スコアに使うため永続化対象にする
+                self._dirty.add(channel_id)
 
         return results
 
@@ -295,28 +301,44 @@ class FactStore:
         return shareable
 
     def persist_channel(self, channel_id: int) -> None:
-        """特定のチャンネルを永続化する"""
+        """特定のチャンネルを永続化する（変更の有無にかかわらず書き込む）"""
         with self._lock:
             if channel_id not in self._facts:
                 return
             facts = list(self._facts[channel_id])
+            self._dirty.discard(channel_id)
 
-        storage_type = config.STORAGE_TYPE
-        if storage_type == "local":
-            self._save_to_local(channel_id, facts)
-        elif storage_type == "firestore":
-            self._save_to_firestore(channel_id, facts)
+        if not self._save_channel(channel_id, facts):
+            with self._lock:
+                self._dirty.add(channel_id)
 
     def persist_all(self) -> None:
-        """全チャンネルを永続化する（クリーンアップタスクから呼ばれる）"""
+        """変更のあったチャンネルだけを永続化する（クリーンアップタスクから呼ばれる）
+
+        書き込みに失敗したチャンネルは次回の persist_all で再試行する。
+        """
         with self._lock:
-            snapshot = {cid: list(facts) for cid, facts in self._facts.items()}
+            dirty, self._dirty = self._dirty, set()
+            snapshot = {cid: list(self._facts[cid]) for cid in dirty if cid in self._facts}
+        failed = {cid for cid, facts in snapshot.items() if not self._save_channel(cid, facts)}
+        if failed:
+            with self._lock:
+                self._dirty |= failed
+        if snapshot:
+            logger.debug(f"ファクト永続化: {len(snapshot) - len(failed)}/{len(snapshot)}チャンネル")
+
+    def _save_channel(self, channel_id: int, facts: list[Fact]) -> bool:
+        """設定された永続化先にチャンネルのファクトを書き込む
+
+        Returns:
+            書き込みに成功した（または永続化しない設定の）場合True
+        """
         storage_type = config.STORAGE_TYPE
-        for channel_id, facts in snapshot.items():
-            if storage_type == "local":
-                self._save_to_local(channel_id, facts)
-            elif storage_type == "firestore":
-                self._save_to_firestore(channel_id, facts)
+        if storage_type == "local":
+            return self._save_to_local(channel_id, facts)
+        if storage_type == "firestore":
+            return self._save_to_firestore(channel_id, facts)
+        return True
 
     def ensure_loaded(self, channel_id: int) -> None:
         """チャンネルのファクトを永続化先から読み込み済みにする（I/Oを伴う）
@@ -357,7 +379,7 @@ class FactStore:
                     self._facts[channel_id] = facts
                 self._loaded_channels.add(channel_id)
 
-    def _save_to_local(self, channel_id: int, facts: list[Fact]) -> None:
+    def _save_to_local(self, channel_id: int, facts: list[Fact]) -> bool:
         """ローカルファイルにアトミック書き込み"""
         from utils.file_utils import atomic_write_json
 
@@ -368,8 +390,10 @@ class FactStore:
                 "facts": [f.to_dict() for f in facts],
             }
             atomic_write_json(file_path, data)
+            return True
         except Exception as e:
             logger.error(f"ファクトのローカル保存エラー: {e}", exc_info=True)
+            return False
 
     def _load_from_local(self, channel_id: int) -> list[Fact] | None:
         """ローカルファイルからファクトを読み込む"""
@@ -383,21 +407,23 @@ class FactStore:
             logger.error(f"ファクトのローカル読み込みエラー: {e}", exc_info=True)
         return None
 
-    def _save_to_firestore(self, channel_id: int, facts: list[Fact]) -> None:
-        """Firestoreにファクトを保存する"""
+    def _save_to_firestore(self, channel_id: int, facts: list[Fact]) -> bool:
+        """Firestoreにファクトを保存する（1MiB上限を超える分は関連度の低い順に除外）"""
         try:
             from utils.firestore_client import get_firestore_client
 
             db = get_firestore_client()
             data = {
                 "channel_id": channel_id,
-                "facts": [f.to_dict() for f in facts],
+                "facts": _fit_facts_to_document(channel_id, facts),
             }
             db.collection(config.FIRESTORE_COLLECTION_FACTS).document(
                 str(channel_id)
             ).set(data)
+            return True
         except Exception as e:
             logger.error(f"ファクトのFirestore保存エラー: {e}", exc_info=True)
+            return False
 
     def _load_from_firestore(self, channel_id: int) -> list[Fact] | None:
         """Firestoreからファクトを読み込む"""
@@ -502,16 +528,9 @@ class FactStore:
                     data = json.load(f)
                 existing = data.get("archived_facts", [])
 
-            archived_at = datetime.now(timezone.utc).isoformat()
-            for fact in facts:
-                entry = fact.to_dict()
-                entry["archived_at"] = archived_at
-                existing.append(entry)
+            existing.extend(_to_archive_entries(facts))
 
-            # 上限を超えた分は古い順に切り捨て
-            max_entries = config.FACT_ARCHIVE_MAX_ENTRIES
-            if len(existing) > max_entries:
-                existing = existing[-max_entries:]
+            existing = _trim_archive_entries(existing, size_limited=False)
 
             atomic_write_json(file_path, {"channel_id": channel_id, "archived_facts": existing})
         except Exception as e:
@@ -533,20 +552,110 @@ class FactStore:
                 if data:
                     existing = data.get("archived_facts", [])
 
-            archived_at = datetime.now(timezone.utc).isoformat()
-            for fact in facts:
-                entry = fact.to_dict()
-                entry["archived_at"] = archived_at
-                existing.append(entry)
+            existing.extend(_to_archive_entries(facts))
 
-            # Firestore ドキュメント上限（1MB）対策: 古い順に切り捨て
-            max_entries = config.FACT_ARCHIVE_MAX_ENTRIES
-            if len(existing) > max_entries:
-                existing = existing[-max_entries:]
+            # Firestore ドキュメント上限（1MiB）対策: 件数とサイズの両方で古い順に切り捨て
+            existing = _trim_archive_entries(existing, size_limited=True)
 
             doc_ref.set({"channel_id": channel_id, "archived_facts": existing})
         except Exception as e:
             logger.error(f"ファクトFirestoreアーカイブエラー: {e}", exc_info=True)
+
+
+def _fit_facts_to_document(channel_id: int, facts: list[Fact]) -> list[dict]:
+    """Firestoreの1ドキュメントに収まるよう、関連度の低いファクトから除外して辞書化する
+
+    メモリ上のファクトは変更しない（次回以降の保存でも同じ判定になる）。
+
+    Args:
+        channel_id: チャンネルID（ログ用）
+        facts: 保存するファクト
+
+    Returns:
+        ドキュメントサイズ上限に収まるファクト辞書のリスト（元の順序を維持）
+    """
+    from utils.firestore_client import (
+        FIRESTORE_SAFE_DOCUMENT_BYTES,
+        estimate_document_size,
+        estimate_value_size,
+    )
+
+    entries = [f.to_dict() for f in facts]
+    base = estimate_document_size({"channel_id": channel_id, "facts": []})
+    sizes = [estimate_value_size(e) for e in entries]
+    total = base + sum(sizes)
+    if total <= FIRESTORE_SAFE_DOCUMENT_BYTES:
+        return entries
+
+    half_life = config.FACT_DECAY_HALF_LIFE_DAYS
+    weight = config.FACT_ACCESS_BOOST_WEIGHT
+    by_relevance = sorted(
+        range(len(facts)), key=lambda i: facts[i].effective_relevance_score(half_life, weight)
+    )
+    dropped: set[int] = set()
+    for i in by_relevance:
+        if total <= FIRESTORE_SAFE_DOCUMENT_BYTES:
+            break
+        dropped.add(i)
+        total -= sizes[i]
+    logger.warning(
+        f"ファクトがFirestoreのドキュメント上限を超えるため関連度の低い{len(dropped)}件を保存対象から除外: "
+        f"channel_id={channel_id}, 保存件数={len(entries) - len(dropped)}, 推定サイズ={total}B "
+        "(FACT_STORE_MAX_FACTS_PER_CHANNEL の引き下げを検討してください)"
+    )
+    return [e for i, e in enumerate(entries) if i not in dropped]
+
+
+def _to_archive_entries(facts: list[Fact]) -> list[dict]:
+    """アーカイブ用の辞書に変換する（embeddingは保存しない）
+
+    アーカイブは読み戻されず、embeddingはEMBEDDING_MODELに依存するため、
+    必要になった時点で本文から再生成する。
+    """
+    archived_at = datetime.now(timezone.utc).isoformat()
+    entries = []
+    for fact in facts:
+        entry = fact.to_dict()
+        entry.pop("embedding", None)
+        entry["archived_at"] = archived_at
+        entries.append(entry)
+    return entries
+
+
+def _trim_archive_entries(entries: list[dict], size_limited: bool) -> list[dict]:
+    """アーカイブを件数上限（と必要ならFirestoreのサイズ上限）に収まるよう古い順に切り捨てる
+
+    既存アーカイブに残っているembeddingもここで除去する。
+
+    Args:
+        entries: 古い順のアーカイブ項目
+        size_limited: Trueの場合、Firestoreのドキュメントサイズ上限でも切り捨てる
+
+    Returns:
+        切り捨て後のアーカイブ項目
+    """
+    from utils.firestore_client import (
+        FIRESTORE_SAFE_DOCUMENT_BYTES,
+        estimate_document_size,
+        estimate_value_size,
+    )
+
+    trimmed = [{k: v for k, v in e.items() if k != "embedding"} for e in entries]
+    max_entries = config.FACT_ARCHIVE_MAX_ENTRIES
+    if len(trimmed) > max_entries:
+        trimmed = trimmed[-max_entries:]
+    if not size_limited:
+        return trimmed
+
+    sizes = [estimate_value_size(e) for e in trimmed]
+    total = estimate_document_size({"channel_id": 0, "archived_facts": []}) + sum(sizes)
+    start = 0
+    while total > FIRESTORE_SAFE_DOCUMENT_BYTES and start < len(trimmed):
+        total -= sizes[start]
+        start += 1
+    if start:
+        logger.warning(f"ファクトアーカイブがドキュメント上限を超えるため古い{start}件を削除")
+    return trimmed[start:]
 
 
 # シングルトン
