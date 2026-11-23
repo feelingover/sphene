@@ -351,6 +351,7 @@ class FactStore:
                 if channel_id not in self._loaded_channels:
                     return None
                 if channel_id not in self._facts:
+                    # 書き込む内容がないので dirty も外す（ファクト追加時に再び立つ）
                     self._dirty.discard(channel_id)
                     return None
                 facts = list(self._facts[channel_id])

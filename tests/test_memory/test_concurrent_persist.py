@@ -86,6 +86,7 @@ class TestFactStoreConcurrentPersist:
             saver.release_first.set()
             first.join(_WAIT)
             second.join(_WAIT)
+            assert not first.is_alive() and not second.is_alive()
         return saver
 
     def test_persist_channel_newer_snapshot_wins(self, fact_store):
@@ -102,8 +103,11 @@ class TestFactStoreConcurrentPersist:
         assert saver.completed[-1] == (CHANNEL_ID, ["old", "new"])
         assert CHANNEL_ID not in fact_store._dirty
 
-    def test_persist_all_skips_channel_saved_while_waiting(self, fact_store):
-        """待機中に別スレッドが保存を済ませたチャンネルは persist_all で再書き込みしない"""
+    def test_only_if_dirty_skips_already_saved_channel(self, fact_store):
+        """保存済み（dirty でない）チャンネルは only_if_dirty=True で書き込まない
+
+        persist_all が保存ロックを待つ間に別スレッドが保存を済ませたケースの判定部分を確かめる。
+        """
         fact_store.add_fact(_make_fact("f1", "ファクト"))
         fact_store.persist_channel(CHANNEL_ID)
 
@@ -148,6 +152,7 @@ class TestFactStoreConcurrentPersist:
 
             saver.release_first.set()
             first.join(_WAIT)
+            assert not first.is_alive()
 
         assert saver.completed == [2, 1]
 
@@ -184,6 +189,7 @@ class TestUserProfileConcurrentPersist:
             saver.release_first.set()
             first.join(_WAIT)
             second.join(_WAIT)
+            assert not first.is_alive() and not second.is_alive()
 
         assert saver.completed == [1, 2]
         assert (GUILD_ID, USER_ID) not in store._dirty

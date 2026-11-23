@@ -170,6 +170,7 @@ class UserProfileStore:
         # プロファイル単位の保存ロック（スナップショット取得から書き込み完了まで保持する）。
         # 並行した persist_all で古い内容の書き込みが後勝ちするのを防ぐ。
         # 取得順は必ず保存ロック → self._lock とする。
+        # ロックは _profiles と同じだけ増える。_profiles に追い出し処理を入れるときは一緒に掃除する。
         self._save_locks: KeyedLock[ProfileKey] = KeyedLock()
 
     def _mark_dirty(self, guild_id: int, user_id: int) -> None:
