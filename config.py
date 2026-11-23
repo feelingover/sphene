@@ -140,6 +140,13 @@ REFLECTION_MIN_MESSAGES: int = int(os.getenv("REFLECTION_MIN_MESSAGES", "10"))
 # バッファ量ベースの反省会トリガー閾値。
 # CHANNEL_BUFFER_SIZE 以下の値を設定すること（それを超えると絶対に発動しない）。
 REFLECTION_MAX_BUFFER_MESSAGES: int = int(os.getenv("REFLECTION_MAX_BUFFER_MESSAGES", "30"))
+# 反省会がこの回数連続で失敗したら、そのメッセージ群は諦めてチェックポイントを進める
+REFLECTION_MAX_FAILURES: int = int(os.getenv("REFLECTION_MAX_FAILURES", "3"))
+
+# === 記憶系LLM（要約・反省会）の失敗時バックオフ ===
+# n回連続失敗後は BASE * 2^(n-1) 秒（上限 MAX）再実行しない
+MEMORY_LLM_BACKOFF_BASE_SECONDS: int = int(os.getenv("MEMORY_LLM_BACKOFF_BASE_SECONDS", "300"))
+MEMORY_LLM_BACKOFF_MAX_SECONDS: int = int(os.getenv("MEMORY_LLM_BACKOFF_MAX_SECONDS", "3600"))
 
 # === Embedding設定 (Phase 3B) ===
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-004")

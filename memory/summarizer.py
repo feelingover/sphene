@@ -11,7 +11,9 @@ import config
 from ai.client import _get_genai_client, get_light_thinking_config, get_model_name
 from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
+from memory.backoff import FailureBackoff
 from memory.channel_context import ChannelContext, get_channel_context_store
+from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
 from memory.short_term import ChannelMessage
 
 SUMMARIZE_PROMPT = """\
@@ -28,6 +30,46 @@ SUMMARIZE_PROMPT = """\
 {{"summary": "会話の要約（2-3文）", "mood": "場の雰囲気（一言）", "topic_keywords": ["話題1", "話題2"]}}
 """
 
+# 要約はsystem_instructionに注入されるため、長さを制限する
+_MAX_SUMMARY_LENGTH = 500
+_MAX_MOOD_LENGTH = 50
+_MAX_KEYWORD_LENGTH = 30
+_MAX_KEYWORDS = 10
+
+
+def _parse_summary_result(raw: object) -> dict | None:
+    """要約LLMの出力を検証・サニタイズする
+
+    要約はsystem_instructionに注入されるため、型・長さを検証し改行や制御文字を除去する。
+    単一要素の配列で包まれた出力は中身を取り出す。
+
+    Args:
+        raw: json.loadsした要約LLMの出力
+
+    Returns:
+        {"summary": str, "mood": str | None, "topic_keywords": list[str] | None}。
+        要約本文が得られない場合はNone。mood / topic_keywords がNoneの場合は前回値を維持する
+    """
+    if isinstance(raw, list) and len(raw) == 1:
+        raw = raw[0]
+    if not isinstance(raw, dict):
+        logger.warning(f"要約LLMが非オブジェクトを返した: {type(raw)}")
+        return None
+    summary = sanitize_llm_text(raw.get("summary"), _MAX_SUMMARY_LENGTH)
+    if summary is None:
+        logger.warning("要約LLMの出力に有効な summary がない")
+        return None
+    keywords = raw.get("topic_keywords")
+    return {
+        "summary": summary,
+        "mood": sanitize_llm_text(raw.get("mood"), _MAX_MOOD_LENGTH),
+        "topic_keywords": (
+            sanitize_llm_text_list(keywords, _MAX_KEYWORD_LENGTH, _MAX_KEYWORDS)
+            if isinstance(keywords, list)
+            else None
+        ),
+    }
+
 
 class Summarizer:
     """チャンネル会話の要約を非同期で生成する"""
@@ -35,6 +77,9 @@ class Summarizer:
     def __init__(self) -> None:
         self._running: set[int] = set()
         self._running_lock = threading.Lock()
+        self._backoff = FailureBackoff(
+            config.MEMORY_LLM_BACKOFF_BASE_SECONDS, config.MEMORY_LLM_BACKOFF_MAX_SECONDS
+        )
 
     def maybe_summarize(
         self, channel_id: int, recent_messages: list[ChannelMessage]
@@ -49,6 +94,10 @@ class Summarizer:
         ctx = store.get_context(channel_id)
 
         if not ctx.should_summarize():
+            return
+
+        if self._backoff.is_blocked(channel_id):
+            logger.debug(f"要約スキップ（失敗後のバックオフ中）: channel_id={channel_id}")
             return
 
         with self._running_lock:
@@ -83,13 +132,17 @@ class Summarizer:
                 self._apply_result(context, result, messages)
                 store = get_channel_context_store()
                 await asyncio.to_thread(store.save_context, context)
+                self._backoff.reset(channel_id)
                 logger.info(
-                    f"要約完了: channel_id={channel_id}, "
-                    f"summary={result.get('summary', '')[:50]}"
+                    f"要約完了: channel_id={channel_id}, summary={result.get('summary', '')[:50]}"
                 )
             else:
-                logger.warning(f"要約結果が空: channel_id={channel_id}")
+                failures = self._backoff.record_failure(channel_id)
+                logger.warning(
+                    f"要約結果が空（バックオフ）: channel_id={channel_id}, 連続失敗={failures}"
+                )
         except Exception as e:
+            self._backoff.record_failure(channel_id)
             logger.error(f"要約実行エラー: channel_id={channel_id}: {e}", exc_info=True)
         finally:
             with self._running_lock:
@@ -131,8 +184,7 @@ class Summarizer:
             if not content:
                 return None
 
-            result = json.loads(content)
-            return result
+            return _parse_summary_result(json.loads(content))
         except Exception as e:
             logger.warning(f"要約LLM呼び出し失敗: {e}")
             return None
@@ -146,11 +198,12 @@ class Summarizer:
         """要約結果をContextに適用してカウンタをリセットする"""
         from datetime import datetime, timezone
 
-        context.summary = result.get("summary", context.summary)
-        context.mood = result.get("mood", context.mood)
-        context.topic_keywords = result.get(
-            "topic_keywords", context.topic_keywords
-        )
+        if result.get("summary") is not None:
+            context.summary = result["summary"]
+        if result.get("mood") is not None:
+            context.mood = result["mood"]
+        if result.get("topic_keywords") is not None:
+            context.topic_keywords = result["topic_keywords"]
         context.active_users = _extract_active_users(messages)
         context.last_updated = datetime.now(timezone.utc)
         context.message_count_since_update = 0

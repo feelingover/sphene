@@ -30,6 +30,8 @@
   - **Topic Keywords:** 現在のトピックを表すキーワード。
   - **Active Users:** 直近の参加メンバー。
 - **トリガー:** メッセージ数ベース（20件ごと）または時間ベース（15分ごと）のハイブリッド。
+- **検証:** 要約は system_instruction に注入されるため、LLM出力の型・長さを検証し改行・制御文字を除去してから保存する（summary 必須、不正な mood / topic_keywords は前回値を維持）。
+- **失敗時:** 失敗が続くとバックオフ（`MEMORY_LLM_BACKOFF_*`）し、メッセージ受信のたびに再実行しない。
 
 ### ③ 長期記憶 (Long-term Memory) - 知識と関係性
 ユーザーごとの特性や、過去の重要な「事実」を永続化。
@@ -111,6 +113,9 @@
 - `REFLECTION_LULL_MINUTES`: 沈黙が何分続いたら反省会をトリガーするか (デフォルト: 10)
 - `REFLECTION_MIN_MESSAGES`: 反省会をトリガーするために必要な最低メッセージ数 (デフォルト: 10)
 - `REFLECTION_MAX_BUFFER_MESSAGES`: バッファ蓄積量での強制反省会トリガー件数 (デフォルト: 30)
+- `REFLECTION_MAX_FAILURES`: 反省会がこの回数連続で失敗したら（LLM失敗・有効なファクト0件）、対象メッセージを諦めてチェックポイントを進める (デフォルト: 3)
+- `MEMORY_LLM_BACKOFF_BASE_SECONDS` / `MEMORY_LLM_BACKOFF_MAX_SECONDS`: 要約・反省会が失敗した後に再実行しない時間。n回連続失敗後は BASE × 2^(n-1) 秒、上限 MAX 秒 (デフォルト: 300 / 3600)
+- ユーザープロファイルの更新は、対象メッセージの処理が確定した（チェックポイントが進んだ）ときだけ行う。再試行のたびに同じ会話で更新しない
 
 ### 長期記憶: ファクトストア (Fact Store)
 - `FACT_STORE_MAX_FACTS_PER_CHANNEL`: チャンネルあたりの最大ファクト保持件数 (デフォルト: 100)
