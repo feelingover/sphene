@@ -53,7 +53,7 @@ applyTo: "**"
 - ルールベースJudge（スコアリング + response_type決定 + should_react判定）
 - LLM二次判定（曖昧スコア帯のみLLM呼び出し、絵文字選択）
 - 応答多様性（リアクション / 相槌 / フル応答の3段階）
-- リアクション先行実行（`asyncio.create_task`）
+- リアクション先行実行（`asyncio.create_task` + `track_background_task`）
 - チャンネルコンテキスト注入による応答品質向上
 - 会話フロー分析（2人会話・高頻度・沈黙後・会話減衰の検出）
 - `VANGUARD_ENABLED` 1フラグで全機能をデフォルト有効化
@@ -68,6 +68,7 @@ applyTo: "**"
 - 自発会話機能削除（issue #104、タイマーベースへ再設計予定）
 - セキュリティ・品質レビュー対応（Critical/High/Medium 15件）
 - 読み込み失敗時の安全側動作（2026/11, #130 #131）: チャンネル設定は fail-closed、記憶ストアは読み込みエラーを未存在と区別して既存データの上書きを防止。読み込み失敗はバックオフ（`STORAGE_LOAD_BACKOFF_*`）し、読み込み失敗中のスラッシュコマンドはその旨を返す
+- 終了時の記憶永続化とバックグラウンドタスク参照の保持（2026/11, #132）: SIGTERM で graceful shutdown し終了時に全記憶ストアを `persist_all`、要約・反省会・リアクションのタスクを `utils/background_tasks.py` で強参照保持＋例外ログ
 - ログ・設定の整理（2026/11）: discord.py 独自ログハンドラを無効化して二重出力を解消、サードパーティロガー（discord/httpx/google 等）の最低レベルを設定、廃止済み環境変数の起動時警告を追加
 
 ## TODO

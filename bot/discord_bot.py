@@ -1,5 +1,7 @@
 import asyncio
+import signal
 import sys
+from types import FrameType
 
 import discord
 from discord.ext import commands, tasks
@@ -160,7 +162,53 @@ class SpheneBot:
         logger.info("Discordボットの起動を開始")
         # discord.py 独自のログハンドラは登録せず、アプリのルートロガー設定
         # （LOG_FORMAT / LOG_LEVEL）に一本化する。二重出力を防ぐため
+        _install_sigterm_handler()
         try:
             self.bot.run(config.DISCORD_TOKEN, log_handler=None)
         finally:
+            _persist_memory_on_shutdown()
             close_http_client()
+
+
+def _raise_keyboard_interrupt(signum: int, frame: FrameType | None) -> None:
+    """SIGTERM を SIGINT と同じ経路（KeyboardInterrupt）で終了させる"""
+    raise KeyboardInterrupt
+
+
+def _install_sigterm_handler() -> None:
+    """SIGTERM で graceful shutdown するためのハンドラを登録する
+
+    Python 既定の SIGTERM は即時終了で ``finally`` が実行されないため、
+    discord.py が KeyboardInterrupt として後始末できるよう変換する。
+    """
+    try:
+        signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
+    except ValueError:
+        # メインスレッド以外からは登録できない
+        logger.warning("SIGTERMハンドラを登録できませんでした（メインスレッド外）")
+
+
+def _persist_memory_on_shutdown() -> None:
+    """終了時に未保存の記憶（プロファイル・ファクト・チャンネルコンテキスト）を永続化する
+
+    定期タスク（15分ごと）の間に溜まった dirty な状態を再起動で失わないために呼ぶ。
+    1つのストアの失敗で他のストアの保存を止めない。
+    """
+    if not config.LIVING_MEMORY_ENABLED:
+        return
+
+    from memory.channel_context import get_channel_context_store
+    from memory.fact_store import get_fact_store
+    from memory.user_profile import get_user_profile_store
+
+    targets = [
+        ("ユーザープロファイル", lambda: get_user_profile_store().persist_all()),
+        ("ファクトストア", lambda: get_fact_store().persist_all()),
+        ("チャンネルコンテキスト", lambda: get_channel_context_store().persist_all()),
+    ]
+    for label, persist in targets:
+        try:
+            persist()
+            logger.info(f"終了時の永続化完了: {label}")
+        except Exception as e:
+            logger.error(f"終了時の永続化に失敗しました: {label}, error={str(e)}", exc_info=True)

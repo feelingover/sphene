@@ -167,6 +167,22 @@ class ChannelContextStore:
         elif storage_type == "firestore":
             self._save_to_firestore(context)
 
+    def persist_all(self) -> None:
+        """キャッシュ済みの全コンテキストを永続化する（終了時用）
+
+        要約間のメッセージカウンタなど、未保存の状態を失わないために使う。
+        1チャンネルの書き込み失敗で他チャンネルの保存を止めない。
+        """
+        for context in self.get_all_contexts().values():
+            try:
+                self.save_context(context)
+            except Exception as e:
+                logger.error(
+                    f"チャンネルコンテキストの永続化に失敗しました: "
+                    f"channel_id={context.channel_id}, error={str(e)}",
+                    exc_info=True,
+                )
+
     def _load_context(self, channel_id: int) -> ChannelContext | None:
         """永続化先からコンテキストを読み込む"""
         storage_type = config.STORAGE_TYPE

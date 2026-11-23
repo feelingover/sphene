@@ -15,6 +15,7 @@ from memory.backoff import FailureBackoff
 from memory.channel_context import ChannelContext, get_channel_context_store
 from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
 from memory.short_term import ChannelMessage
+from utils.background_tasks import track_background_task
 
 SUMMARIZE_PROMPT = """\
 あなたはDiscordチャンネルの会話を要約するAIです。
@@ -112,10 +113,10 @@ class Summarizer:
             f"要約トリガー: channel_id={channel_id}, "
             f"count={ctx.message_count_since_update}"
         )
-        asyncio.create_task(
+        track_background_task(asyncio.create_task(
             self._run_summarize(channel_id, ctx, recent_messages),
             name=f"summarize_{channel_id}",
-        )
+        ))
 
     async def _run_summarize(
         self,

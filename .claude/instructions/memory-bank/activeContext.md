@@ -6,9 +6,9 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 978件全パス
+- テスト: 997件全パス
 - カバレッジ: 94%
-- mypy: 96ファイル no issues
+- mypy: 100ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -101,6 +101,8 @@ applyTo: "**"
 | 要約・反省会のLLM失敗は指数バックオフ（`memory/backoff.py`） | 失敗するとチェックポイント・カウンタが進まず、メッセージ受信のたびに再実行してAPIを叩き続けていたため。反省会は `REFLECTION_MAX_FAILURES` 回連続失敗で対象メッセージを破棄（同じバッチを永遠に再送しない）。バックオフ状態はインメモリ |
 | 反省会のプロファイル更新はチェックポイント確定時のみ | 再試行のたびに同じ会話でプロファイルを更新しないため |
 | 記憶ストアの定期永続化は dirty なキーのみ | 15分ごとに全プロファイル・全チャンネルを書き込んでいた（Firestore の書き込み課金）。検索ヒットによる `access_count` 更新も dirty 扱い。失敗したキーは dirty に戻して再試行 |
+| 終了時に記憶ストアを永続化し、SIGTERM を KeyboardInterrupt に変換 | Python 既定の SIGTERM は即時終了で `finally` が走らず、コンテナ再起動のたびに最大15分ぶんの dirty なプロファイル・ファクトが消えていた（#132）。`SpheneBot.run` の `finally` でプロファイル・ファクト・チャンネルコンテキストを `persist_all` する |
+| fire-and-forget タスクは `utils/background_tasks.track_background_task` で保持 | イベントループはタスクを弱参照でしか持たず、要約・反省会・リアクションが実行途中に GC されうる（#132）。完了時に集合から外し、例外はタスク名付きでログに残す。新たに `create_task` で投げっぱなしにするタスクは必ずこれで包む |
 | Firestore のサイズは型ごとの保存規則で見積もる（`utils/firestore_client.estimate_document_size`） | JSON長で見積もると浮動小数（embedding）を約2.5倍に過大評価し、収まるファクトまで削ってしまうため |
 | ファクトアーカイブに embedding を保存しない | アーカイブは読み戻されず、embedding は `EMBEDDING_MODEL` 依存で移行時には再生成が必要。容量の大半を占めていた |
 | スラッシュコマンド・ビューのコールバックは I/O 前に defer | 設定の読み書き（Firestore 最大3往復）で Discord の3秒応答期限を超えると 10062 Unknown interaction になるため。権限エラー・サーバー外実行など I/O なしで即答できるものは defer しない。返信は `_reply()` で defer 済みなら followup に切り替える |

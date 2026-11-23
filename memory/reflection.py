@@ -17,6 +17,7 @@ from memory.backoff import FailureBackoff
 from memory.fact_store import Fact
 from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
 from memory.short_term import ChannelMessage
+from utils.background_tasks import track_background_task
 
 REFLECTION_PROMPT = """\
 あなたはDiscordチャンネルの会話から重要な事実を抽出するAIです。
@@ -202,7 +203,10 @@ class ReflectionEngine:
         )
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._run_reflect(channel_id, recent_messages))
+            track_background_task(loop.create_task(
+                self._run_reflect(channel_id, recent_messages),
+                name=f"reflect_{channel_id}",
+            ))
         except RuntimeError:
             logger.warning(f"反省会: 実行中のevent loopがありません channel_id={channel_id}")
             with self._lock:

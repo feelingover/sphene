@@ -41,6 +41,7 @@ memory/                   # Living Memory + VANGUARD judge (docs/living-memory.m
 xivapi/
   client.py               # XIVAPI v2 search
 utils/
+  background_tasks.py     # Strong refs for fire-and-forget asyncio tasks
   channel_config.py       # Channel permissions (local/Firestore)
   file_utils.py           # atomic_write_json
   firestore_client.py     # Firestore client (singleton)
