@@ -6,9 +6,9 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 814件全パス
+- テスト: 840件全パス
 - カバレッジ: 91%
-- mypy: 80ファイル no issues
+- mypy: 82ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -90,6 +90,8 @@ applyTo: "**"
 | リトライ判定は例外の型とステータスコードのみ | 文字列一致は誤検知・見逃しが多い。408/429/5xx・httpx.TransportError・ConnectionError・TimeoutError をリトライ |
 | 完了した過去ターンはツール中間データ・画像を除去 | ツール結果の生JSONや画像バイトが30分間毎リクエスト再送されるのを防ぐ。直近ターンは追加質問に答えられるよう保持し、ツール結果1件も `MAX_TOOL_RESULT_CHARS` で切り詰め |
 | function_response は function_call と1対1・id を返す | APIは同数の応答を要求する。名前なし・未知の関数もスキップせずエラー応答を返し、並列呼び出しのため `call.id` をそのまま返す |
+| XIVAPI の DQL 文字列は引用符・バックスラッシュ・制御文字を除去 | XIVAPI v2 のクエリ言語に文字列エスケープ構文が定義されていないため。LLM由来の数値も `int` に正規化してから埋め込む |
+| XIVAPI の httpx.Client はプロセス共有 | 接続・TLSセッションを再利用（action 検索は1回で最大6リクエスト）。`httpx.Client` はスレッドセーフ。終了時に `close_http_client()` |
 | エラー通知はボットが話しかけられた場合のみ | 無関係なメッセージへのエラー投稿の連発を防ぐ。記憶の記録失敗は応答を止めない（`_record_memory` で隔離） |
 
 ## Open Issues
@@ -99,5 +101,5 @@ applyTo: "**"
 3. **フル async 化**: google-genai `client.aio` への移行（中期候補）
 4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索（現状は in-memory コサイン類似度）
 5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）
-6. **2026/11 コードレビュー残課題**（Router プリフィルタは実装済み。ツールスキーマ enum・function_response・履歴肥大化は対応済み）: react_only の二重リアクション、翻訳の重複排除、メンションのレート制限、反省会LLM失敗時のバックオフなし、`persist_all` の dirty フラグ未導入、ファクトの1ドキュメント集約（1MB上限）、要約JSONの検証、XIVAPI の DQL エスケープ・httpx Client 共有、Docker 内ローカルストレージ、スラッシュコマンドの defer
+6. **2026/11 コードレビュー残課題**（Router プリフィルタは実装済み。ツールスキーマ enum・function_response・履歴肥大化・XIVAPI は対応済み）: react_only の二重リアクション、翻訳の重複排除、メンションのレート制限、反省会LLM失敗時のバックオフなし、`persist_all` の dirty フラグ未導入、ファクトの1ドキュメント集約（1MB上限）、要約JSONの検証、Docker 内ローカルストレージ、スラッシュコマンドの defer
 7. **EMBEDDING_MODEL**: `text-embedding-004` の提供状況を要確認。移行すると次元が変わり既存ベクトルと非互換になるため要マイグレーション検討

@@ -5,6 +5,8 @@ XIVAPI v2 APIを使用してFF14のゲームデータ（アイテム、アクシ
 """
 
 import json
+import re
+import threading
 
 import httpx
 
@@ -54,6 +56,52 @@ JOB_NAME_MAPPING: dict[str, str] = {
 
 VALID_JOB_ABBREVIATIONS: set[str] = set(JOB_NAME_MAPPING.values())
 
+# DQLの文字列リテラルを壊す文字（引用符・バックスラッシュ・制御文字）
+# XIVAPI v2 のクエリ言語には文字列のエスケープ構文が定義されていないため除去する
+_DQL_UNSAFE_CHARS = re.compile(r'["\\\x00-\x1f\x7f]')
+
+# 接続・TLSセッションを再利用するためのプロセス共有クライアント (httpx.Client はスレッドセーフ)
+_http_client: httpx.Client | None = None
+_http_client_lock = threading.Lock()
+
+
+def _get_http_client() -> httpx.Client:
+    """共有のhttpxクライアントを取得する (初回呼び出し時に生成)"""
+    global _http_client
+    with _http_client_lock:
+        if _http_client is None or _http_client.is_closed:
+            _http_client = httpx.Client(timeout=XIVAPI_TIMEOUT_SECONDS)
+        return _http_client
+
+
+def close_http_client() -> None:
+    """共有のhttpxクライアントを閉じる (終了時用)"""
+    global _http_client
+    with _http_client_lock:
+        if _http_client is not None:
+            _http_client.close()
+            _http_client = None
+
+
+def _dql_str(value: str) -> str:
+    """DQLの文字列リテラルとして安全な値にする (引用符等を除去)"""
+    return _DQL_UNSAFE_CHARS.sub("", value)
+
+
+def _dql_int(value: object) -> int | None:
+    """DQLに埋め込む数値を整数に正規化する (LLMが600.0や"600"を渡すケースに対応)
+
+    Returns:
+        整数値。数値として解釈できない場合はNone (条件を付けない)
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(float(str(value)))
+    except (ValueError, OverflowError):
+        logger.warning(f"数値として解釈できない値を無視: {value!r}")
+        return None
+
 
 def _resolve_job_abbreviation(job_name: str) -> str | None:
     """ジョブ名を英語略称に解決する
@@ -81,14 +129,15 @@ def _build_search_query(
 ) -> str:
     """Item検索用のDQLクエリを構築する"""
     parts: list[str] = []
+    query = _dql_str(query)
     if query:
         parts.append(f'Name@ja~"{query}"')
     if job_abbreviation:
         parts.append(f'+ClassJobCategory.{job_abbreviation}=1')
     # 0は「指定なし」とみなす（AIのプレースホルダ対策）
-    if ilvl_min:
+    if ilvl_min := _dql_int(ilvl_min):
         parts.append(f"+LevelItem>={ilvl_min}")
-    if ilvl_max:
+    if ilvl_max := _dql_int(ilvl_max):
         parts.append(f"+LevelItem<={ilvl_max}")
     return " ".join(parts)
 
@@ -111,19 +160,18 @@ def _execute_search(
 ) -> dict:
     """XIVAPI v2の検索APIを実行する共通ヘルパー"""
     logger.info(f"XIVAPI v2 {search_label}: query={search_query}, limit={limit}")
-    with httpx.Client(timeout=XIVAPI_TIMEOUT_SECONDS) as http_client:
-        response = http_client.get(
-            XIVAPI_SEARCH_URL,
-            params={
-                "query": search_query,
-                "sheets": sheets,
-                "fields": fields,
-                "language": "ja",
-                "limit": limit,
-            },
-        )
-        response.raise_for_status()
-        return response.json()
+    response = _get_http_client().get(
+        XIVAPI_SEARCH_URL,
+        params={
+            "query": search_query,
+            "sheets": sheets,
+            "fields": fields,
+            "language": "ja",
+            "limit": limit,
+        },
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def _build_error_response(query: str, error: str) -> str:
@@ -143,10 +191,9 @@ def _fetch_sheet_row(sheet: str, row_id: int, fields: str = "") -> dict:
         params["fields"] = fields
 
     url = f"{XIVAPI_BASE_URL}/sheet/{sheet}/{row_id}"
-    with httpx.Client(timeout=XIVAPI_TIMEOUT_SECONDS) as http_client:
-        response = http_client.get(url, params=params)
-        response.raise_for_status()
-        return response.json()
+    response = _get_http_client().get(url, params=params)
+    response.raise_for_status()
+    return response.json()
 
 
 def _parse_item_result(result: dict) -> dict:
@@ -274,14 +321,15 @@ def _build_action_query(
 ) -> str:
     """Action検索用のDQLクエリを構築する"""
     parts: list[str] = []
+    query = _dql_str(query)
     if query:
         parts.append(f'Name@ja~"{query}"')
     if job_abbreviation:
         parts.append(f'+ClassJob.Abbreviation="{job_abbreviation}"')
     # 0は「指定なし」とみなす
-    if level_min:
+    if level_min := _dql_int(level_min):
         parts.append(f"+ClassJobLevel>={level_min}")
-    if level_max:
+    if level_max := _dql_int(level_max):
         parts.append(f"+ClassJobLevel<={level_max}")
     return " ".join(parts)
 
@@ -408,13 +456,14 @@ def _resolve_craft_type(craft_name: str) -> str | None:
 
 def _build_recipe_query(query: str = "", craft_type: str = "", level_min: int | None = None, level_max: int | None = None) -> str:
     parts: list[str] = []
+    query = _dql_str(query)
     if query:
         parts.append(f'ItemResult.Name@ja~"{query}"')
     if craft_type:
         parts.append(f'+CraftType.Name="{craft_type}"')
-    if level_min is not None:
+    if (level_min := _dql_int(level_min)) is not None:
         parts.append(f"+RecipeLevelTable.ClassJobLevel>={level_min}")
-    if level_max is not None:
+    if (level_max := _dql_int(level_max)) is not None:
         parts.append(f"+RecipeLevelTable.ClassJobLevel<={level_max}")
     return " ".join(parts)
 
@@ -491,12 +540,15 @@ VALID_GAME_CONTENT_CATEGORIES = set(GAME_CONTENT_CATEGORIES.keys())
 
 def _build_game_content_query(name_field: str, query: str = "", level_field: str | None = None, level_min: int | None = None, level_max: int | None = None) -> str:
     parts: list[str] = []
+    query = _dql_str(query)
     if query:
         field = f"{name_field}@ja" if name_field == "Name" else name_field
         parts.append(f'{field}~"{query}"')
     if level_field:
-        if level_min is not None: parts.append(f"+{level_field}>={level_min}")
-        if level_max is not None: parts.append(f"+{level_field}<={level_max}")
+        if (level_min := _dql_int(level_min)) is not None:
+            parts.append(f"+{level_field}>={level_min}")
+        if (level_max := _dql_int(level_max)) is not None:
+            parts.append(f"+{level_field}<={level_max}")
     return " ".join(parts)
 
 def _parse_game_content_result(result: dict, category_config: dict) -> dict:
