@@ -70,6 +70,23 @@ TRANSLATION_DEDUP_SECONDS: int = int(os.getenv("TRANSLATION_DEDUP_SECONDS", "360
 # 混雑時は長く待つと正確な応答が返ることが多いため長めに設定している
 GENAI_REQUEST_TIMEOUT_SECONDS: int = int(os.getenv("GENAI_REQUEST_TIMEOUT_SECONDS", "300"))
 
+# Gen AI APIのリトライ設定（チャンネルロックの長時間保持を防ぐため、全体の所要時間に上限を設ける）
+# MAIN: 会話応答（ツール呼び出しループ全体）・要約・反省会
+#   TIMEOUT_RETRIES はタイムアウト系エラーのリトライ回数（429/5xx は MAX_ATTEMPTS まで試行）
+#   TOTAL_TIMEOUT はツールループを含む1回の応答生成全体の上限秒数
+GENAI_MAIN_MAX_ATTEMPTS: int = int(os.getenv("GENAI_MAIN_MAX_ATTEMPTS", "5"))
+GENAI_MAIN_TIMEOUT_RETRIES: int = int(os.getenv("GENAI_MAIN_TIMEOUT_RETRIES", "1"))
+GENAI_MAIN_TOTAL_TIMEOUT_SECONDS: int = int(os.getenv("GENAI_MAIN_TOTAL_TIMEOUT_SECONDS", "600"))
+# LIGHT: Router・LLM Judge・相槌（応答前に同期的に待つため短く設定する）
+GENAI_LIGHT_REQUEST_TIMEOUT_SECONDS: int = int(
+    os.getenv("GENAI_LIGHT_REQUEST_TIMEOUT_SECONDS", "30")
+)
+GENAI_LIGHT_MAX_ATTEMPTS: int = int(os.getenv("GENAI_LIGHT_MAX_ATTEMPTS", "2"))
+GENAI_LIGHT_TIMEOUT_RETRIES: int = int(os.getenv("GENAI_LIGHT_TIMEOUT_RETRIES", "0"))
+GENAI_LIGHT_TOTAL_TIMEOUT_SECONDS: int = int(
+    os.getenv("GENAI_LIGHT_TOTAL_TIMEOUT_SECONDS", "45")
+)
+
 # Thinkingレベル（"" = モデルのデフォルト / "minimal" / "low" / "medium" / "high"）
 # MAIN: 会話応答・ツール呼び出しループ
 # LIGHT: Router・LLM Judge・相槌・要約・反省会・翻訳などの軽量タスク

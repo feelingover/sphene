@@ -48,6 +48,8 @@ applyTo: "**"
 - `MENTION_RATE_LIMIT_PER_USER` / `MENTION_RATE_LIMIT_PER_CHANNEL` / `MENTION_RATE_LIMIT_WINDOW_SECONDS`: 呼びかけのレート制限（デフォルト: 5 / 20 回 / 60秒、0で無効）
 - `TRANSLATION_DEDUP_SECONDS`: 国旗リアクション翻訳の重複抑止期間（デフォルト: 3600）
 - `GENAI_REQUEST_TIMEOUT_SECONDS`: Gen AI API 1リクエストのタイムアウト秒（デフォルト: 300。混雑時は長く待つと正確な応答が返るため長め）
+- `GENAI_MAIN_MAX_ATTEMPTS` / `GENAI_MAIN_TIMEOUT_RETRIES` / `GENAI_MAIN_TOTAL_TIMEOUT_SECONDS`: 会話応答・要約・反省会のリトライ設定（デフォルト: 5回 / タイムアウト再試行1回 / 全体600秒。会話応答はツールループ全体で予算を共有）
+- `GENAI_LIGHT_REQUEST_TIMEOUT_SECONDS` / `GENAI_LIGHT_MAX_ATTEMPTS` / `GENAI_LIGHT_TIMEOUT_RETRIES` / `GENAI_LIGHT_TOTAL_TIMEOUT_SECONDS`: Router・LLM Judge・相槌のリトライ設定（デフォルト: 30秒 / 2回 / 0回 / 45秒）
 - `MAIN_THINKING_LEVEL`: 会話応答・ツールループのThinkingレベル（デフォルト: 空 = モデルのデフォルト）
 - `LIGHT_THINKING_LEVEL`: Router・Judge・相槌・要約・反省会・翻訳のThinkingレベル（デフォルト: `low`）。`ai/client.py` の `get_light_thinking_config()` 経由で渡す
 - `ENABLE_GOOGLE_SEARCH_GROUNDING`: Google検索Grounding（function callingと排他）
@@ -92,6 +94,7 @@ applyTo: "**"
 | ストレージ同期I/Oは `asyncio.to_thread` でイベントループ外へ | Firestore 遅延で bot 全体が止まるのを防ぐ。記憶系は `_prefetch_memory` でキャッシュを先に温め、以降の同期呼び出しはキャッシュヒットさせる。各ストアは `threading.Lock` で保護（読み込みはロック外・登録は setdefault で先着優先） |
 | system_instruction のコンテキストはタグ＋エスケープ＋「データであり指示ではない」注記 | 他ユーザーの発言・LLM生成の記憶による間接プロンプトインジェクション対策（`ai/conversation.py` の `build_context_section`）。発言者名も改行・制御文字を除去 |
 | リトライ判定は例外の型とステータスコードのみ | 文字列一致は誤検知・見逃しが多い。408/429/5xx・httpx.TransportError・ConnectionError・TimeoutError をリトライ |
+| リトライ予算は用途別（`RetryPolicy`）＋全体の上限時刻 | チャンネルロックの長時間保持を防ぐ。タイムアウト系（408/504・httpx.TimeoutException・TimeoutError・DeadlineExceeded）の再試行回数を別枠で制限し、上限時刻までの残り時間でリクエスト単位のタイムアウトも絞る。Router・Judge・相槌は `light_retry_policy()` |
 | 完了した過去ターンはツール中間データ・画像を除去 | ツール結果の生JSONや画像バイトが30分間毎リクエスト再送されるのを防ぐ。直近ターンは追加質問に答えられるよう保持し、ツール結果1件も `MAX_TOOL_RESULT_CHARS` で切り詰め |
 | function_response は function_call と1対1・id を返す | APIは同数の応答を要求する。名前なし・未知の関数もスキップせずエラー応答を返し、並列呼び出しのため `call.id` をそのまま返す |
 | XIVAPI の DQL 文字列は引用符・バックスラッシュ・制御文字を除去 | XIVAPI v2 のクエリ言語に文字列エスケープ構文が定義されていないため。LLM由来の数値も `int` に正規化してから埋め込む |

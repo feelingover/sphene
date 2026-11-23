@@ -2,19 +2,25 @@
 
 import json
 import logging
+import time
+from dataclasses import dataclass
 from typing import Any, Callable, TYPE_CHECKING
 
 import httpx
 from google.genai import types, errors as genai_errors
 from google.api_core import exceptions as google_exceptions
 from tenacity import (
-    retry,
+    RetryCallState,
+    Retrying,
     stop_after_attempt,
+    stop_any,
     wait_exponential,
     retry_if_exception,
     before_sleep_log,
 )
+from tenacity.stop import stop_base
 
+import config as _config
 from ai.client import _get_genai_client, get_main_thinking_config, get_model_name
 from ai.tools import get_tools, TOOL_FUNCTIONS
 from config import BOT_MODEL, MAX_TOOL_CALL_ROUNDS, MAX_TOOL_RESULT_CHARS
@@ -61,25 +67,160 @@ def _should_retry_api_error(exception: BaseException) -> bool:
     return False
 
 
-@retry(
-    reraise=True,
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=60),
-    retry=retry_if_exception(_should_retry_api_error),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
-)
+# タイムアウト扱いする HTTP ステータス（408: Request Timeout, 504: Gateway Timeout）
+_TIMEOUT_STATUS_CODES = frozenset({408, 504})
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """Gen AI API 呼び出しのリトライ設定
+
+    Attributes:
+        max_attempts: 最大試行回数（初回を含む）
+        timeout_retries: タイムアウト系エラーで再試行する最大回数
+        request_timeout_seconds: 1リクエストあたりのタイムアウト秒数
+        total_timeout_seconds: リトライ・待機を含む全体の上限秒数
+    """
+
+    max_attempts: int
+    timeout_retries: int
+    request_timeout_seconds: float
+    total_timeout_seconds: float
+
+    def new_deadline(self) -> float:
+        """現在時刻から全体の上限時刻（time.monotonic 基準）を求める"""
+        return time.monotonic() + self.total_timeout_seconds
+
+
+def main_retry_policy() -> RetryPolicy:
+    """会話応答・要約・反省会用のリトライ設定を返す"""
+    return RetryPolicy(
+        max_attempts=_config.GENAI_MAIN_MAX_ATTEMPTS,
+        timeout_retries=_config.GENAI_MAIN_TIMEOUT_RETRIES,
+        request_timeout_seconds=_config.GENAI_REQUEST_TIMEOUT_SECONDS,
+        total_timeout_seconds=_config.GENAI_MAIN_TOTAL_TIMEOUT_SECONDS,
+    )
+
+
+def light_retry_policy() -> RetryPolicy:
+    """Router・LLM Judge・相槌用の短いリトライ設定を返す"""
+    return RetryPolicy(
+        max_attempts=_config.GENAI_LIGHT_MAX_ATTEMPTS,
+        timeout_retries=_config.GENAI_LIGHT_TIMEOUT_RETRIES,
+        request_timeout_seconds=_config.GENAI_LIGHT_REQUEST_TIMEOUT_SECONDS,
+        total_timeout_seconds=_config.GENAI_LIGHT_TOTAL_TIMEOUT_SECONDS,
+    )
+
+
+def _is_timeout_error(exception: BaseException) -> bool:
+    """タイムアウト系のエラーかどうかを判定する"""
+    if isinstance(exception, genai_errors.APIError):
+        return exception.code in _TIMEOUT_STATUS_CODES
+    return isinstance(
+        exception,
+        (httpx.TimeoutException, TimeoutError, google_exceptions.DeadlineExceeded),
+    )
+
+
+def _make_retry_predicate(policy: RetryPolicy) -> Callable[[BaseException], bool]:
+    """タイムアウト系エラーの再試行回数を policy.timeout_retries に抑える判定関数を作る
+
+    1回の generate_content_with_retry 呼び出しごとに生成し、タイムアウト回数を数える。
+    """
+    timeout_count = 0
+
+    def _predicate(exception: BaseException) -> bool:
+        nonlocal timeout_count
+        if not _should_retry_api_error(exception):
+            return False
+        if _is_timeout_error(exception):
+            timeout_count += 1
+            return timeout_count <= policy.timeout_retries
+        return True
+
+    return _predicate
+
+
+class _stop_at_deadline(stop_base):
+    """次の待機を終えた時点で上限時刻（time.monotonic 基準）を過ぎるなら打ち切る"""
+
+    def __init__(self, deadline: float) -> None:
+        self.deadline = deadline
+
+    def __call__(self, retry_state: RetryCallState) -> bool:
+        return time.monotonic() + retry_state.upcoming_sleep >= self.deadline
+
+
+def _with_request_timeout(
+    config: types.GenerateContentConfig, timeout_seconds: float
+) -> types.GenerateContentConfig:
+    """リクエスト単位のタイムアウトを設定した config のコピーを返す"""
+    timeout_ms = max(1, int(timeout_seconds * 1000))
+    base = config.http_options or types.HttpOptions()
+    return config.model_copy(
+        update={"http_options": base.model_copy(update={"timeout": timeout_ms})}
+    )
+
+
+def _generate_once(
+    client: Any,
+    model: str,
+    contents: list[types.Content],
+    config: types.GenerateContentConfig,
+    policy: RetryPolicy,
+    deadline: float,
+) -> Any:
+    """上限時刻までの残り時間でタイムアウトを絞って1回だけAPIを呼び出す"""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Gen AI API呼び出しの所要時間上限に到達しました")
+    timeout_seconds = min(policy.request_timeout_seconds, remaining)
+    return client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=_with_request_timeout(config, timeout_seconds),
+    )
+
+
 def generate_content_with_retry(
     client: Any,
     model: str,
     contents: list[types.Content],
     config: types.GenerateContentConfig,
+    policy: RetryPolicy | None = None,
+    deadline: float | None = None,
 ) -> Any:
-    """Vertex AI API呼び出しをリトライ付きで実行する"""
-    return client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=config,
+    """Vertex AI API呼び出しをリトライ付きで実行する
+
+    試行回数・タイムアウト系エラーの再試行回数・全体の所要時間に上限を設け、
+    チャンネルロックを長時間保持しないようにする。
+
+    Args:
+        client: Gen AI クライアント
+        model: モデル名
+        contents: 送信する履歴
+        config: 生成設定
+        policy: リトライ設定。省略時は main_retry_policy()
+        deadline: 全体の上限時刻（time.monotonic 基準）。複数回の呼び出しで
+            予算を共有する場合に渡す。省略時は policy.total_timeout_seconds 後
+
+    Returns:
+        generate_content のレスポンス
+
+    Raises:
+        Exception: リトライ対象外のエラー、または上限到達時の最後のエラー
+    """
+    policy = policy or main_retry_policy()
+    if deadline is None:
+        deadline = policy.new_deadline()
+    retryer = Retrying(
+        reraise=True,
+        stop=stop_any(stop_after_attempt(policy.max_attempts), _stop_at_deadline(deadline)),
+        wait=wait_exponential(multiplier=1, min=2, max=60),
+        retry=retry_if_exception(_make_retry_predicate(policy)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
     )
+    return retryer(_generate_once, client, model, contents, config, policy, deadline)
 
 
 def _run_tool(function_name: str, call: types.FunctionCall) -> dict[str, object] | str:
@@ -378,9 +519,13 @@ def call_genai_with_tools(
         tools = []
         logger.debug("ツールなしモード")
 
+    # ツールループ全体で所要時間の予算を共有し、チャンネルロックの保持時間に上限を設ける
+    policy = main_retry_policy()
     request: dict[str, Any] = {
         "client": client,
         "model": model_id,
+        "policy": policy,
+        "deadline": policy.new_deadline(),
         "config": types.GenerateContentConfig(
             system_instruction=system_instruction,
             thinking_config=get_main_thinking_config(),

@@ -21,7 +21,7 @@ app.py → bot/discord_bot.py → bot/commands.py, bot/events.py
 Discord接続、コマンド/イベントハンドラ初期化、システムプロンプト読み込み、15分ごとのクリーンアップタスク（バッファ清掃・要約・プロファイル永続化・ファクトストアクリーンアップ・反省会トリガー）。
 
 ### API Layer (`ai/api.py`)
-GenAI API 呼び出しロジックを集約。`generate_content_with_retry`（tenacityリトライ付き）、`call_genai_with_tools`（ツール呼び出しループ）、`_execute_tool_calls`、`_handle_api_error`。`memory/summarizer.py` および `memory/llm_judge.py` はこのモジュールをインポート。
+GenAI API 呼び出しロジックを集約。`generate_content_with_retry`（tenacityリトライ付き。`RetryPolicy` で用途別の試行回数・タイムアウト・全体の上限時刻を指定。`main_retry_policy()` / `light_retry_policy()`）、`call_genai_with_tools`（ツール呼び出しループ）、`_execute_tool_calls`、`_handle_api_error`。`memory/summarizer.py` および `memory/llm_judge.py` はこのモジュールをインポート。
 
 ### Sphene (`ai/conversation.py`)
 会話ステート層のみ。チャンネルごとの履歴管理（`channel_conversations: defaultdict`）、タイムアウト(30分)、最大10ターン、画像処理、システムプロンプトキャッシュ。API 呼び出し本体は `ai/api.py` に委譲。
