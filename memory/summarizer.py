@@ -166,11 +166,14 @@ class Summarizer:
     async def _skip_empty(
         self, channel_id: int, context: ChannelContext, consumed_count: int
     ) -> None:
-        """要約対象メッセージが無い場合にカウントだけ消化して保存する"""
+        """要約対象メッセージが無い場合にカウントだけ消化して保存する
+
+        バックオフは更新しない（失敗として数えず、既存の連続失敗回数も巻き戻さない）。
+        """
         _consume_message_count(context, consumed_count)
         store = get_channel_context_store()
+        # 成功でも失敗でもないので、連続失敗回数（バックオフ段階）には触らない
         await asyncio.to_thread(store.save_context, context)
-        self._backoff.reset(channel_id)
         logger.debug(
             f"要約スキップ（対象メッセージなし）: channel_id={channel_id}, "
             f"remaining={context.message_count_since_update}"

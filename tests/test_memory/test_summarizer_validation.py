@@ -151,7 +151,6 @@ class TestEmptyMessages:
     @patch("memory.summarizer.get_channel_context_store")
     async def test_empty_messages_do_not_record_failure(self, mock_get_store):
         summarizer = Summarizer()
-        summarizer._backoff.record_failure(1)
         context = ChannelContext(channel_id=1, message_count_since_update=3)
 
         with patch.object(summarizer, "_call_summarize_llm") as mock_llm:
@@ -183,6 +182,19 @@ class TestEmptyMessages:
         await summarizer._run_summarize(1, context, [], 2)
 
         assert context.message_count_since_update == 3
+
+
+    @pytest.mark.asyncio
+    @patch("memory.summarizer.get_channel_context_store")
+    async def test_empty_does_not_reset_existing_failures(self, mock_get_store):
+        """空スキップで連続失敗回数（指数バックオフの段階）を巻き戻さない"""
+        summarizer = Summarizer()
+        summarizer._backoff.record_failure(1)
+        summarizer._backoff.record_failure(1)
+
+        await summarizer._run_summarize(1, ChannelContext(channel_id=1), [], 1)
+
+        assert summarizer._backoff.failure_count(1) == 2
 
 
 class TestConsumedCount:
