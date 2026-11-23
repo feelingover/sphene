@@ -65,9 +65,16 @@ python app.py
 # イメージのビルド
 docker build -t sphene-discord-bot .
 
-# コンテナの実行
-docker run --env-file .env sphene-discord-bot
+# コンテナの実行（STORAGE_TYPE=local の場合はボリュームでデータを永続化する）
+docker run --env-file .env -v sphene-data:/app/storage sphene-discord-bot
 ```
+
+`STORAGE_TYPE=local`（デフォルト）では、チャンネル設定や記憶（ユーザープロファイル・ファクト等）を `/app/storage` に保存します。ボリュームをマウントしないと、コンテナを作り直したときにデータが消えます。
+
+- 名前付きボリューム（上記の `sphene-data`）を使う場合、権限の設定は不要です
+- ホストのディレクトリをバインドマウントする場合は、コンテナの実行ユーザー（UID/GID 1000。ビルド引数 `USER_ID` / `GROUP_ID` で変更可）が書き込めるようにしてください
+- システムプロンプトをローカルファイルで渡す場合は、`storage/system.txt`（`SYSTEM_PROMPT_PATH`）をボリュームに置くか、別のパスにマウントして `SYSTEM_PROMPT_PATH` で指定します
+- `STORAGE_TYPE=firestore` の場合、記憶系のデータは Firestore に保存されるため、ボリュームは不要です
 
 ## Kubernetesへのデプロイ
 

@@ -6,9 +6,9 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 933件全パス
+- テスト: 952件全パス
 - カバレッジ: 94%
-- mypy: 92ファイル no issues
+- mypy: 94ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -101,6 +101,8 @@ applyTo: "**"
 | 記憶ストアの定期永続化は dirty なキーのみ | 15分ごとに全プロファイル・全チャンネルを書き込んでいた（Firestore の書き込み課金）。検索ヒットによる `access_count` 更新も dirty 扱い。失敗したキーは dirty に戻して再試行 |
 | Firestore のサイズは型ごとの保存規則で見積もる（`utils/firestore_client.estimate_document_size`） | JSON長で見積もると浮動小数（embedding）を約2.5倍に過大評価し、収まるファクトまで削ってしまうため |
 | ファクトアーカイブに embedding を保存しない | アーカイブは読み戻されず、embedding は `EMBEDDING_MODEL` 依存で移行時には再生成が必要。容量の大半を占めていた |
+| スラッシュコマンド・ビューのコールバックは I/O 前に defer | 設定の読み書き（Firestore 最大3往復）で Discord の3秒応答期限を超えると 10062 Unknown interaction になるため。権限エラー・サーバー外実行など I/O なしで即答できるものは defer しない。返信は `_reply()` で defer 済みなら followup に切り替える |
+| Docker イメージは `/app/storage` を実行ユーザー所有で作成し VOLUME 宣言 | `STORAGE_TYPE=local` の書き込み先が存在せず root 所有の `/app` 配下で PermissionError になり、コンテナ再作成でデータも消えていたため |
 | エラー通知はボットが話しかけられた場合のみ | 無関係なメッセージへのエラー投稿の連発を防ぐ。記憶の記録失敗は応答を止めない（`_record_memory` で隔離） |
 
 ## Open Issues
@@ -110,5 +112,5 @@ applyTo: "**"
 3. **フル async 化**: google-genai `client.aio` への移行（中期候補）
 4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索（現状は in-memory コサイン類似度）
 5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）
-6. **2026/11 コードレビュー残課題**（Router プリフィルタは実装済み。ツールスキーマ enum・function_response・履歴肥大化・XIVAPI・二重リアクション・翻訳の重複排除・メンションのレート制限・反省会のバックオフ・要約JSONの検証・dirty フラグ・1MB上限ガードは対応済み）: Docker 内ローカルストレージ、スラッシュコマンドの defer
+6. ~~**2026/11 コードレビュー残課題**~~: 全件対応済み（PR #124〜#129）。Router プリフィルタは対応前から実装済みだった。残る検討事項: 7文字以下の短文（例: 「ガンブレイカー」）もプリフィルタで none になり、ツールが使われない
 7. **EMBEDDING_MODEL**: `text-embedding-004` の提供状況を要確認。移行すると次元が変わり既存ベクトルと非互換になるため要マイグレーション検討。高次元モデル（例: 3072次元）に移行すると1チャンネル1ドキュメントのファクトが1MiB上限に当たるため、移行時にサブコレクション（`facts/{channel_id}/items/{fact_id}`）化もあわせて検討する（現状は上限超過分を関連度の低い順に保存対象外にするガードのみ）

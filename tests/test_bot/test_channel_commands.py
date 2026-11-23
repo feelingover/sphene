@@ -16,6 +16,7 @@ from bot.commands import (
     cmd_mode,
     cmd_remove_channel,
 )
+from tests.test_bot.interaction_helpers import attach_response_state
 
 
 class TestChannelCommands:
@@ -40,20 +41,21 @@ class TestChannelCommands:
         # インタラクションのモック
         interaction = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.guild = mock_guild
 
         # コマンド実行
         await cmd_mode(interaction)
 
         # アサーション
-        interaction.response.send_message.assert_called_once()
+        interaction.followup.send.assert_called_once()
         # コンフィグマネージャーがguild_idで呼び出されたことを確認
         mock_config_manager.get_config.assert_called_once_with(mock_guild.id)
         # モードとリスト表示名の取得を確認
         mock_channel_config.get_mode_display_name.assert_called_once()
         mock_channel_config.get_list_display_name.assert_called_once()
         # Viewオブジェクトが渡されたことを確認
-        args, kwargs = interaction.response.send_message.call_args
+        args, kwargs = interaction.followup.send.call_args
         assert "view" in kwargs
 
     @pytest.mark.asyncio
@@ -77,6 +79,7 @@ class TestChannelCommands:
         # インタラクションのモック
         interaction = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.guild = mock_guild
 
         # ボットのモック
@@ -86,11 +89,11 @@ class TestChannelCommands:
         await cmd_list_channels(bot, interaction)
 
         # アサーション
-        interaction.response.send_message.assert_called_once()
+        interaction.followup.send.assert_called_once()
         mock_config_manager.get_config.assert_called_once_with(mock_guild.id)
 
         # メッセージに「リストは空です」が含まれていることを確認
-        args, kwargs = interaction.response.send_message.call_args
+        args, kwargs = interaction.followup.send.call_args
         assert "リストは空です" in args[0]
 
     @pytest.mark.asyncio
@@ -120,6 +123,7 @@ class TestChannelCommands:
         # インタラクションのモック
         interaction = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.guild = mock_guild
 
         # ボットのモック
@@ -132,11 +136,11 @@ class TestChannelCommands:
         await cmd_list_channels(bot, interaction, page=1)
 
         # アサーション
-        interaction.response.send_message.assert_called_once()
+        interaction.followup.send.assert_called_once()
         mock_config_manager.get_config.assert_called_once_with(mock_guild.id)
 
         # チャンネル情報がメッセージに含まれていることを確認
-        args, kwargs = interaction.response.send_message.call_args
+        args, kwargs = interaction.followup.send.call_args
         assert "限定モード" in args[0]
         assert "許可チャンネルリスト" in args[0]
         assert "実際のチャンネル1" in args[0]
@@ -160,6 +164,7 @@ class TestChannelCommands:
         # インタラクションのモック
         interaction = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.guild = mock_guild
 
         # チャンネルのモック
@@ -176,10 +181,10 @@ class TestChannelCommands:
         mock_channel_config.add_channel.assert_called_once_with(
             12345, "テストチャンネル"
         )
-        interaction.response.send_message.assert_called_once()
+        interaction.followup.send.assert_called_once()
 
         # 成功メッセージが表示されていることを確認
-        args, kwargs = interaction.response.send_message.call_args
+        args, kwargs = interaction.followup.send.call_args
         assert "✅" in args[0]
         assert "テストチャンネル" in args[0]
 
@@ -201,6 +206,7 @@ class TestChannelCommands:
         # インタラクションのモック
         interaction = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.guild = mock_guild
 
         # チャンネルのモック
@@ -215,7 +221,7 @@ class TestChannelCommands:
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(mock_guild.id)
         # 失敗メッセージが表示されることを確認
-        args, kwargs = interaction.response.send_message.call_args
+        args, kwargs = interaction.followup.send.call_args
         assert "❌" in args[0]
 
     @pytest.mark.asyncio
@@ -240,6 +246,7 @@ class TestChannelCommands:
         # インタラクションのモック
         interaction = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.guild = mock_guild
 
         # チャンネルのモック
@@ -254,10 +261,10 @@ class TestChannelCommands:
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(mock_guild.id)
         mock_channel_config.remove_channel.assert_called_once_with(12345)
-        interaction.response.send_message.assert_called_once()
+        interaction.followup.send.assert_called_once()
 
         # 成功メッセージが表示されていることを確認
-        args, kwargs = interaction.response.send_message.call_args
+        args, kwargs = interaction.followup.send.call_args
         assert "✅" in args[0]
         assert "テストチャンネル" in args[0]
 
@@ -279,6 +286,7 @@ class TestChannelCommands:
         # インタラクションのモック
         interaction = MagicMock()
         interaction.response.send_message = AsyncMock()
+        attach_response_state(interaction)
         interaction.guild = mock_guild
 
         # コマンド実行
@@ -286,8 +294,8 @@ class TestChannelCommands:
 
         # アサーション
         mock_config_manager.get_config.assert_called_once_with(mock_guild.id)
-        interaction.response.send_message.assert_called_once()
-        args, kwargs = interaction.response.send_message.call_args
+        interaction.followup.send.assert_called_once()
+        args, kwargs = interaction.followup.send.call_args
         assert "クリアしますか" in args[0]
         assert "view" in kwargs
 
@@ -296,18 +304,15 @@ class TestChannelCommands:
     async def test_commands_without_guild(self, mock_config_manager):
         """ギルドなしの場合のエラーメッセージテスト"""
         # インタラクションのモック（guild=Noneに設定）
-        interaction = MagicMock()
-        interaction.response.send_message = AsyncMock()
-        interaction.guild = None
+        # 各コマンドをテスト（実際と同様にコマンドごとに別のインタラクション）
+        for command in (cmd_mode, cmd_add_channel, cmd_remove_channel, cmd_clear_channels):
+            interaction = attach_response_state(MagicMock())
+            interaction.guild = None
 
-        # 各コマンドをテスト
-        await cmd_mode(interaction)
-        await cmd_add_channel(interaction)
-        await cmd_remove_channel(interaction)
-        await cmd_clear_channels(interaction)
+            await command(interaction)
 
-        # 各コマンドで同じエラーメッセージが表示されていることを確認
-        assert interaction.response.send_message.call_count == 4
-        for i in range(4):
-            args, kwargs = interaction.response.send_message.call_args_list[i]
+            # I/O 前に即答するため defer せず、同じエラーメッセージを返す
+            interaction.response.defer.assert_not_called()
+            interaction.response.send_message.assert_called_once()
+            args, kwargs = interaction.response.send_message.call_args
             assert "サーバー内でのみ使用できます" in args[0]
