@@ -90,9 +90,7 @@ class TestConversationExtensive:
         mock_func = MagicMock(return_value={"result": "success"})
         mock_tools.get.return_value = mock_func
 
-        mock_call = MagicMock()
-        mock_call.name = "test_tool"
-        mock_call.args = {"arg": "val"}
+        mock_call = types.FunctionCall(name="test_tool", args={"arg": "val"})
 
         results = _execute_tool_calls([mock_call])
 
@@ -104,9 +102,7 @@ class TestConversationExtensive:
         """未知のツール関数の呼び出しテスト"""
         mock_tools.get.return_value = None
 
-        mock_call = MagicMock()
-        mock_call.name = "unknown_tool"
-        mock_call.args = {}
+        mock_call = types.FunctionCall(name="unknown_tool", args={})
 
         results = _execute_tool_calls([mock_call])
 
@@ -119,9 +115,7 @@ class TestConversationExtensive:
         mock_func = MagicMock(side_effect=Exception("ツール内部エラー"))
         mock_tools.get.return_value = mock_func
 
-        mock_call = MagicMock()
-        mock_call.name = "error_tool"
-        mock_call.args = {"key": "value"}
+        mock_call = types.FunctionCall(name="error_tool", args={"key": "value"})
 
         results = _execute_tool_calls([mock_call])
 

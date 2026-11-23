@@ -7,7 +7,17 @@ LLMが使用できるツール（関数）の定義を集約するモジュー�
 from typing import Any, Callable
 from google.genai import types
 
-from xivapi.client import search_action, search_game_content, search_item, search_recipe
+from xivapi.client import (
+    CRAFT_TYPE_MAPPING,
+    GAME_CONTENT_CATEGORIES,
+    search_action,
+    search_game_content,
+    search_item,
+    search_recipe,
+)
+
+# クラフタージョブ名は日本語名・英語名のどちらでも解決できる
+_CRAFT_TYPE_ENUM: list[str] = [*CRAFT_TYPE_MAPPING.keys(), *CRAFT_TYPE_MAPPING.values()]
 
 # ツール定義リスト（OpenAI互換形式を維持しつつ、後で変換する）
 TOOL_DEFINITIONS_RAW: list[dict[str, Any]] = [
@@ -47,7 +57,11 @@ TOOL_DEFINITIONS_RAW: list[dict[str, Any]] = [
             "type": "OBJECT",
             "properties": {
                 "query": {"type": "STRING", "description": "完成品名"},
-                "craft_type": {"type": "STRING", "description": "クラフタージョブ名"},
+                "craft_type": {
+                    "type": "STRING",
+                    "enum": _CRAFT_TYPE_ENUM,
+                    "description": "クラフタージョブ名",
+                },
                 "level_min": {"type": "INTEGER", "description": "レシピレベル下限"},
                 "level_max": {"type": "INTEGER", "description": "レシピレベル上限"},
             },
@@ -62,8 +76,16 @@ TOOL_DEFINITIONS_RAW: list[dict[str, Any]] = [
                 "query": {"type": "STRING", "description": "検索する名前"},
                 "category": {
                     "type": "STRING",
-                    "enum": ["Quest", "Achievement", "Fate", "Mount", "Minion", "Status"],
+                    "enum": list(GAME_CONTENT_CATEGORIES.keys()),
                     "description": "検索カテゴリ",
+                },
+                "level_min": {
+                    "type": "INTEGER",
+                    "description": "レベル下限（Quest / Fate のみ有効）",
+                },
+                "level_max": {
+                    "type": "INTEGER",
+                    "description": "レベル上限（Quest / Fate のみ有効）",
                 },
             },
             "required": ["category"],
@@ -80,30 +102,30 @@ TOOL_FUNCTIONS: dict[str, Callable[..., str]] = {
 }
 
 
+def _to_schema(params: dict[str, Any]) -> types.Schema:
+    """生のパラメータ定義をSDKのSchemaに変換する (enumも引き継ぐ)"""
+    return types.Schema(
+        type=params["type"],
+        properties={
+            k: types.Schema(
+                type=v["type"],
+                description=v.get("description", ""),
+                enum=v.get("enum"),
+            )
+            for k, v in params["properties"].items()
+        },
+        required=params.get("required", []),
+    )
+
+
 def get_tools() -> list[types.Tool]:
     """Google Gen AI SDK形式のツールリストを取得する"""
-    function_declarations = []
-    for tool in TOOL_DEFINITIONS_RAW:
-        # types.FunctionDeclaration を使用
-        # パラメータの形式を SDK の期待するものに調整
-        params = tool["parameters"]
-        
-        # SDK の Schema に変換
-        schema = types.Schema(
-            type=params["type"],
-            properties={
-                k: types.Schema(type=v["type"], description=v.get("description", ""))
-                for k, v in params["properties"].items()
-            },
-            required=params.get("required", []),
+    function_declarations = [
+        types.FunctionDeclaration(
+            name=tool["name"],
+            description=tool["description"],
+            parameters=_to_schema(tool["parameters"]),
         )
-
-        function_declarations.append(
-            types.FunctionDeclaration(
-                name=tool["name"],
-                description=tool["description"],
-                parameters=schema,
-            )
-        )
-    
+        for tool in TOOL_DEFINITIONS_RAW
+    ]
     return [types.Tool(function_declarations=function_declarations)]

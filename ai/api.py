@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 
 import httpx
 from google.genai import types, errors as genai_errors
@@ -17,7 +17,7 @@ from tenacity import (
 
 from ai.client import _get_genai_client, get_main_thinking_config, get_model_name
 from ai.tools import get_tools, TOOL_FUNCTIONS
-from config import BOT_MODEL, MAX_TOOL_CALL_ROUNDS
+from config import BOT_MODEL, MAX_TOOL_CALL_ROUNDS, MAX_TOOL_RESULT_CHARS
 from log_utils.logger import logger
 from utils.text_utils import truncate_text
 
@@ -82,39 +82,74 @@ def generate_content_with_retry(
     )
 
 
+def _run_tool(function_name: str, call: types.FunctionCall) -> dict[str, object] | str:
+    """ツール関数を実行し、結果 (JSON文字列またはエラーdict) を返す"""
+    func = TOOL_FUNCTIONS.get(function_name)
+    if func is None:
+        return {"error": f"未知の関数: {function_name}"}
+    try:
+        return func(**(call.args or {}))
+    except Exception as e:
+        logger.error(f"ツール実行エラー: {function_name}: {e}", exc_info=True)
+        return {"error": "ツールの実行中にエラーが発生しました"}
+
+
+def _to_response_dict(result: dict[str, object] | str) -> dict[str, Any]:
+    """ツール結果をfunction_responseに渡せるdictに正規化し、長すぎる結果は切り詰める
+
+    function_responseのresponseはdictである必要があるため、JSONの配列・数値・文字列は
+    {"result": ...} で包む。履歴の肥大化を防ぐため、JSON化して
+    MAX_TOOL_RESULT_CHARS を超える結果は先頭のみを文字列として残す。
+    """
+    value: object = result
+    if isinstance(result, str):
+        try:
+            value = json.loads(result)
+        except (ValueError, json.JSONDecodeError):
+            value = {"content": result}
+    response: dict[str, Any] = value if isinstance(value, dict) else {"result": value}
+
+    serialized = json.dumps(response, ensure_ascii=False, default=str)
+    if len(serialized) <= MAX_TOOL_RESULT_CHARS:
+        return response
+    logger.warning(
+        f"ツール結果が長すぎるため切り詰め: {len(serialized)} -> {MAX_TOOL_RESULT_CHARS}文字"
+    )
+    return {"truncated": True, "content": serialized[:MAX_TOOL_RESULT_CHARS]}
+
+
 def _execute_tool_calls(tool_calls: list[types.FunctionCall]) -> list[types.Part]:
-    """共通のツール実行ロジック"""
+    """ツール呼び出しを実行し、呼び出しと1対1に対応するfunction_responseを返す
+
+    APIはfunction_callと同数のfunction_responseを要求するため、名前のない呼び出しや
+    未知の関数でもスキップせずエラー応答を返す。並列呼び出しを対応付けられるよう
+    function_callのidをそのまま返す。
+
+    Args:
+        tool_calls: モデルが返したfunction_callのリスト
+
+    Returns:
+        tool_callsと同じ順序・件数のfunction_response part
+    """
     results: list[types.Part] = []
     for call in tool_calls:
         function_name = call.name
+        result: dict[str, object] | str
         if function_name is None:
-            logger.warning("名前のないツール呼び出しをスキップ")
-            continue
-        logger.info(f"ツール呼び出し: {function_name}")
-        func = TOOL_FUNCTIONS.get(function_name)
-        result_content: dict[str, object] | str
-        if func is None:
-            result_content = {"error": f"未知の関数: {function_name}"}
+            logger.warning("名前のないツール呼び出しを検出")
+            function_name = "unknown"
+            result = {"error": "関数名が指定されていません"}
         else:
-            try:
-                arguments = call.args or {}
-                result_content = func(**arguments)
-            except Exception as e:
-                logger.error(f"ツール実行エラー: {function_name}: {e}", exc_info=True)
-                result_content = {"error": "ツールの実行中にエラーが発生しました"}
-
-        if isinstance(result_content, str):
-            try:
-                result_dict = json.loads(result_content)
-            except (ValueError, json.JSONDecodeError):
-                result_dict = {"content": result_content}
-        else:
-            result_dict = result_content
+            logger.info(f"ツール呼び出し: {function_name}")
+            result = _run_tool(function_name, call)
 
         results.append(
-            types.Part.from_function_response(
-                name=function_name,
-                response=result_dict,
+            types.Part(
+                function_response=types.FunctionResponse(
+                    id=call.id,
+                    name=function_name,
+                    response=_to_response_dict(result),
+                )
             )
         )
     return results
@@ -154,13 +189,54 @@ def _function_response_to_text(part: types.Part) -> types.Part:
     return types.Part.from_text(text=f"（ツール {fr.name} の実行結果）\n{result}")
 
 
+def rebuild_contents(
+    contents: list[types.Content],
+    transform: Callable[[types.Part], types.Part | None],
+) -> list[types.Content]:
+    """各partを変換した履歴のコピーを作る
+
+    transformがNoneを返したpartは除去する。partが空になったContentは丸ごと除外し、
+    同じroleが連続した場合は1つのContentにまとめる (APIはroleの交互性を期待するため)。
+
+    Args:
+        contents: 会話履歴
+        transform: partを変換する関数。Noneを返すとそのpartを除去する
+
+    Returns:
+        変換後の履歴 (元の履歴は変更しない)
+    """
+    rebuilt: list[types.Content] = []
+    for content in contents:
+        parts = [
+            converted
+            for p in (content.parts or [])
+            if (converted := transform(p)) is not None
+        ]
+        if not parts:
+            continue
+        if rebuilt and rebuilt[-1].role == content.role:
+            prev = rebuilt[-1]
+            rebuilt[-1] = types.Content(role=prev.role, parts=[*(prev.parts or []), *parts])
+        else:
+            rebuilt.append(types.Content(role=content.role, parts=parts))
+    return rebuilt
+
+
+def _flatten_part(part: types.Part) -> types.Part | None:
+    """function_callは除去し、function_responseはテキストpartに変換する"""
+    if part.function_call:
+        return None
+    if part.function_response:
+        return _function_response_to_text(part)
+    return part
+
+
 def _flatten_function_parts(contents: list[types.Content]) -> list[types.Content]:
     """履歴のfunction系partをテキスト化・除去した送信用コピーを作る
 
     ツール未宣言のリクエストで履歴中のfunction_callをモデルが模倣するのを防ぐ。
     function_callは除去し、function_responseは集めた情報を活かせるよう
-    テキストpartに変換する。partが空になったContentは丸ごと除外し、
-    同じroleが連続した場合は1つのContentにまとめる。
+    テキストpartに変換する。
 
     Args:
         contents: 会話履歴
@@ -168,21 +244,7 @@ def _flatten_function_parts(contents: list[types.Content]) -> list[types.Content
     Returns:
         function系partを含まない送信用の履歴
     """
-    flattened: list[types.Content] = []
-    for content in contents:
-        parts = [
-            _function_response_to_text(p) if p.function_response else p
-            for p in (content.parts or [])
-            if not p.function_call
-        ]
-        if not parts:
-            continue
-        if flattened and flattened[-1].role == content.role:
-            prev = flattened[-1]
-            flattened[-1] = types.Content(role=prev.role, parts=[*(prev.parts or []), *parts])
-        else:
-            flattened.append(types.Content(role=content.role, parts=parts))
-    return flattened
+    return rebuild_contents(contents, _flatten_part)
 
 
 def _handle_undeclared_function_calls(

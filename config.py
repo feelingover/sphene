@@ -56,6 +56,8 @@ FIRESTORE_COLLECTION_FACTS_ARCHIVE: str = get_collection_name("facts_archive")
 
 # === AI会話設定 ===
 MAX_TOOL_CALL_ROUNDS: int = int(os.getenv("MAX_TOOL_CALL_ROUNDS", "15"))
+# ツール結果1件あたりの最大文字数（JSON化後）。超えた分は切り詰めて履歴の肥大化を防ぐ
+MAX_TOOL_RESULT_CHARS: int = int(os.getenv("MAX_TOOL_RESULT_CHARS", "10000"))
 
 # Gen AI APIの1リクエストあたりのタイムアウト（秒）
 # 混雑時は長く待つと正確な応答が返ることが多いため長めに設定している
