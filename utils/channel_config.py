@@ -3,15 +3,17 @@
 ギルド毎に独立した設定ファイルを管理する
 """
 
+import copy
 import json
 import os
 import re
 import threading
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import config
 from log_utils.logger import logger
+from utils.file_utils import local_storage_path
 from utils.firestore_client import get_firestore_client
 
 # シングルトンインスタンスを格納する変数
@@ -144,9 +146,7 @@ class ChannelConfigManager:
         Returns:
             bool: 削除が成功したかどうか
         """
-        import os
-
-        file_path = f"storage/channel_list.{guild_id}.json"
+        file_path = _config_file_path(guild_id)
 
         try:
             if os.path.exists(file_path):
@@ -229,6 +229,9 @@ class ChannelConfig:
         # 読み込みエラー（未作成を除く）時は True。保存を拒否して既存データの上書きを防ぐ
         self.load_failed = False
 
+        # 共有インスタンスへの並行コマンドで変更・保存・ロールバックが交錯しないよう直列化する
+        self._lock = threading.RLock()
+
         # 設定を読み込み
         try:
             self.load_config()
@@ -255,10 +258,12 @@ class ChannelConfig:
         if self.debug_mode:
             return
 
-        if self.storage_type == "firestore":
-            self._load_from_firestore()
-        else:
-            self._load_from_local()
+        # 更新中に config_data を差し替えて変更が失われないよう、更新と同じロックで直列化する
+        with self._lock:
+            if self.storage_type == "firestore":
+                self._load_from_firestore()
+            else:
+                self._load_from_local()
 
     def _load_from_local(self) -> None:
         """ローカルファイルから設定を読み込む"""
@@ -293,7 +298,7 @@ class ChannelConfig:
 
     def _get_config_file_path(self) -> str:
         """設定ファイルのパスを取得"""
-        return f"storage/channel_list.{self.guild_id}.json"
+        return _config_file_path(self.guild_id)
 
     def save_config(self) -> bool:
         """
@@ -312,17 +317,18 @@ class ChannelConfig:
             )
             return False
 
-        # 更新日時を記録
-        self.config_data["updated_at"] = datetime.now().isoformat()
+        with self._lock:
+            # 更新日時を記録
+            self.config_data["updated_at"] = datetime.now().isoformat()
 
-        try:
-            if self.storage_type == "firestore":
-                return self._save_to_firestore()
-            else:
-                return self._save_to_local()
-        except Exception as e:
-            logger.error(f"チャンネル設定の保存に失敗しました: {str(e)}", exc_info=True)
-            return False
+            try:
+                if self.storage_type == "firestore":
+                    return self._save_to_firestore()
+                else:
+                    return self._save_to_local()
+            except Exception as e:
+                logger.error(f"チャンネル設定の保存に失敗しました: {str(e)}", exc_info=True)
+                return False
 
     def _save_to_local(self) -> bool:
         """ローカルファイルに設定を保存 (アトミック保存)"""
@@ -352,6 +358,26 @@ class ChannelConfig:
             logger.error(f"Firestoreへの保存に失敗: {str(e)}", exc_info=True)
             return False
 
+    def _update_and_save(self, mutate: Callable[[dict[str, Any]], None]) -> bool:
+        """設定を変更して保存する。保存に失敗したら変更前の状態に戻す
+
+        Args:
+            mutate: config_data を書き換える関数
+
+        Returns:
+            bool: 保存が成功したかどうか
+        """
+        with self._lock:
+            snapshot = copy.deepcopy(self.config_data)
+            mutate(self.config_data)
+            if self.save_config():
+                return True
+            self.config_data = snapshot
+        logger.warning(
+            f"ギルドID {self.guild_id} の設定保存に失敗したため、変更を取り消しました"
+        )
+        return False
+
     def get_behavior(self) -> str:
         """
         現在の評価モードを取得
@@ -375,8 +401,10 @@ class ChannelConfig:
             logger.error(f"無効な評価モード: {behavior}")
             return False
 
-        self.config_data["behavior"] = behavior
-        return self.save_config()
+        def _mutate(data: dict[str, Any]) -> None:
+            data["behavior"] = behavior
+
+        return self._update_and_save(_mutate)
 
     def get_channels(self) -> list[dict[str, Any]]:
         """
@@ -487,11 +515,13 @@ class ChannelConfig:
         if self.is_channel_in_list(channel_id):
             return True
 
-        channels = self.get_channels()
-        channels.append({"id": channel_id, "name": channel_name})
-        self.config_data["channels"] = channels
+        def _mutate(data: dict[str, Any]) -> None:
+            data["channels"] = [
+                *data.get("channels", []),
+                {"id": channel_id, "name": channel_name},
+            ]
 
-        return self.save_config()
+        return self._update_and_save(_mutate)
 
     def remove_channel(self, channel_id: int) -> bool:
         """
@@ -503,15 +533,17 @@ class ChannelConfig:
         Returns:
             bool: 削除と保存が成功したかどうか
         """
-        channels = self.get_channels()
         str_channel_id = str(channel_id)  # チャンネルIDを文字列に変換
 
-        # チャンネルIDを文字列として比較して削除
-        self.config_data["channels"] = [
-            channel for channel in channels if str(channel.get("id")) != str_channel_id
-        ]
+        def _mutate(data: dict[str, Any]) -> None:
+            # チャンネルIDを文字列として比較して削除
+            data["channels"] = [
+                channel
+                for channel in data.get("channels", [])
+                if str(channel.get("id")) != str_channel_id
+            ]
 
-        return self.save_config()
+        return self._update_and_save(_mutate)
 
     def clear_channels(self) -> bool:
         """
@@ -520,8 +552,10 @@ class ChannelConfig:
         Returns:
             bool: クリアと保存が成功したかどうか
         """
-        self.config_data["channels"] = []
-        return self.save_config()
+        def _mutate(data: dict[str, Any]) -> None:
+            data["channels"] = []
+
+        return self._update_and_save(_mutate)
 
     def get_mode_display_name(self) -> str:
         """
@@ -568,8 +602,22 @@ class ChannelConfig:
         Returns:
             bool: 設定と保存が成功したかどうか
         """
-        self.config_data["translation_enabled"] = enabled
+        def _mutate(data: dict[str, Any]) -> None:
+            data["translation_enabled"] = enabled
+
         logger.info(
             f"翻訳機能を{'有効' if enabled else '無効'}に設定: ギルドID={self.guild_id}"
         )
-        return self.save_config()
+        return self._update_and_save(_mutate)
+
+
+def _config_file_path(guild_id: str) -> str:
+    """ローカル保存時のチャンネル設定ファイルパスを返す
+
+    Args:
+        guild_id: ギルドID
+
+    Returns:
+        str: LOCAL_STORAGE_DIR 配下の設定ファイルパス
+    """
+    return local_storage_path(f"channel_list.{guild_id}.json")

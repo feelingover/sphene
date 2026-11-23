@@ -11,6 +11,7 @@ from log_utils.logger import logger
 from memory.backoff import new_storage_load_backoff
 from memory.errors import StorageLoadError, log_storage_load_failure
 from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
+from utils.file_utils import local_storage_path
 from utils.keyed_lock import KeyedLock
 
 # 反省会LLMの抽出値はプロンプトへ再注入されるため、フィールドごとに長さを制限する
@@ -448,7 +449,7 @@ class UserProfileStore:
         """ギルド分離前の旧形式（user_id 単位）のプロファイルを読み込む"""
         storage_type = config.STORAGE_TYPE
         if storage_type == "local":
-            return self._load_from_local(f"storage/user_profile.{user_id}.json", 0, user_id)
+            return self._load_from_local(local_storage_path(f"user_profile.{user_id}.json"), 0, user_id)
         elif storage_type == "firestore":
             return self._load_from_firestore(str(user_id), 0, user_id)
         return None
@@ -533,7 +534,7 @@ def _doc_id(guild_id: int, user_id: int) -> str:
 
 def _local_path(guild_id: int, user_id: int) -> str:
     """ギルド単位プロファイルのローカル保存パス"""
-    return f"storage/user_profile.{guild_id}.{user_id}.json"
+    return local_storage_path(f"user_profile.{guild_id}.{user_id}.json")
 
 
 # シングルトン

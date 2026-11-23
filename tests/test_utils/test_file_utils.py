@@ -56,7 +56,7 @@ class TestAtomicWriteJson:
                 atomic_write_json(file_path, data)
 
         # テンポラリファイル（.tmp）が残っていない
-        tmp_files = list(tmp_path.glob("*.tmp"))
+        tmp_files = [n for n in os.listdir(tmp_path) if n.endswith(".tmp")]
         assert tmp_files == []
 
     def test_path_without_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -103,3 +103,73 @@ class TestAtomicWriteJson:
         with open(file_path, encoding="utf-8") as f:
             result = json.load(f)
         assert result == data
+
+
+class TestAtomicWriteJsonDurability:
+    """atomic_write_json の耐障害性（fsync・一時ファイル掃除・権限維持）"""
+
+    def test_fsyncs_before_replace(self, tmp_path: Path) -> None:
+        """置き換え前に一時ファイルを fsync する"""
+        file_path = str(tmp_path / "output.json")
+        calls: list[str] = []
+        real_fsync = os.fsync
+        real_replace = os.replace
+
+        def _fsync(fd: int) -> None:
+            calls.append("fsync")
+            real_fsync(fd)
+
+        def _replace(src: str, dst: str) -> None:
+            calls.append("replace")
+            real_replace(src, dst)
+
+        with patch("os.fsync", side_effect=_fsync), patch("os.replace", side_effect=_replace):
+            atomic_write_json(file_path, {"k": 1})
+
+        assert calls.index("fsync") < calls.index("replace")
+
+    def test_removes_temp_file_on_dump_failure(self, tmp_path: Path) -> None:
+        """json.dump が失敗しても一時ファイルが残らず、既存ファイルも壊れない"""
+        file_path = str(tmp_path / "output.json")
+        atomic_write_json(file_path, {"v": 1})
+
+        with pytest.raises(TypeError):
+            atomic_write_json(file_path, {"bad": object()})
+
+        assert [n for n in os.listdir(tmp_path) if n.endswith(".tmp")] == []
+        with open(file_path, encoding="utf-8") as f:
+            assert json.load(f) == {"v": 1}
+
+    def test_removes_temp_file_on_fsync_failure(self, tmp_path: Path) -> None:
+        """fsync が失敗しても一時ファイルが残らない"""
+        file_path = str(tmp_path / "output.json")
+
+        with patch("os.fsync", side_effect=OSError("fsync failed")):
+            with pytest.raises(OSError, match="fsync failed"):
+                atomic_write_json(file_path, {"k": 1})
+
+        assert [n for n in os.listdir(tmp_path) if n.endswith(".tmp")] == []
+        assert not os.path.exists(file_path)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX パーミッション前提")
+    def test_preserves_existing_file_mode(self, tmp_path: Path) -> None:
+        """既存ファイルの権限が維持される"""
+        file_path = tmp_path / "output.json"
+        file_path.write_text("{}", encoding="utf-8")
+        os.chmod(file_path, 0o640)
+
+        atomic_write_json(str(file_path), {"v": 2})
+
+        assert (os.stat(file_path).st_mode & 0o777) == 0o640
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX パーミッション前提")
+    def test_new_file_follows_umask(self, tmp_path: Path) -> None:
+        """新規作成時は mkstemp の 0600 ではなく umask 準拠の権限になる"""
+        file_path = tmp_path / "output.json"
+        old_umask = os.umask(0o022)
+        try:
+            atomic_write_json(str(file_path), {"v": 1})
+        finally:
+            os.umask(old_umask)
+
+        assert (os.stat(file_path).st_mode & 0o777) == 0o644

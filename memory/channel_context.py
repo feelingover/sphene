@@ -10,6 +10,7 @@ import config
 from log_utils.logger import logger
 from memory.backoff import new_storage_load_backoff
 from memory.errors import StorageLoadError, log_storage_load_failure
+from utils.file_utils import local_storage_path
 
 
 @dataclass
@@ -219,7 +220,7 @@ class ChannelContextStore:
 
     def _load_from_local(self, channel_id: int) -> ChannelContext | None:
         """ローカルファイルからコンテキストを読み込む"""
-        file_path = f"storage/channel_context.{channel_id}.json"
+        file_path = local_storage_path(f"channel_context.{channel_id}.json")
         try:
             if os.path.exists(file_path):
                 with open(file_path, "r", encoding="utf-8") as f:
@@ -235,7 +236,7 @@ class ChannelContextStore:
         """ローカルファイルにアトミック書き込み（成功したら True）"""
         from utils.file_utils import atomic_write_json
 
-        file_path = f"storage/channel_context.{context.channel_id}.json"
+        file_path = local_storage_path(f"channel_context.{context.channel_id}.json")
         try:
             atomic_write_json(file_path, context.to_dict())
             return True
