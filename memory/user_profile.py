@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 
 import config
 from log_utils.logger import logger
-from memory.errors import StorageLoadError
+from memory.backoff import new_storage_load_backoff
+from memory.errors import StorageLoadError, log_storage_load_failure
 from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
 
 # 反省会LLMの抽出値はプロンプトへ再注入されるため、フィールドごとに長さを制限する
@@ -161,6 +162,8 @@ class UserProfileStore:
         self._profiles: dict[ProfileKey, UserProfile] = {}
         # 永続化先と差分があるプロファイル（persist_all はここに含まれるものだけ書き込む）
         self._dirty: set[ProfileKey] = set()
+        # 読み込みに失敗したプロファイルの再読み込み間隔（ロック内で操作する）
+        self._load_backoff = new_storage_load_backoff()
         # イベントループとワーカースレッド（反省会・定期永続化）から並行アクセスされる
         self._lock = threading.Lock()
 
@@ -187,8 +190,12 @@ class UserProfileStore:
         key = (guild_id, user_id)
         with self._lock:
             cached = self._profiles.get(key)
+            blocked = cached is None and self._load_backoff.is_blocked(key)
         if cached is not None:
             return cached
+        if blocked:
+            # 読み込み失敗直後は I/O を繰り返さず、一時プロファイルを返す
+            return UserProfile(user_id=user_id, display_name=display_name, guild_id=guild_id)
 
         # ロック外で I/O を行い、取得後に先着を優先して登録する
         try:
@@ -198,13 +205,16 @@ class UserProfileStore:
         except StorageLoadError:
             # 一時的なプロファイルを返すが、キャッシュしない。persist_all は
             # キャッシュにあるものだけを保存するため、既存データは上書きされない
-            logger.warning(
+            with self._lock:
+                failures = self._load_backoff.record_failure(key)
+            log_storage_load_failure(
                 f"プロファイルの読み込みに失敗したため一時プロファイルを使用します: "
                 f"guild_id={guild_id}, user_id={user_id}",
-                exc_info=True,
+                failures,
             )
             return UserProfile(user_id=user_id, display_name=display_name, guild_id=guild_id)
         with self._lock:
+            self._load_backoff.reset(key)
             return self._profiles.setdefault(key, profile)
 
     def get_cached_profile(self, guild_id: int, user_id: int) -> UserProfile | None:

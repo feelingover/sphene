@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING
 
 import config
 from log_utils.logger import logger
-from memory.errors import StorageLoadError
+from memory.backoff import new_storage_load_backoff
+from memory.errors import StorageLoadError, log_storage_load_failure
 
 # ひらがなストップワード（形態素解析なしの簡易除去）
 _HIRAGANA_STOPWORDS: frozenset[str] = frozenset({
@@ -192,6 +193,8 @@ class FactStore:
         self._loaded_channels: set[int] = set()
         # 永続化先と差分があるチャンネル（persist_all はここに含まれるものだけ書き込む）
         self._dirty: set[int] = set()
+        # 読み込みに失敗したチャンネルの再読み込み間隔（ロック内で操作する）
+        self._load_backoff = new_storage_load_backoff()
         self._lock = threading.Lock()
 
     def add_fact(self, fact: Fact) -> bool:
@@ -366,28 +369,29 @@ class FactStore:
         実行される可能性があるが、同一データの書き込みなので安全（べき等）。
         ロック取得済みのスレッドが先に完了した場合、後発スレッドは最終チェックで
         スキップするため、途中で追加されたファクトが上書きされることはない。
+        読み込みに失敗したチャンネルは、バックオフ期間中は I/O を行わず未ロードのまま扱う。
         """
         with self._lock:
             if channel_id in self._loaded_channels:
                 return
-
-        storage_type = config.STORAGE_TYPE
-        facts: list[Fact] | None = None
+            if self._load_backoff.is_blocked(channel_id):
+                # 失敗直後は I/O を繰り返さず、未ロードのまま扱う
+                return
 
         try:
-            if storage_type == "local":
-                facts = self._load_from_local(channel_id)
-            elif storage_type == "firestore":
-                facts = self._load_from_firestore(channel_id)
+            facts = self._read_channel(channel_id)
         except StorageLoadError:
-            # ロード済みにしないことで次回アクセス時に再試行する
-            logger.warning(
+            # ロード済みにしないことで、バックオフ明けのアクセスで再試行する
+            with self._lock:
+                failures = self._load_backoff.record_failure(channel_id)
+            log_storage_load_failure(
                 f"ファクトの読み込みに失敗したため未ロードのまま扱います: channel_id={channel_id}",
-                exc_info=True,
+                failures,
             )
             return
 
         with self._lock:
+            self._load_backoff.reset(channel_id)
             # 別スレッドが先にロードを完了していた場合はスキップ
             if channel_id not in self._loaded_channels:
                 if facts is not None:
@@ -395,6 +399,22 @@ class FactStore:
                         facts, self._facts.get(channel_id, [])
                     )
                 self._loaded_channels.add(channel_id)
+
+    def _read_channel(self, channel_id: int) -> list[Fact] | None:
+        """永続化先からチャンネルのファクトを読み込む
+
+        Returns:
+            ファクトのリスト。データが存在しなければ None。
+
+        Raises:
+            StorageLoadError: 読み込みに失敗した場合
+        """
+        storage_type = config.STORAGE_TYPE
+        if storage_type == "local":
+            return self._load_from_local(channel_id)
+        if storage_type == "firestore":
+            return self._load_from_firestore(channel_id)
+        return None
 
     def _save_to_local(self, channel_id: int, facts: list[Fact]) -> bool:
         """ローカルファイルにアトミック書き込み"""

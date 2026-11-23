@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 
 import config
 from log_utils.logger import logger
-from memory.errors import StorageLoadError
+from memory.backoff import new_storage_load_backoff
+from memory.errors import StorageLoadError, log_storage_load_failure
 
 
 @dataclass
@@ -96,6 +97,8 @@ class ChannelContextStore:
 
     def __init__(self) -> None:
         self._contexts: dict[int, ChannelContext] = {}
+        # 読み込みに失敗したチャンネルの再読み込み間隔（ロック内で操作する）
+        self._load_backoff = new_storage_load_backoff()
         # イベントループとワーカースレッドから並行アクセスされる
         self._lock = threading.Lock()
 
@@ -118,23 +121,30 @@ class ChannelContextStore:
         """
         with self._lock:
             cached = self._contexts.get(channel_id)
+            blocked = cached is None and self._load_backoff.is_blocked(channel_id)
         if cached is not None:
             return cached
+        if blocked:
+            # 読み込み失敗直後は I/O を繰り返さず、一時コンテキストを返す
+            return ChannelContext(channel_id=channel_id, load_failed=True)
 
         # ロック外で I/O を行い、取得後に先着を優先して登録する
         try:
             ctx = self._load_context(channel_id)
         except StorageLoadError:
-            # 一時コンテキストを返すが、キャッシュしない（次回アクセス時に再読み込みする）
-            logger.warning(
+            # 一時コンテキストを返すが、キャッシュしない（バックオフ明けに再読み込みする）
+            with self._lock:
+                failures = self._load_backoff.record_failure(channel_id)
+            log_storage_load_failure(
                 f"チャンネルコンテキストの読み込みに失敗したため一時コンテキストを使用します: "
                 f"channel_id={channel_id}",
-                exc_info=True,
+                failures,
             )
             return ChannelContext(channel_id=channel_id, load_failed=True)
         if ctx is None:
             ctx = ChannelContext(channel_id=channel_id)
         with self._lock:
+            self._load_backoff.reset(channel_id)
             return self._contexts.setdefault(channel_id, ctx)
 
     def save_context(self, context: ChannelContext) -> None:

@@ -148,6 +148,11 @@ REFLECTION_MAX_FAILURES: int = int(os.getenv("REFLECTION_MAX_FAILURES", "3"))
 MEMORY_LLM_BACKOFF_BASE_SECONDS: int = int(os.getenv("MEMORY_LLM_BACKOFF_BASE_SECONDS", "300"))
 MEMORY_LLM_BACKOFF_MAX_SECONDS: int = int(os.getenv("MEMORY_LLM_BACKOFF_MAX_SECONDS", "3600"))
 
+# === 記憶ストアの読み込み失敗時バックオフ ===
+# 読み込みに失敗したキー（チャンネル・プロファイル）は、n回連続失敗後 BASE * 2^(n-1) 秒（上限 MAX）再読み込みしない
+STORAGE_LOAD_BACKOFF_BASE_SECONDS: int = int(os.getenv("STORAGE_LOAD_BACKOFF_BASE_SECONDS", "30"))
+STORAGE_LOAD_BACKOFF_MAX_SECONDS: int = int(os.getenv("STORAGE_LOAD_BACKOFF_MAX_SECONDS", "600"))
+
 # === Embedding設定 (Phase 3B) ===
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
 VECTOR_SEARCH_ENABLED: bool = os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
