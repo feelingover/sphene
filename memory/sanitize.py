@@ -12,9 +12,12 @@ from typing import Any
 _WHITESPACE_RE = re.compile(r"\s+")
 
 _MAX_AUTHOR_NAME_LENGTH = 32
-# 行形式のコンテキストで発言者・ロール表記の偽装に使える記号
-# （"Foo[BOT]" や "名前: 本文" の区切りを名前側で作らせない）
-_AUTHOR_NAME_SPOOF_RE = re.compile(r"[\[\]［］:：]")
+# 発言者・ロール表記の偽装に使える記号（NFKC正規化後に照合する）
+# "Foo[BOT]" や "名前: 本文" の区切りを名前側で作らせない。
+# NFKC で ［］：﹕︓ などは ASCII に寄るため、寄らない類似文字だけ追加で列挙する
+_AUTHOR_NAME_SPOOF_RE = re.compile(
+    r"[\[\]【】〔〕〖〗〘〙〚〛⟦⟧<>«»‹›:∶꞉˸ː]"
+)
 
 
 def sanitize_llm_text(value: Any, max_length: int) -> str | None:
@@ -64,18 +67,21 @@ def sanitize_llm_text_list(
     return result
 
 
-def safe_author_name(author_name: str, strip_markers: bool = False) -> str:
-    """発言者名から改行・制御文字を除去し、長さを制限する（行の偽装対策）
+def safe_author_name(author_name: str) -> str:
+    """発言者名をプロンプトに埋め込める形に正規化する（行・ロール表記の偽装対策）
+
+    NFKC正規化のうえ、ロール表記（``[BOT]``）や ``名前: 本文`` の区切りを
+    偽装できる括弧・コロン類を除去し、改行・制御文字をつぶして長さを制限する。
+    プロンプト上で同じ人物が経路ごとに別名にならないよう、名前を埋め込む
+    すべての箇所でこの関数を通すこと。
 
     Args:
         author_name: Discordの表示名
-        strip_markers: True の場合、ロール表記（``[BOT]``）や
-            ``名前: 本文`` の区切りを偽装できる括弧・コロンも除去する
 
     Returns:
         正規化済みの名前。空になった場合は "ユーザー"。
     """
-    name = author_name
-    if strip_markers and isinstance(name, str):
-        name = _AUTHOR_NAME_SPOOF_RE.sub("", name)
+    name: object = author_name
+    if isinstance(name, str):
+        name = _AUTHOR_NAME_SPOOF_RE.sub("", unicodedata.normalize("NFKC", name))
     return sanitize_llm_text(name, _MAX_AUTHOR_NAME_LENGTH) or "ユーザー"

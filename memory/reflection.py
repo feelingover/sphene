@@ -15,7 +15,7 @@ from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
 from memory.backoff import FailureBackoff
 from memory.fact_store import Fact
-from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
+from memory.sanitize import safe_author_name, sanitize_llm_text, sanitize_llm_text_list
 from memory.short_term import ChannelMessage
 from utils.background_tasks import track_background_task
 
@@ -67,7 +67,7 @@ def _format_messages_for_reflection(messages: list[ChannelMessage]) -> str:
     for msg in messages:
         role = " bot=\"true\"" if msg.is_bot else ""
         # ユーザー入力を XML タグで囲み、属性値をエスケープ
-        safe_name = escape(msg.author_name, quote=True)
+        safe_name = escape(safe_author_name(msg.author_name), quote=True)
         lines.append(
             f"<message user=\"{safe_name}\" id=\"{msg.author_id}\"{role}>"
             f"{escape(msg.content)}"

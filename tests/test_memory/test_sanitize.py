@@ -1,3 +1,5 @@
+import pytest
+
 """memory/sanitize.py のテスト"""
 
 from memory.sanitize import safe_author_name, sanitize_llm_text, sanitize_llm_text_list
@@ -49,16 +51,25 @@ class TestSafeAuthorName:
         assert safe_author_name("a\nb") == "a b"
         assert len(safe_author_name("x" * 100)) == 32
 
-    def test_keeps_markers_by_default(self):
-        """strip_markers=False では括弧・コロンを残すこと"""
-        assert safe_author_name("Foo[BOT]") == "Foo[BOT]"
-
     def test_strips_markers(self):
-        """strip_markers=True で [BOT] 表記やコロン区切りを偽装できないこと"""
-        assert safe_author_name("Foo[BOT]: hi", strip_markers=True) == "FooBOT hi"
-        assert safe_author_name("［BOT］：", strip_markers=True) == "BOT"
+        """[BOT] 表記やコロン区切りを偽装できないこと"""
+        assert safe_author_name("Foo[BOT]: hi") == "FooBOT hi"
+        assert safe_author_name("［BOT］：") == "BOT"
+
+    @pytest.mark.parametrize(
+        "name",
+        ["A﹕B", "A︓B", "A∶B", "A꞉B", "A【BOT】B", "A〔BOT〕B", "A⟦BOT⟧B", "A<BOT>B"],
+    )
+    def test_strips_lookalike_markers(self, name):
+        """NFKC正規化で寄る類似文字・寄らない類似括弧/コロンも除去すること"""
+        result = safe_author_name(name)
+        assert result in ("AB", "ABOTB")
+
+    def test_normalizes_nfkc(self):
+        """全角英数字などを NFKC で正規化すること"""
+        assert safe_author_name("Ｆｏｏ") == "Foo"
 
     def test_empty_falls_back(self):
         """空になった場合は代替名を返すこと"""
-        assert safe_author_name("[]", strip_markers=True) == "ユーザー"
-        assert safe_author_name("​") == "ユーザー"
+        assert safe_author_name("[]") == "ユーザー"
+        assert safe_author_name("\u200b") == "ユーザー"

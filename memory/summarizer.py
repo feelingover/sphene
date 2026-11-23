@@ -13,7 +13,7 @@ from ai.api import generate_content_with_retry as _generate_content_with_retry
 from log_utils.logger import logger
 from memory.backoff import FailureBackoff
 from memory.channel_context import ChannelContext, get_channel_context_store
-from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
+from memory.sanitize import safe_author_name, sanitize_llm_text, sanitize_llm_text_list
 from memory.short_term import ChannelMessage
 from utils.background_tasks import track_background_task
 
@@ -217,7 +217,7 @@ def _format_messages_for_summary(messages: list[ChannelMessage]) -> str:
     lines = []
     for msg in messages:
         role = ' bot="true"' if msg.is_bot else ""
-        safe_name = escape(msg.author_name, quote=True)
+        safe_name = escape(safe_author_name(msg.author_name), quote=True)
         lines.append(
             f'<message user="{safe_name}"{role}>'
             f'{escape(msg.content)}'
@@ -231,9 +231,10 @@ def _extract_active_users(messages: list[ChannelMessage]) -> list[str]:
     seen: set[str] = set()
     users: list[str] = []
     for msg in messages:
-        if not msg.is_bot and msg.author_name not in seen:
-            seen.add(msg.author_name)
-            users.append(msg.author_name)
+        name = safe_author_name(msg.author_name)
+        if not msg.is_bot and name not in seen:
+            seen.add(name)
+            users.append(name)
     return users
 
 

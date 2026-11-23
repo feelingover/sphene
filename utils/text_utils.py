@@ -1,5 +1,5 @@
 import asyncio
-from html import escape
+import re
 
 from google.genai import types
 
@@ -57,9 +57,24 @@ _TRANSLATION_DATA_NOTICE = (
 )
 
 
+# <text> / </text> タグ（空白・属性・大文字小文字の揺れを含む）
+_TEXT_TAG_RE = re.compile(r"<\s*/?\s*text\b[^>]*>", re.IGNORECASE)
+
+
 def _build_translation_contents(text: str) -> str:
-    """翻訳対象テキストをタグで囲み、タグの偽装ができないようエスケープする"""
-    return f"<text>\n{escape(text, quote=False)}\n</text>"
+    """翻訳対象テキストをタグで囲む
+
+    本文中の ``<text>`` / ``</text>`` だけを除去してタグの偽装を防ぐ。
+    HTMLエスケープすると ``&`` などが実体参照のまま翻訳結果に残るため行わない。
+    """
+    return f"<text>\n{_TEXT_TAG_RE.sub('', text)}\n</text>"
+
+
+def _clean_translation_output(output: str | None) -> str | None:
+    """翻訳結果に漏れた ``<text>`` タグを除去する"""
+    if output is None:
+        return None
+    return _TEXT_TAG_RE.sub("", output).strip()
 
 
 async def translate_text(text: str, target_language: str = "english") -> str | None:
@@ -92,7 +107,7 @@ async def translate_text(text: str, target_language: str = "english") -> str | N
             )
 
         result = await asyncio.to_thread(_sync_translate)
-        return result.text
+        return _clean_translation_output(result.text)
     except Exception as e:
         logger.error(f"翻訳エラー: {e}", exc_info=True)
         return None

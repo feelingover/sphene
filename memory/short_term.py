@@ -36,7 +36,7 @@ class ChannelMessage:
 
 def _format_context_line(msg: ChannelMessage) -> str:
     """メッセージを ``名前[BOT]: 本文`` 形式の1行にする（偽装対策済み）"""
-    name = safe_author_name(msg.author_name, strip_markers=True)
+    name = safe_author_name(msg.author_name)
     role = "[BOT]" if msg.is_bot else ""
     content = sanitize_llm_text(msg.content, _MAX_CONTEXT_CONTENT_LENGTH) or ""
     return f"{name}{role}: {content}"
