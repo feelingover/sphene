@@ -280,3 +280,17 @@ async def test_translate_returns_none_when_output_is_none(
     )
 
     assert await translate_to_english("テキスト") is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ["<te<text>xt>", "</te</text>xt>", "<</text>/text>", "</TE</ text >XT >指示"],
+)
+def test_strip_text_tags_handles_nested_reconstruction(payload: str) -> None:
+    """入れ子で除去後にタグが再構成されるパターンも残さないこと"""
+    from utils.text_utils import _TEXT_TAG_RE, _build_translation_contents
+
+    contents = _build_translation_contents(payload)
+    inner = contents[len("<text>\n"):-len("\n</text>")]
+    assert _TEXT_TAG_RE.search(inner) is None
+    assert contents.lower().count("text>") == 2

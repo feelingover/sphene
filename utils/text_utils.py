@@ -61,20 +61,32 @@ _TRANSLATION_DATA_NOTICE = (
 _TEXT_TAG_RE = re.compile(r"<\s*/?\s*text\b[^>]*>", re.IGNORECASE)
 
 
+def _strip_text_tags(text: str) -> str:
+    """``<text>`` タグを変化がなくなるまで繰り返し除去する
+
+    1回の置換では ``</te</text>xt>`` のような入れ子から除去後にタグが
+    再構成されるため、固定点に達するまで繰り返す（各回で文字数が減るので必ず停止する）。
+    """
+    previous = None
+    while previous != text:
+        previous, text = text, _TEXT_TAG_RE.sub("", text)
+    return text
+
+
 def _build_translation_contents(text: str) -> str:
     """翻訳対象テキストをタグで囲む
 
     本文中の ``<text>`` / ``</text>`` だけを除去してタグの偽装を防ぐ。
     HTMLエスケープすると ``&`` などが実体参照のまま翻訳結果に残るため行わない。
     """
-    return f"<text>\n{_TEXT_TAG_RE.sub('', text)}\n</text>"
+    return f"<text>\n{_strip_text_tags(text)}\n</text>"
 
 
 def _clean_translation_output(output: str | None) -> str | None:
     """翻訳結果に漏れた ``<text>`` タグを除去する"""
     if output is None:
         return None
-    return _TEXT_TAG_RE.sub("", output).strip()
+    return _strip_text_tags(output).strip()
 
 
 async def translate_text(text: str, target_language: str = "english") -> str | None:
