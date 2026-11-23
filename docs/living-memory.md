@@ -33,9 +33,12 @@
 
 ### ③ 長期記憶 (Long-term Memory) - 知識と関係性
 ユーザーごとの特性や、過去の重要な「事実」を永続化。
-- **場所:** Firestore
+- **場所:** `STORAGE_TYPE` で切り替え（`local` / `firestore`）
 - **構成要素:**
   1. **User Profile (`memory/user_profile.py`)**
+     - **ギルド単位**で保持（キー: `guild_id` + `user_id`）。あるサーバーで得た事実・性格メモが別サーバーの応答に注入されない。
+     - 保存先: Firestore はドキュメントID `{guild_id}_{user_id}`、ローカルは `storage/user_profile.{guild_id}.{user_id}.json`。
+     - ギルド分離前の旧プロファイル（`user_id` 単位）からは、交流回数・メンション回数だけを初回アクセス時に引き継ぐ。
      - 親密度レベル (`stranger` -> `close`)。
      - 直近の話題 (`last_topic`)。
      - 会話頻度や活動傾向。
@@ -66,8 +69,8 @@
 | :--- | :--- | :--- | :--- |
 | **短期** | メモリ (RAM) | 30分 (TTL) / 50件 | シーケンシャル |
 | **中期** | メモリ / Firestore | 会話中継続 / 逐次要約 | キーマッチ |
-| **長期 (User)** | Firestore | 永続 (常連) | User ID |
-| **長期 (Fact)** | Firestore | 永続 (鮮度減衰あり) | キーワード / ベクトル |
+| **長期 (User)** | ローカル / Firestore | 永続 (常連) | Guild ID + User ID |
+| **長期 (Fact)** | ローカル / Firestore | 永続 (鮮度減衰あり) | キーワード / ベクトル |
 
 ---
 

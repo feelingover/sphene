@@ -25,6 +25,8 @@ class UserProfile:
 
     user_id: int
     display_name: str
+    # プロファイルはギルド単位で分離する（0 はギルド未指定の旧形式）
+    guild_id: int = 0
     interaction_count: int = 0
     mentioned_bot_count: int = 0
     channels_active: list[int] = field(default_factory=list)
@@ -97,6 +99,7 @@ class UserProfile:
         """シリアライゼーション用の辞書を返す"""
         return {
             "user_id": self.user_id,
+            "guild_id": self.guild_id,
             "display_name": self.display_name,
             "interaction_count": self.interaction_count,
             "mentioned_bot_count": self.mentioned_bot_count,
@@ -124,6 +127,7 @@ class UserProfile:
 
         return cls(
             user_id=data["user_id"],
+            guild_id=data.get("guild_id", 0),
             display_name=data.get("display_name", ""),
             interaction_count=data.get("interaction_count", 0),
             mentioned_bot_count=data.get("mentioned_bot_count", 0),
@@ -141,72 +145,114 @@ class UserProfile:
         )
 
 
+ProfileKey = tuple[int, int]
+"""プロファイルのキー: (guild_id, user_id)"""
+
+
 class UserProfileStore:
-    """ユーザープロファイルの永続化ストア"""
+    """ユーザープロファイルの永続化ストア
+
+    プロファイルは (guild_id, user_id) 単位で保持する。あるギルドで抽出した
+    事実や性格メモが、別ギルドでの応答に注入されないようにするため。
+    """
 
     def __init__(self) -> None:
-        self._profiles: dict[int, UserProfile] = {}
+        self._profiles: dict[ProfileKey, UserProfile] = {}
+        # イベントループとワーカースレッド（反省会・定期永続化）から並行アクセスされる
+        self._lock = threading.Lock()
 
-    def get_profile(self, user_id: int, display_name: str = "") -> UserProfile:
-        """ユーザープロファイルを取得する（なければ新規作成 or 永続化先から読み込み）"""
-        if user_id in self._profiles:
-            return self._profiles[user_id]
+    def get_profile(
+        self, guild_id: int, user_id: int, display_name: str = ""
+    ) -> UserProfile:
+        """ユーザープロファイルを取得する（なければ永続化先から読み込み or 新規作成）
 
-        # 永続化先からの読み込みを試行
-        profile = self._load_profile(user_id)
+        永続化先の読み込みでブロックするため、イベントループからは
+        ``asyncio.to_thread`` 経由で呼ぶこと（キャッシュ済みなら即時に返る）。
+
+        Args:
+            guild_id: ギルドID
+            user_id: DiscordユーザーID
+            display_name: 新規作成時の表示名
+
+        Returns:
+            プロファイル
+        """
+        key = (guild_id, user_id)
+        with self._lock:
+            cached = self._profiles.get(key)
+        if cached is not None:
+            return cached
+
+        # ロック外で I/O を行い、取得後に先着を優先して登録する
+        profile = self._load_profile(guild_id, user_id)
         if profile is None:
-            profile = UserProfile(user_id=user_id, display_name=display_name)
-        self._profiles[user_id] = profile
-        return profile
+            profile = self._new_profile(guild_id, user_id, display_name)
+        with self._lock:
+            return self._profiles.setdefault(key, profile)
 
-    def record_message(self, user_id: int, channel_id: int, display_name: str) -> None:
+    def get_cached_profile(self, guild_id: int, user_id: int) -> UserProfile | None:
+        """キャッシュ済みのプロファイルを返す（I/O は行わない）"""
+        with self._lock:
+            return self._profiles.get((guild_id, user_id))
+
+    def record_message(
+        self, guild_id: int, user_id: int, channel_id: int, display_name: str
+    ) -> None:
         """メッセージ受信時にプロファイルを更新する
 
         Args:
+            guild_id: ギルドID
             user_id: DiscordユーザーID
             channel_id: メッセージが投稿されたチャンネルID
             display_name: ユーザーの表示名
         """
-        profile = self.get_profile(user_id, display_name)
+        profile = self.get_profile(guild_id, user_id, display_name)
         profile.interaction_count += 1
         profile.display_name = display_name
         profile.last_interaction = datetime.now(timezone.utc)
-        if channel_id not in profile.channels_active:
-            profile.channels_active.append(channel_id)
-        else:
+        if channel_id in profile.channels_active:
             profile.channels_active.remove(channel_id)
-            profile.channels_active.append(channel_id)
+        profile.channels_active.append(channel_id)
         limit = config.CHANNELS_ACTIVE_LIMIT
         if len(profile.channels_active) > limit:
             profile.channels_active = profile.channels_active[-limit:]
 
-    def record_bot_mention(self, user_id: int) -> None:
+    def record_bot_mention(self, guild_id: int, user_id: int) -> None:
         """ボットへのメンション時にカウンタを更新する
 
         Args:
+            guild_id: ギルドID
             user_id: DiscordユーザーID
         """
-        if user_id in self._profiles:
-            self._profiles[user_id].mentioned_bot_count += 1
+        profile = self.get_cached_profile(guild_id, user_id)
+        if profile:
+            profile.mentioned_bot_count += 1
 
-    def update_last_topic(self, user_id: int, topic_keywords: list[str]) -> None:
+    def update_last_topic(
+        self, guild_id: int, user_id: int, topic_keywords: list[str]
+    ) -> None:
         """応答生成後に直近の話題を更新する
 
         Args:
+            guild_id: ギルドID
             user_id: DiscordユーザーID
             topic_keywords: チャンネルコンテキストから取得した話題キーワード
         """
-        if user_id in self._profiles and topic_keywords:
-            self._profiles[user_id].last_topic = list(topic_keywords)
+        profile = self.get_cached_profile(guild_id, user_id)
+        if profile and topic_keywords:
+            profile.last_topic = list(topic_keywords)
 
-    def update_from_reflection(self, user_id: int, extracted: dict) -> None:
+    def update_from_reflection(
+        self, guild_id: int, user_id: int, extracted: dict
+    ) -> None:
         """反省会LLM抽出結果でUserProfileを更新する
 
         Args:
+            guild_id: 反省会の対象チャンネルが属するギルドID
             user_id: DiscordユーザーID
             extracted: LLMが抽出した辞書（tags, notable_facts, personality_notes 等）
         """
-        profile = self._profiles.get(user_id)
+        profile = self.get_cached_profile(guild_id, user_id)
         if not profile:
             return
         for tag in sanitize_llm_text_list(
@@ -250,47 +296,91 @@ class UserProfileStore:
             profile.emotional_state_last = emotion
         nickname = sanitize_llm_text(extracted.get("nickname"), _MAX_NICKNAME_LENGTH)
         if nickname:
-            self.update_nickname(profile.user_id, nickname)
+            self.update_nickname(profile.guild_id, profile.user_id, nickname)
 
-    def update_nickname(self, user_id: int, nickname: str) -> None:
+    def update_nickname(self, guild_id: int, user_id: int, nickname: str) -> None:
         """ユーザーのニックネームを更新する
 
         Args:
+            guild_id: ギルドID
             user_id: DiscordユーザーID
             nickname: 設定するニックネーム
         """
-        profile = self._profiles.get(user_id)
+        profile = self.get_cached_profile(guild_id, user_id)
         if profile:
             profile.nickname = nickname
-            logger.info(f"ニックネーム更新: user_id={user_id}, nickname={nickname!r}")
+            logger.info(
+                f"ニックネーム更新: guild_id={guild_id}, user_id={user_id}, "
+                f"nickname={nickname!r}"
+            )
 
     def persist_all(self) -> None:
-        """全プロファイルを永続化する（定期タスクから呼ばれる）"""
+        """全プロファイルを永続化する（定期タスク・反省会からワーカースレッドで呼ばれる）"""
+        with self._lock:
+            snapshot = list(self._profiles.values())
         storage_type = config.STORAGE_TYPE
-
-        for profile in self._profiles.values():
+        for profile in snapshot:
             if storage_type == "local":
                 self._save_to_local(profile)
             elif storage_type == "firestore":
                 self._save_to_firestore(profile)
 
-    def _load_profile(self, user_id: int) -> "UserProfile | None":
-        """永続化先からプロファイルを読み込む"""
-        storage_type = config.STORAGE_TYPE
+    def _new_profile(
+        self, guild_id: int, user_id: int, display_name: str
+    ) -> UserProfile:
+        """新規プロファイルを作成する
 
+        ギルド分離前の旧プロファイル（user_id 単位）がある場合は、交流回数などの
+        カウンタだけを引き継ぐ。事実・性格メモ等は他ギルド由来の可能性があるため
+        引き継がない。
+
+        Args:
+            guild_id: ギルドID
+            user_id: DiscordユーザーID
+            display_name: 表示名
+
+        Returns:
+            新規プロファイル
+        """
+        profile = UserProfile(user_id=user_id, display_name=display_name, guild_id=guild_id)
+        legacy = self._load_legacy_profile(user_id)
+        if legacy is not None:
+            profile.interaction_count = legacy.interaction_count
+            profile.mentioned_bot_count = legacy.mentioned_bot_count
+            profile.display_name = display_name or legacy.display_name
+            logger.info(
+                f"旧プロファイルからカウンタを引き継ぎ: guild_id={guild_id}, user_id={user_id}"
+            )
+        return profile
+
+    def _load_profile(self, guild_id: int, user_id: int) -> "UserProfile | None":
+        """永続化先からギルド単位のプロファイルを読み込む"""
+        storage_type = config.STORAGE_TYPE
         if storage_type == "local":
-            return self._load_from_local(user_id)
+            return self._load_from_local(_local_path(guild_id, user_id), guild_id, user_id)
         elif storage_type == "firestore":
-            return self._load_from_firestore(user_id)
+            return self._load_from_firestore(_doc_id(guild_id, user_id), guild_id, user_id)
         return None
 
-    def _load_from_local(self, user_id: int) -> "UserProfile | None":
+    def _load_legacy_profile(self, user_id: int) -> "UserProfile | None":
+        """ギルド分離前の旧形式（user_id 単位）のプロファイルを読み込む"""
+        storage_type = config.STORAGE_TYPE
+        if storage_type == "local":
+            return self._load_from_local(f"storage/user_profile.{user_id}.json", 0, user_id)
+        elif storage_type == "firestore":
+            return self._load_from_firestore(str(user_id), 0, user_id)
+        return None
+
+    def _load_from_local(
+        self, file_path: str, guild_id: int, user_id: int
+    ) -> "UserProfile | None":
         """ローカルファイルからプロファイルを読み込む"""
-        file_path = f"storage/user_profile.{user_id}.json"
         try:
             if os.path.exists(file_path):
                 with open(file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
+                data["user_id"] = user_id
+                data["guild_id"] = guild_id
                 return UserProfile.from_dict(data)
         except Exception as e:
             logger.error(f"ユーザープロファイル読み込みエラー: {e}", exc_info=True)
@@ -300,7 +390,7 @@ class UserProfileStore:
         """ローカルファイルにアトミック書き込み"""
         from utils.file_utils import atomic_write_json
 
-        file_path = f"storage/user_profile.{profile.user_id}.json"
+        file_path = _local_path(profile.guild_id, profile.user_id)
         try:
             atomic_write_json(file_path, profile.to_dict())
         except Exception as e:
@@ -308,7 +398,9 @@ class UserProfileStore:
                 f"ユーザープロファイルのローカル保存エラー: {e}", exc_info=True
             )
 
-    def _load_from_firestore(self, user_id: int) -> "UserProfile | None":
+    def _load_from_firestore(
+        self, doc_id: str, guild_id: int, user_id: int
+    ) -> "UserProfile | None":
         """Firestoreからプロファイルを読み込む"""
         try:
             from utils.firestore_client import get_firestore_client
@@ -316,13 +408,14 @@ class UserProfileStore:
             db = get_firestore_client()
             doc = (
                 db.collection(config.FIRESTORE_COLLECTION_USER_PROFILES)
-                .document(str(user_id))
+                .document(doc_id)
                 .get()
             )
             if doc.exists:  # type: ignore[union-attr]
                 data = doc.to_dict()  # type: ignore[union-attr]
                 if data is not None:
                     data["user_id"] = user_id
+                    data["guild_id"] = guild_id
                     return UserProfile.from_dict(data)
         except Exception as e:
             logger.error(
@@ -337,12 +430,22 @@ class UserProfileStore:
 
             db = get_firestore_client()
             db.collection(config.FIRESTORE_COLLECTION_USER_PROFILES).document(
-                str(profile.user_id)
+                _doc_id(profile.guild_id, profile.user_id)
             ).set(profile.to_dict())
         except Exception as e:
             logger.error(
                 f"Firestoreへのプロファイル保存エラー: {e}", exc_info=True
             )
+
+
+def _doc_id(guild_id: int, user_id: int) -> str:
+    """ギルド単位プロファイルの Firestore ドキュメントID"""
+    return f"{guild_id}_{user_id}"
+
+
+def _local_path(guild_id: int, user_id: int) -> str:
+    """ギルド単位プロファイルのローカル保存パス"""
+    return f"storage/user_profile.{guild_id}.{user_id}.json"
 
 
 # シングルトン

@@ -29,6 +29,7 @@ applyTo: "**"
 - 応答生成中の「入力中...」インジケーター（`bot/events.py` の `_typing_indicator`。通常会話・自律応答・相槌・翻訳で表示）（2026/11）
 - 高優先度レビュー対応（2026/11）: チャンネル設定読み込み失敗時の上書き防止、`allowed_mentions` で @everyone/ロールメンション抑止、Gen AI リクエストタイムアウト（`GENAI_REQUEST_TIMEOUT_SECONDS`）、スラッシュコマンド登録を `setup_hook` へ移動
 - 反省会の重複抽出防止・プロファイル汚染対策（2026/11）: 前回以降の差分メッセージのみ反省会へ、`FactStore.add_fact` で重複排除、LLMの `user_id` を発言者と照合、抽出値のサニタイズ（`memory/sanitize.py`）
+- ストレージI/Oの非同期化とプロファイルのギルド分離（2026/11）: Firestore 等の同期I/Oを `asyncio.to_thread` へ退避（チャンネル設定・記憶ストア・定期永続化）、ストアに `threading.Lock` を導入、ユーザープロファイルを (guild_id, user_id) 単位に分離し旧データはカウンタのみ移行
 
 ### リビングメモリー (Living Memory)
 - 短期記憶: チャンネルバッファ（dequeリングバッファ、TTL管理）

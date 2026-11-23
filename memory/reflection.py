@@ -126,6 +126,7 @@ def _apply_user_profile_results(
 
     LLMが返した user_id は会話ログ内の発言者と照合し、ログに登場しない
     ユーザー（他チャンネルのユーザーや、発言内容で誘導された任意のID）は無視する。
+    プロファイルは会話が行われたギルドのものだけを更新する。
 
     Args:
         result: LLMが返したJSON配列
@@ -136,6 +137,10 @@ def _apply_user_profile_results(
     """
     from memory.user_profile import get_user_profile_store
 
+    guild_id = next((msg.guild_id for msg in messages if msg.guild_id is not None), None)
+    if guild_id is None:
+        logger.debug("ギルドIDが不明なためユーザープロファイル反省会をスキップ")
+        return 0
     allowed_ids = {msg.author_id for msg in messages if not msg.is_bot}
     store = get_user_profile_store()
     updated_count = 0
@@ -150,7 +155,7 @@ def _apply_user_profile_results(
                 f"会話に登場しないuser_idのプロファイル更新を拒否: user_id={user_id}"
             )
             continue
-        store.update_from_reflection(user_id, item)
+        store.update_from_reflection(guild_id, user_id, item)
         updated_count += 1
     return updated_count
 
@@ -308,11 +313,12 @@ class ReflectionEngine:
                 shareable=item["shareable"],
                 embedding=embedding,
             )
-            if store.add_fact(fact):
+            # 初回は永続化先からの読み込みが発生しうるためスレッドで実行する
+            if await asyncio.to_thread(store.add_fact, fact):
                 saved_count += 1
 
         if saved_count > 0:
-            store.persist_channel(channel_id)
+            await asyncio.to_thread(store.persist_channel, channel_id)
 
         if (parsed or len(raw_facts) == 0) and messages:
             until = max(msg.timestamp for msg in messages)

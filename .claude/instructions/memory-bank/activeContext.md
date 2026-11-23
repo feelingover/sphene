@@ -6,8 +6,8 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 740件全パス
-- カバレッジ: 90%
+- テスト: 751件全パス
+- カバレッジ: 91%
 - mypy: 76ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
@@ -27,7 +27,7 @@ applyTo: "**"
 |---------|---------|------|
 | 短期 | `short_term.py` | チャンネルバッファ（deque, TTL, 反省会チェックポイント） |
 | 中期 | `channel_context.py`, `summarizer.py` | ローリング要約（mood, topic_keywords） |
-| 長期 | `user_profile.py` | ユーザー関係性（stranger→close, last_topic） |
+| 長期 | `user_profile.py` | ユーザー関係性（stranger→close, last_topic）。ギルド単位（guild_id, user_id） |
 | 長期 | `fact_store.py` | ファクトストア（Jaccard×decay, embedding対応, 忘却機能） |
 | 思考 | `reflection.py` | 反省会エンジン（LLMファクト抽出, fire-and-forget） |
 
@@ -82,6 +82,8 @@ applyTo: "**"
 | コマンド登録・同期は `setup_hook` | `on_ready` は再接続のたびに発火するため |
 | 反省会は前回チェックポイント以降の差分のみ処理 | 同一メッセージの重複抽出を防ぐ。チェックポイントは処理メッセージの最大タイムスタンプ（LLM実行中の新着を取りこぼさない） |
 | 反省会LLM出力は発言者照合＋サニタイズ後に保存 | `user_id` は会話ログの人間発言者のみ許可。文字列は型・長さ検証し改行/制御文字を除去（`memory/sanitize.py`）。プロンプト再注入による間接インジェクション対策 |
+| ユーザープロファイルはギルド単位で分離 | 別サーバーで得た事実・性格メモが漏れるのを防ぐ。旧 user_id 単位のデータからはカウンタのみ引き継ぎ（内容は他ギルド由来の可能性があるため破棄） |
+| ストレージ同期I/Oは `asyncio.to_thread` でイベントループ外へ | Firestore 遅延で bot 全体が止まるのを防ぐ。記憶系は `_prefetch_memory` でキャッシュを先に温め、以降の同期呼び出しはキャッシュヒットさせる。各ストアは `threading.Lock` で保護（読み込みはロック外・登録は setdefault で先着優先） |
 
 ## Open Issues
 
@@ -90,5 +92,5 @@ applyTo: "**"
 3. **フル async 化**: google-genai `client.aio` への移行（中期候補）
 4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索（現状は in-memory コサイン類似度）
 5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）
-6. **2026/11 コードレビュー残課題**: プロファイルのギルド間漏洩、Firestore 同期I/Oのイベントループブロック、system_instruction へのチャンネル会話の未エスケープ注入、Router プリフィルタ（7文字以下で none）、リトライ判定の文字列一致、反省会LLM失敗時のバックオフなし
+6. **2026/11 コードレビュー残課題**: system_instruction へのチャンネル会話の未エスケープ注入、Router プリフィルタ（7文字以下で none）、リトライ判定の文字列一致、反省会LLM失敗時のバックオフなし、`persist_all` が変更有無に関わらず全件書き込み（dirty フラグ未導入）、スラッシュコマンドが3秒以内に応答しない場合の defer 未対応
 7. **EMBEDDING_MODEL**: `text-embedding-004` の提供状況を要確認。移行すると次元が変わり既存ベクトルと非互換になるため要マイグレーション検討

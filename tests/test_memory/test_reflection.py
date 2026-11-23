@@ -16,6 +16,7 @@ def _make_message(
     author_id: int = 12345,
     content: str = "テストメッセージ",
     is_bot: bool = False,
+    guild_id: int | None = 1,
 ) -> ChannelMessage:
     """テスト用ChannelMessageファクトリ"""
     return ChannelMessage(
@@ -26,6 +27,7 @@ def _make_message(
         content=content,
         timestamp=datetime.now(timezone.utc),
         is_bot=is_bot,
+        guild_id=guild_id,
     )
 
 
@@ -361,7 +363,7 @@ class TestUserProfileTags:
                     with patch("memory.user_profile.get_user_profile_store", return_value=mock_store):
                         engine._call_user_profile_llm(messages)
 
-        mock_store.update_from_reflection.assert_called_once_with(12345, {
+        mock_store.update_from_reflection.assert_called_once_with(1, 12345, {
             "user_id": 12345,
             "tags": ["プログラマー"],
             "notable_facts": ["東京在住"],
@@ -421,7 +423,7 @@ class TestApplyUserProfileResults:
             count = _apply_user_profile_results(result, messages)
 
         assert count == 1
-        mock_store.update_from_reflection.assert_called_once_with(111, result[0])
+        mock_store.update_from_reflection.assert_called_once_with(1, 111, result[0])
 
     def test_accepts_numeric_string_user_id(self):
         """数字文字列の user_id も発言者と一致すれば受け付けること"""
@@ -433,7 +435,7 @@ class TestApplyUserProfileResults:
             count = _apply_user_profile_results([{"user_id": "111"}], messages)
 
         assert count == 1
-        mock_store.update_from_reflection.assert_called_once_with(111, {"user_id": "111"})
+        mock_store.update_from_reflection.assert_called_once_with(1, 111, {"user_id": "111"})
 
 
 class TestParseFactItem:
@@ -499,3 +501,31 @@ class TestApplyFactsCheckpoint:
             asyncio.run(engine._apply_facts(100, [{"content": None}], messages))
 
         mock_buffer.mark_reflected.assert_not_called()
+
+
+
+class TestApplyUserProfileResultsGuildScope:
+    """_apply_user_profile_results のギルド分離テスト"""
+
+    def test_updates_profile_of_conversation_guild(self):
+        """会話が行われたギルドのプロファイルだけを更新すること"""
+        from memory.reflection import _apply_user_profile_results
+
+        messages = [_make_message(author_id=111, guild_id=42)]
+        mock_store = MagicMock()
+        with patch("memory.user_profile.get_user_profile_store", return_value=mock_store):
+            _apply_user_profile_results([{"user_id": 111}], messages)
+
+        mock_store.update_from_reflection.assert_called_once_with(42, 111, {"user_id": 111})
+
+    def test_skips_when_guild_unknown(self):
+        """ギルドIDが不明なメッセージのみの場合は更新しないこと"""
+        from memory.reflection import _apply_user_profile_results
+
+        messages = [_make_message(author_id=111, guild_id=None)]
+        mock_store = MagicMock()
+        with patch("memory.user_profile.get_user_profile_store", return_value=mock_store):
+            count = _apply_user_profile_results([{"user_id": 111}], messages)
+
+        assert count == 0
+        mock_store.update_from_reflection.assert_not_called()

@@ -6,6 +6,7 @@
 import json
 import os
 import re
+import threading
 from datetime import datetime
 from typing import Any, Optional
 
@@ -52,6 +53,8 @@ class ChannelConfigManager:
         """初期化"""
         self.debug_mode = debug_mode
         self.guild_configs: dict[str, "ChannelConfig"] = {}  # {guild_id: ChannelConfig}
+        # get_config はワーカースレッドからも呼ばれるため、キャッシュ操作を保護する
+        self._lock = threading.Lock()
 
     def get_config(self, guild_id: int | str) -> "ChannelConfig":
         """
@@ -65,7 +68,8 @@ class ChannelConfigManager:
         """
         guild_id = str(guild_id)  # 文字列に変換
 
-        cached = self.guild_configs.get(guild_id)
+        with self._lock:
+            cached = self.guild_configs.get(guild_id)
         if cached is not None:
             return cached
 
@@ -76,10 +80,11 @@ class ChannelConfigManager:
             logger.warning(
                 f"ギルドID {guild_id} の設定読み込みに失敗したためキャッシュしません"
             )
-        else:
-            self.guild_configs[guild_id] = channel_config
+            return channel_config
 
-        return channel_config
+        with self._lock:
+            # 並行して読み込んだ別スレッドが先に登録していればそちらを優先する
+            return self.guild_configs.setdefault(guild_id, channel_config)
 
     def create_guild_config(self, guild_id: Any) -> "ChannelConfig":
         """
@@ -95,7 +100,8 @@ class ChannelConfigManager:
         config_obj = ChannelConfig(guild_id=guild_id, debug_mode=self.debug_mode)
         config_obj.save_config()
         if not config_obj.load_failed:
-            self.guild_configs[guild_id] = config_obj
+            with self._lock:
+                self.guild_configs[guild_id] = config_obj
         logger.info(f"ギルドID {guild_id} の設定ファイルを作成")
         return config_obj
 
@@ -113,9 +119,10 @@ class ChannelConfigManager:
         success = True
 
         # メモリから削除
-        if guild_id in self.guild_configs:
+        with self._lock:
+            removed = self.guild_configs.pop(guild_id, None)
+        if removed is not None:
             logger.info(f"ギルドID {guild_id} の設定をメモリから削除")
-            del self.guild_configs[guild_id]
 
         # ストレージから削除
         if not self.debug_mode:

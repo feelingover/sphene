@@ -92,26 +92,42 @@ class ChannelContextStore:
 
     def __init__(self) -> None:
         self._contexts: dict[int, ChannelContext] = {}
+        # イベントループとワーカースレッドから並行アクセスされる
+        self._lock = threading.Lock()
 
     def get_all_contexts(self) -> dict[int, ChannelContext]:
         """全コンテキストのコピーを返す（スレッドセーフ）"""
-        return dict(self._contexts)
+        with self._lock:
+            return dict(self._contexts)
 
     def get_context(self, channel_id: int) -> ChannelContext:
-        """チャンネルコンテキストを取得する（なければ新規作成）"""
-        if channel_id in self._contexts:
-            return self._contexts[channel_id]
+        """チャンネルコンテキストを取得する（なければ永続化先から読み込み or 新規作成）
 
-        # 永続化先からの読み込みを試行
+        永続化先の読み込みでブロックするため、イベントループからは
+        ``asyncio.to_thread`` 経由で呼ぶこと（キャッシュ済みなら即時に返る）。
+
+        Args:
+            channel_id: チャンネルID
+
+        Returns:
+            チャンネルコンテキスト
+        """
+        with self._lock:
+            cached = self._contexts.get(channel_id)
+        if cached is not None:
+            return cached
+
+        # ロック外で I/O を行い、取得後に先着を優先して登録する
         ctx = self._load_context(channel_id)
         if ctx is None:
             ctx = ChannelContext(channel_id=channel_id)
-        self._contexts[channel_id] = ctx
-        return ctx
+        with self._lock:
+            return self._contexts.setdefault(channel_id, ctx)
 
     def save_context(self, context: ChannelContext) -> None:
-        """コンテキストを永続化する"""
-        self._contexts[context.channel_id] = context
+        """コンテキストを永続化する（I/Oを伴うためワーカースレッドで呼ぶこと）"""
+        with self._lock:
+            self._contexts[context.channel_id] = context
         storage_type = config.STORAGE_TYPE
 
         if storage_type == "local":
