@@ -173,9 +173,54 @@ class TestEventsExtensive:
         # 2つのチャンクが送信される
         assert message.channel.send.call_count == 2
         # 最初はリプライ（referenceあり）
-        message.channel.send.assert_any_call("Chunk 1", reference=message)
+        message.channel.send.assert_any_call("Chunk 1", reference=message.to_reference.return_value)
+        message.to_reference.assert_called_with(fail_if_not_exists=False)
         # 次は通常送信
         message.channel.send.assert_any_call("Chunk 2")
+
+    @pytest.mark.asyncio
+    @patch("bot.events.channel_conversations")
+    async def test_process_conversation_error_reply_tolerates_deleted_message(
+        self, mock_conversations
+    ):
+        """応答生成失敗時のエラー返信も、元メッセージ削除で失敗しない reference を使う"""
+        mock_api = MagicMock()
+        mock_api.async_input_message = AsyncMock(return_value=None)
+        mock_conversations.__getitem__.return_value = mock_api
+
+        message = MagicMock()
+        message.content = ""
+        message.channel.send = AsyncMock()
+
+        await process_conversation(message, "question", is_reply=True)
+
+        message.channel.send.assert_called_once()
+        assert (
+            message.channel.send.call_args.kwargs["reference"]
+            is message.to_reference.return_value
+        )
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
+
+    @pytest.mark.asyncio
+    @patch("bot.events._post_response_update")
+    @patch("bot.events.channel_conversations")
+    async def test_process_conversation_whitespace_answer_sends_error(
+        self, mock_conversations, mock_post_update
+    ):
+        """空白のみの応答はエラー返信に落とし、履歴更新はしない"""
+        mock_api = MagicMock()
+        mock_api.async_input_message = AsyncMock(return_value="  \n ")
+        mock_conversations.__getitem__.return_value = mock_api
+
+        message = MagicMock()
+        message.content = ""
+        message.channel.send = AsyncMock()
+
+        await process_conversation(message, "question", is_reply=False)
+
+        message.channel.send.assert_called_once()
+        assert "エラー" in message.channel.send.call_args.args[0]
+        mock_post_update.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("bot.events.config_manager")
@@ -275,6 +320,36 @@ class TestEventsExtensive:
         message.channel.send.assert_called_once_with("Autonomous Answer")
         mock_get_judge().record_response.assert_called_once_with(100)
         mock_buffer.add_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("memory.short_term.get_channel_buffer")
+    @patch("bot.events.channel_conversations")
+    @patch("memory.judge.get_judge")
+    async def test_process_autonomous_response_whitespace_answer(
+        self, mock_get_judge, mock_conversations, mock_get_buffer
+    ):
+        """空白のみの自律応答は送信せず、クールダウン・バッファも更新しない"""
+        bot = MagicMock()
+        bot.user.id = 123
+        message = MagicMock()
+        message.channel.id = 100
+        message.content = "Hello"
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_context_string.return_value = "Past context"
+        mock_get_buffer.return_value = mock_buffer
+
+        mock_api = MagicMock()
+        mock_api.is_expired.return_value = False
+        mock_api.async_input_message = AsyncMock(return_value="  \n ")
+        mock_conversations.__getitem__.return_value = mock_api
+        message.channel.send = AsyncMock()
+
+        await _process_autonomous_response(bot, message, [])
+
+        message.channel.send.assert_not_called()
+        mock_get_judge().record_response.assert_not_called()
+        mock_buffer.add_message.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_reaction_exception(self):
@@ -514,7 +589,10 @@ class TestSendChunks:
 
         await _send_chunks(message, ["hello"], is_reply=True)
 
-        message.channel.send.assert_called_once_with("hello", reference=message)
+        message.channel.send.assert_called_once_with(
+            "hello", reference=message.to_reference.return_value
+        )
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
 
     @pytest.mark.asyncio
     async def test_multi_chunk_reply_first_is_reference(self) -> None:
@@ -527,8 +605,9 @@ class TestSendChunks:
 
         assert message.channel.send.call_count == 3
         calls = message.channel.send.call_args_list
-        # 1チャンク目: reference=message
-        assert calls[0].kwargs.get("reference") is message
+        # 1チャンク目: 元メッセージ削除時も失敗しない reference
+        assert calls[0].kwargs.get("reference") is message.to_reference.return_value
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
         # 2チャンク目以降: reference なし
         assert "reference" not in calls[1].kwargs
         assert "reference" not in calls[2].kwargs

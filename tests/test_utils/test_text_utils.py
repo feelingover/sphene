@@ -182,3 +182,44 @@ def test_split_message_long_no_newlines() -> None:
     assert chunks[0] == "a" * 10
     assert chunks[1] == "a" * 10
     assert chunks[2] == "a" * 5
+
+
+def test_split_message_leading_newline_no_empty_chunk() -> None:
+    """先頭が改行の長文でも空チャンクを返さないこと（issue #134 再現ケース）"""
+    from utils.text_utils import split_message
+
+    text = "\n" + "a" * 2000
+    chunks = split_message(text)
+    assert all(chunk.strip() for chunk in chunks)
+    assert all(len(chunk) <= 1900 for chunk in chunks)
+    assert "".join(chunks) == text
+
+
+def test_split_message_skips_whitespace_only_chunks() -> None:
+    """空白のみのチャンクは結果に含めないこと"""
+    from utils.text_utils import split_message
+
+    text = "abc\n" + " " * 12 + "\n" + "def"
+    chunks = split_message(text, max_length=10)
+    assert chunks
+    assert all(chunk.strip() for chunk in chunks)
+    assert "abc" in chunks[0]
+    assert chunks[-1].endswith("def")
+
+
+def test_split_message_empty_or_whitespace_returns_empty_list() -> None:
+    """空文字・空白のみのテキストは送信対象なしとして空リストを返すこと"""
+    from utils.text_utils import split_message
+
+    assert split_message("") == []
+    assert split_message("   \n  ") == []
+
+
+def test_split_message_invalid_max_length() -> None:
+    """max_length が1未満なら無限ループせず ValueError を送出すること"""
+    import pytest
+
+    from utils.text_utils import split_message
+
+    with pytest.raises(ValueError):
+        split_message("abc", max_length=0)

@@ -528,6 +528,33 @@ class TestProcessShortAck:
 
     @pytest.mark.asyncio
     @patch("asyncio.to_thread")
+    @patch("memory.short_term.get_channel_buffer")
+    async def test_short_ack_whitespace_answer(self, mock_buffer_fn, mock_to_thread):
+        """generate_short_ack が空白のみを返した場合も送信せずリアクションにフォールバック"""
+        mock_buffer = MagicMock()
+        mock_buffer.get_context_string.return_value = "User1: hello"
+        mock_buffer_fn.return_value = mock_buffer
+
+        mock_to_thread.return_value = "  \n "
+
+        bot = MagicMock()
+        message = MagicMock()
+        message.channel.id = 100
+        message.channel.send = AsyncMock()
+        message.add_reaction = AsyncMock()
+        message.content = "テスト"
+
+        with patch("bot.events._send_reaction") as mock_send_reaction:
+            mock_send_reaction.return_value = None
+
+            from bot.events import _process_short_ack
+            await _process_short_ack(bot, message)
+
+        message.channel.send.assert_not_called()
+        mock_send_reaction.assert_called_once_with(message)
+
+    @pytest.mark.asyncio
+    @patch("asyncio.to_thread")
     @patch("memory.judge.get_judge")
     @patch("memory.short_term.get_channel_buffer")
     async def test_short_ack_none_answer_already_reacted_skips_reaction(

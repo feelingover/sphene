@@ -253,6 +253,21 @@ async def _typing_indicator(channel: discord.abc.Messageable) -> AsyncIterator[N
         await typing_cm.__aexit__(None, None, None)
 
 
+def _reply_reference(message: discord.Message) -> discord.MessageReference:
+    """返信用の MessageReference を生成する
+
+    応答生成中に元メッセージが削除されても送信が失敗しないよう、
+    ``fail_if_not_exists=False`` を指定する（その場合は通常投稿になる）。
+
+    Args:
+        message: 返信先のDiscordメッセージ
+
+    Returns:
+        discord.MessageReference: 返信先の参照
+    """
+    return message.to_reference(fail_if_not_exists=False)
+
+
 async def _send_chunks(
     message: discord.Message,
     chunks: list[str],
@@ -271,7 +286,7 @@ async def _send_chunks(
             logger.info(
                 f"リプライとして応答送信(chunk {i+1}/{len(chunks)}): チャンネルID {channel_id}, 応答: {truncate_text(chunk)}"
             )
-            await message.channel.send(chunk, reference=message)
+            await message.channel.send(chunk, reference=_reply_reference(message))
         else:
             label = "リプライ" if is_reply else "通常"
             logger.info(
@@ -353,14 +368,15 @@ async def process_conversation(
             relevant_facts=relevant_facts_str,
         )
 
-    if answer:
-        await _send_chunks(message, split_message(answer), is_reply=is_reply)
+    chunks = split_message(answer) if answer else []
+    if answer and chunks:
+        await _send_chunks(message, chunks, is_reply=is_reply)
         bot_user = message.guild.me if message.guild else None
         _post_response_update(message, answer, topic_keywords, bot_user)
     else:
         error_msg = "ごめん！応答の生成中にエラーが発生しちゃった...😢 もう一度試してみてね！"
         if is_reply:
-            await message.channel.send(error_msg, reference=message)
+            await message.channel.send(error_msg, reference=_reply_reference(message))
         else:
             await message.channel.send(error_msg)
 
@@ -553,7 +569,7 @@ async def _process_short_ack(
             trigger_message=message.content or "",
         )
 
-    if not answer:
+    if not answer or not answer.strip():
         if already_reacted:
             # リアクション済みの場合はフォールバックリアクションを省略し、クールダウンのみ記録
             logger.debug(
@@ -632,8 +648,9 @@ async def _process_autonomous_response(
             relevant_facts=relevant_facts_str,
         )
 
-    if answer:
-        await _send_chunks(message, split_message(answer), is_reply=False)
+    chunks = split_message(answer) if answer else []
+    if answer and chunks:
+        await _send_chunks(message, chunks, is_reply=False)
         logger.info(
             f"自律応答送信: チャンネル={message.channel.id}, "
             f"応答={truncate_text(answer)}"
@@ -973,7 +990,7 @@ async def send_translation_response(
 
     for i, chunk in enumerate(chunks):
         if i == 0:
-            await message.channel.send(chunk, reference=message)
+            await message.channel.send(chunk, reference=_reply_reference(message))
         else:
             await message.channel.send(chunk)
 
