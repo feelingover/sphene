@@ -106,3 +106,24 @@ def test_setup_logger_default_level() -> None:
                 mock_config.assert_called_once()
                 args, kwargs = mock_config.call_args
                 assert kwargs["level"] == logging.INFO
+
+
+def test_third_party_loggers_are_capped_when_app_is_debug() -> None:
+    """LOG_LEVEL=DEBUG でもサードパーティは最低レベル以上に抑えること"""
+    from log_utils.logger import _configure_third_party_loggers
+
+    _configure_third_party_loggers(logging.DEBUG)
+
+    assert logging.getLogger("discord").level == logging.INFO
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("google").level == logging.WARNING
+
+
+def test_third_party_loggers_follow_stricter_app_level() -> None:
+    """アプリのレベルの方が厳しい場合はそちらに揃えること"""
+    from log_utils.logger import _configure_third_party_loggers
+
+    _configure_third_party_loggers(logging.ERROR)
+
+    assert logging.getLogger("discord").level == logging.ERROR
+    assert logging.getLogger("httpx").level == logging.ERROR

@@ -157,4 +157,6 @@ class SpheneBot:
     def run(self) -> None:
         """ボットを起動する"""
         logger.info("Discordボットの起動を開始")
-        self.bot.run(config.DISCORD_TOKEN)
+        # discord.py 独自のログハンドラは登録せず、アプリのルートロガー設定
+        # （LOG_FORMAT / LOG_LEVEL）に一本化する。二重出力を防ぐため
+        self.bot.run(config.DISCORD_TOKEN, log_handler=None)

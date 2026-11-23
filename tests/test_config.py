@@ -89,3 +89,40 @@ class TestInstanceName:
 
                 with pytest.raises(ValueError, match="INSTANCE_NAME is required"):
                     importlib.reload(cfg)
+
+
+def test_find_deprecated_env_vars_detects_set_variables(monkeypatch) -> None:
+    """設定されている廃止済み環境変数だけを移行先の案内付きで返すこと"""
+    import config
+
+    for name in config.DEPRECATED_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MEMORY_ENABLED", "true")
+    monkeypatch.setenv("JUDGE_MODEL", "gemini-x")
+
+    found = dict(config.find_deprecated_env_vars())
+
+    assert set(found) == {"MEMORY_ENABLED", "JUDGE_MODEL"}
+    assert "LIVING_MEMORY_ENABLED" in found["MEMORY_ENABLED"]
+    assert "BOT_LITE_MODEL" in found["JUDGE_MODEL"]
+
+
+def test_find_deprecated_env_vars_empty(monkeypatch) -> None:
+    """廃止済み環境変数が無ければ空リストを返すこと"""
+    import config
+
+    for name in config.DEPRECATED_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+    assert config.find_deprecated_env_vars() == []
+
+
+def test_deprecated_env_vars_are_not_read_by_config() -> None:
+    """廃止済みとした環境変数を config.py が読んでいないこと（一覧の誤登録防止）"""
+    import inspect
+
+    import config
+
+    source = inspect.getsource(config)
+    for name in config.DEPRECATED_ENV_VARS:
+        assert f'os.getenv("{name}"' not in source, name

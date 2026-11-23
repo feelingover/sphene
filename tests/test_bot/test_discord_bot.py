@@ -66,4 +66,5 @@ def test_sphene_bot_run() -> None:
 
             # run メソッドのテスト
             bot.run()
-            mock_bot.run.assert_called_once_with(mock_config.DISCORD_TOKEN)
+            # discord.py 独自のログハンドラは登録しない（二重出力防止）
+            mock_bot.run.assert_called_once_with(mock_config.DISCORD_TOKEN, log_handler=None)

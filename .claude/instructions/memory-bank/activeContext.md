@@ -6,7 +6,7 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 786件全パス
+- テスト: 792件全パス
 - カバレッジ: 91%
 - mypy: 77ファイル no issues
 
@@ -18,6 +18,7 @@ applyTo: "**"
 | `LIVING_MEMORY_ENABLED` | true | チャンネルコンテキスト・ユーザープロファイル・反省会 |
 
 旧8フラグ（`AUTONOMOUS_RESPONSE_ENABLED`, `LLM_JUDGE_ENABLED`, `RESPONSE_DIVERSITY_ENABLED`, `REACTION_ENABLED`, `CHANNEL_CONTEXT_ENABLED`, `USER_PROFILE_ENABLED`, `USER_PROFILE_TAGS_ENABLED`, `REFLECTION_ENABLED`）は廃止済み。
+廃止済みの環境変数は `config.DEPRECATED_ENV_VARS` に登録しており、設定されていると起動時に移行先付きで WARNING を出す（新たに廃止する変数はここに追加する）。
 
 ### 記憶システム「リビングメモリー (Living Memory)」
 
@@ -62,7 +63,7 @@ applyTo: "**"
 **VANGUARD系**
 - `JUDGE_SCORE_THRESHOLD`, `COOLDOWN_SECONDS`, `JUDGE_KEYWORDS`
 - `JUDGE_LLM_THRESHOLD_LOW`, `JUDGE_LLM_THRESHOLD_HIGH`（要約・反省会は `BOT_MODEL`、LLM Judge は `BOT_LITE_MODEL`。`JUDGE_MODEL` などの専用モデル変数はない）
-- `REACTION_ENABLED`, `JUDGE_REACT_THRESHOLD`
+- `JUDGE_REACT_THRESHOLD`（リアクションの有効/無効は `VANGUARD_ENABLED` に統合済み）
 
 ## Key Decisions
 
