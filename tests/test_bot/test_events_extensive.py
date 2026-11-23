@@ -202,6 +202,27 @@ class TestEventsExtensive:
         message.to_reference.assert_called_once_with(fail_if_not_exists=False)
 
     @pytest.mark.asyncio
+    @patch("bot.events._post_response_update")
+    @patch("bot.events.channel_conversations")
+    async def test_process_conversation_whitespace_answer_sends_error(
+        self, mock_conversations, mock_post_update
+    ):
+        """空白のみの応答はエラー返信に落とし、履歴更新はしない"""
+        mock_api = MagicMock()
+        mock_api.async_input_message = AsyncMock(return_value="  \n ")
+        mock_conversations.__getitem__.return_value = mock_api
+
+        message = MagicMock()
+        message.content = ""
+        message.channel.send = AsyncMock()
+
+        await process_conversation(message, "question", is_reply=False)
+
+        message.channel.send.assert_called_once()
+        assert "エラー" in message.channel.send.call_args.args[0]
+        mock_post_update.assert_not_called()
+
+    @pytest.mark.asyncio
     @patch("bot.events.config_manager")
     async def test_handle_on_ready_sync(self, mock_config_manager):
         """on_readyでの準備処理テスト"""
@@ -299,6 +320,36 @@ class TestEventsExtensive:
         message.channel.send.assert_called_once_with("Autonomous Answer")
         mock_get_judge().record_response.assert_called_once_with(100)
         mock_buffer.add_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("memory.short_term.get_channel_buffer")
+    @patch("bot.events.channel_conversations")
+    @patch("memory.judge.get_judge")
+    async def test_process_autonomous_response_whitespace_answer(
+        self, mock_get_judge, mock_conversations, mock_get_buffer
+    ):
+        """空白のみの自律応答は送信せず、クールダウン・バッファも更新しない"""
+        bot = MagicMock()
+        bot.user.id = 123
+        message = MagicMock()
+        message.channel.id = 100
+        message.content = "Hello"
+
+        mock_buffer = MagicMock()
+        mock_buffer.get_context_string.return_value = "Past context"
+        mock_get_buffer.return_value = mock_buffer
+
+        mock_api = MagicMock()
+        mock_api.is_expired.return_value = False
+        mock_api.async_input_message = AsyncMock(return_value="  \n ")
+        mock_conversations.__getitem__.return_value = mock_api
+        message.channel.send = AsyncMock()
+
+        await _process_autonomous_response(bot, message, [])
+
+        message.channel.send.assert_not_called()
+        mock_get_judge().record_response.assert_not_called()
+        mock_buffer.add_message.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_reaction_exception(self):

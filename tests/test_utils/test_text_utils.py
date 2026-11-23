@@ -213,3 +213,13 @@ def test_split_message_empty_or_whitespace_returns_empty_list() -> None:
 
     assert split_message("") == []
     assert split_message("   \n  ") == []
+
+
+def test_split_message_invalid_max_length() -> None:
+    """max_length が1未満なら無限ループせず ValueError を送出すること"""
+    import pytest
+
+    from utils.text_utils import split_message
+
+    with pytest.raises(ValueError):
+        split_message("abc", max_length=0)

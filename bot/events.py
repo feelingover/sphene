@@ -368,8 +368,9 @@ async def process_conversation(
             relevant_facts=relevant_facts_str,
         )
 
-    if answer:
-        await _send_chunks(message, split_message(answer), is_reply=is_reply)
+    chunks = split_message(answer) if answer else []
+    if answer and chunks:
+        await _send_chunks(message, chunks, is_reply=is_reply)
         bot_user = message.guild.me if message.guild else None
         _post_response_update(message, answer, topic_keywords, bot_user)
     else:
@@ -568,7 +569,7 @@ async def _process_short_ack(
             trigger_message=message.content or "",
         )
 
-    if not answer:
+    if not answer or not answer.strip():
         if already_reacted:
             # リアクション済みの場合はフォールバックリアクションを省略し、クールダウンのみ記録
             logger.debug(
@@ -647,8 +648,9 @@ async def _process_autonomous_response(
             relevant_facts=relevant_facts_str,
         )
 
-    if answer:
-        await _send_chunks(message, split_message(answer), is_reply=False)
+    chunks = split_message(answer) if answer else []
+    if answer and chunks:
+        await _send_chunks(message, chunks, is_reply=False)
         logger.info(
             f"自律応答送信: チャンネル={message.channel.id}, "
             f"応答={truncate_text(answer)}"

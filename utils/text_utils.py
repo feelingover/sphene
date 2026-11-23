@@ -28,7 +28,12 @@ def split_message(text: str, max_length: int = 1900) -> list[str]:
 
     Returns:
         list[str]: 空白のみのチャンクを含まない分割結果
+
+    Raises:
+        ValueError: ``max_length`` が1未満の場合
     """
+    if max_length <= 0:
+        raise ValueError(f"max_length must be positive: {max_length}")
     chunks: list[str] = []
     remaining = text
     while len(remaining) > max_length:
