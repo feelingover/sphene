@@ -69,6 +69,77 @@ class TestEventsExtensive:
         assert q == "そうだね"
         assert is_reply is True
 
+    @staticmethod
+    def _role(role_id: int, bot_id: int | None) -> MagicMock:
+        role = MagicMock()
+        role.id = role_id
+        if bot_id is None:
+            role.tags = None
+        else:
+            role.tags.bot_id = bot_id
+        return role
+
+    @pytest.mark.asyncio
+    async def test_is_bot_mentioned_by_bot_managed_role(self):
+        """ボットの管理ロール宛てのメンションもボットへの呼びかけとして扱うこと"""
+        bot = MagicMock()
+        bot.user.id = 123
+        msg = MagicMock()
+        msg.content = "<@&999> おはよう！"
+        msg.mentions = []
+        msg.role_mentions = [self._role(999, bot_id=123)]
+
+        mentioned, q, is_reply = await is_bot_mentioned(bot, msg)
+
+        assert mentioned is True
+        assert q == "おはよう！"
+        assert is_reply is True
+
+    @pytest.mark.asyncio
+    async def test_is_bot_mentioned_ignores_other_roles(self):
+        """他のボットの管理ロールや通常ロールへのメンションは無視すること"""
+        bot = MagicMock()
+        bot.user.id = 123
+        msg = MagicMock()
+        msg.content = "<@&555> <@&777> 集合！"
+        msg.mentions = []
+        msg.role_mentions = [self._role(555, bot_id=456), self._role(777, bot_id=None)]
+        msg.reference = None
+
+        with patch("config.BOT_NAME", "スフェーン"):
+            mentioned, q, is_reply = await is_bot_mentioned(bot, msg)
+
+        assert (mentioned, q, is_reply) == (False, "", False)
+
+    @pytest.mark.asyncio
+    async def test_is_bot_mentioned_strips_nickname_mention(self):
+        """ニックネーム形式 <@!id> のメンションも本文から除去すること"""
+        bot = MagicMock()
+        bot.user.id = 123
+        msg = MagicMock()
+        msg.content = "<@!123> こんにちは <@123>"
+        msg.mentions = [bot.user]
+        msg.role_mentions = []
+
+        mentioned, q, _ = await is_bot_mentioned(bot, msg)
+
+        assert mentioned is True
+        assert q == "こんにちは"
+
+    @pytest.mark.asyncio
+    async def test_is_bot_mentioned_keeps_other_mentions(self):
+        """ボット以外へのメンションは本文に残すこと"""
+        bot = MagicMock()
+        bot.user.id = 123
+        msg = MagicMock()
+        msg.content = "<@123> <@456> にも教えてあげて"
+        msg.mentions = [bot.user]
+        msg.role_mentions = []
+
+        _, q, _ = await is_bot_mentioned(bot, msg)
+
+        assert q == "<@456> にも教えてあげて"
+
     @pytest.mark.asyncio
     async def test_is_bot_mentioned_no_content(self):
         """message.contentがNoneでも例外なく3要素を返すことを確認"""
