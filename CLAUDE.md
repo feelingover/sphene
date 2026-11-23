@@ -22,17 +22,26 @@ docker build -t sphene-discord-bot .       # Docker build
 app.py                    # Entry point
 config.py                 # Environment-based config
 ai/
-  client.py               # Google Gen AI SDK client
-  conversation.py         # Conversation state, prompt, Gen AI API calls
+  client.py               # Google Gen AI SDK client, thinking config
+  conversation.py         # Conversation state (per-channel history, prompt injection)
+  api.py                  # Gen AI API calls (retry, tool-call loop)
+  router.py               # Router LLM (grounding / function calling / none)
   tools.py                # Function Calling definitions & conversion
 bot/
-  discord_bot.py          # Bot core, setup
+  discord_bot.py          # Bot core, setup, periodic cleanup task
   commands.py             # Slash commands
   events.py               # Message/reaction event handlers
+memory/                   # Living Memory + VANGUARD judge (docs/living-memory.md, docs/vanguard.md)
+  short_term.py           # Channel buffer
+  channel_context.py, summarizer.py   # Rolling summary
+  user_profile.py, fact_store.py      # Long-term memory
+  reflection.py           # Fact extraction (反省会)
+  judge.py, llm_judge.py  # Autonomous response judge
 xivapi/
-  client.py               # XIVAPI v2 item search
+  client.py               # XIVAPI v2 search
 utils/
   channel_config.py       # Channel permissions (local/Firestore)
+  file_utils.py           # atomic_write_json
   firestore_client.py     # Firestore client (singleton)
   text_utils.py           # Text processing, translation
 log_utils/logger.py       # Logging config
@@ -41,10 +50,14 @@ storage/                  # Local file storage (prompts, configs)
 
 ### Key Config Env Vars
 
-- `CHANNEL_CONFIG_STORAGE_TYPE`: "local" | "firestore"
-- `FIRESTORE_COLLECTION_NAME`: Firestore collection name (default: "channel_configs")
+全量は `config.py` と `.env.sample` を参照。
+
+- `STORAGE_TYPE`: "local" | "firestore"（チャンネル設定・記憶系すべてのバックエンド）
+- `FIRESTORE_NAMESPACE`: Firestoreコレクション名プレフィックス（default: `INSTANCE_NAME`）
+- `BOT_MODEL` / `BOT_LITE_MODEL`: 使用モデル
+- `VANGUARD_ENABLED` / `LIVING_MEMORY_ENABLED`: 機能グループフラグ（default: true）
 - `BOT_NAME`: Bot trigger name (default: "スフェーン")
-- `COMMAND_GROUP_NAME`: Slash command group prefix
+- `COMMAND_GROUP_NAME`: Slash command group prefix (default: `INSTANCE_NAME`)
 
 ## Code Standards
 

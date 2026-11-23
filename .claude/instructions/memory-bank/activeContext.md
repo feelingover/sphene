@@ -3,12 +3,12 @@ applyTo: "**"
 ---
 # Active Context
 
-## v1.0.0 Current State (2026/3)
+## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 674件全パス
-- カバレッジ: 89%
-- mypy: 72ファイル no issues
+- テスト: 713件全パス
+- カバレッジ: 90%
+- mypy: 74ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -39,10 +39,11 @@ applyTo: "**"
 - `STORAGE_TYPE`: `local` | `firestore`（デフォルト: `local`）
 - `FIRESTORE_NAMESPACE`: Firestoreコレクション名プレフィックス
 - `BOT_NAME`: ボットの名前（デフォルト: `スフェーン`）
-- `COMMAND_GROUP_NAME`: スラッシュコマンドプレフィックス（デフォルト: `sphene`）
+- `COMMAND_GROUP_NAME`: スラッシュコマンドプレフィックス（デフォルト: `INSTANCE_NAME`）
 
 **AI制御**
 - `MAX_TOOL_CALL_ROUNDS`: ツール呼び出し最大ラウンド数（デフォルト: 15）
+- `GENAI_REQUEST_TIMEOUT_SECONDS`: Gen AI API 1リクエストのタイムアウト秒（デフォルト: 300。混雑時は長く待つと正確な応答が返るため長め）
 - `MAIN_THINKING_LEVEL`: 会話応答・ツールループのThinkingレベル（デフォルト: 空 = モデルのデフォルト）
 - `LIGHT_THINKING_LEVEL`: Router・Judge・相槌・要約・反省会・翻訳のThinkingレベル（デフォルト: `low`）。`ai/client.py` の `get_light_thinking_config()` 経由で渡す
 - `ENABLE_GOOGLE_SEARCH_GROUNDING`: Google検索Grounding（function callingと排他）
@@ -59,7 +60,7 @@ applyTo: "**"
 
 **VANGUARD系**
 - `JUDGE_SCORE_THRESHOLD`, `COOLDOWN_SECONDS`, `JUDGE_KEYWORDS`
-- `JUDGE_MODEL`, `JUDGE_LLM_THRESHOLD_LOW`, `JUDGE_LLM_THRESHOLD_HIGH`
+- `JUDGE_LLM_THRESHOLD_LOW`, `JUDGE_LLM_THRESHOLD_HIGH`（要約・反省会は `BOT_MODEL`、LLM Judge は `BOT_LITE_MODEL`。`JUDGE_MODEL` などの専用モデル変数はない）
 - `REACTION_ENABLED`, `JUDGE_REACT_THRESHOLD`
 
 ## Key Decisions
@@ -71,15 +72,20 @@ applyTo: "**"
 | チャンネル単位の会話履歴 | 複数ユーザーが参加するグループチャットの文脈を共有 |
 | S3 廃止 → Firestore | GCP 一本化、k8s Workload Identity 認証で API キー管理不要 |
 | システムプロンプトはローカルのみ | k8s configmap マウントで十分 |
-| `asyncio.to_thread()` で最小修正 | フル async 化は中期候補（AsyncOpenAI 移行） |
+| `asyncio.to_thread()` で最小修正 | フル async 化は中期候補（google-genai の `client.aio` 移行） |
 | Vertex AI Native SDK (`google-genai`) | OpenAI 互換 API の制限を回避、Gemini 最新モデル対応 |
 | 自発会話機能削除（issue #104） | マルチテナント競合・トリガー設計の根本見直し、タイマーベースへ再設計を継続検討 |
 | 旧 8 フラグ → 2 グループフラグ（issue #108） | 設定の複雑さを削減、デフォルト有効化 |
+| Gen AI タイムアウトは長め（300秒） | 混雑時は長時間待つと正確な応答が返ることが多い。早期打ち切りより正確さを優先 |
+| チャンネル設定の読み込み失敗時は保存拒否＋非キャッシュ | 一時障害でデフォルト設定が本番データを上書きするのを防ぐ |
+| コマンド登録・同期は `setup_hook` | `on_ready` は再接続のたびに発火するため |
 
 ## Open Issues
 
 1. **API 制限**: 高負荷時のレート制限対応（基本リトライは実装済み）
 2. **コスト最適化**: モデル選択、プロンプト最適化、キャッシング
-3. **AsyncOpenAI 移行**: フル async 化（中期候補）
+3. **フル async 化**: google-genai `client.aio` への移行（中期候補）
 4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索（現状は in-memory コサイン類似度）
 5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）
+6. **2026/11 コードレビュー残課題**: 反省会の重複抽出・プロファイル汚染（user_id 未検証）・プロファイルのギルド間漏洩、Firestore 同期I/Oのイベントループブロック、system_instruction へのチャンネル会話の未エスケープ注入、Router プリフィルタ（7文字以下で none）、リトライ判定の文字列一致
+7. **EMBEDDING_MODEL**: `text-embedding-004` の提供状況を要確認。移行すると次元が変わり既存ベクトルと非互換になるため要マイグレーション検討

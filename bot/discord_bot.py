@@ -33,7 +33,16 @@ class SpheneBot:
         intents.reactions = True  # リアクションの検知に必要
         intents.messages = True  # 過去メッセージへのアクセス権を追加
 
-        self.bot = commands.Bot(command_prefix="!", intents=intents, max_messages=10000)
+        # LLM出力や翻訳結果経由で @everyone / ロールメンションが発火しないよう制限する
+        allowed_mentions = discord.AllowedMentions(
+            everyone=False, roles=False, users=True, replied_user=True
+        )
+        self.bot = commands.Bot(
+            command_prefix="!",
+            intents=intents,
+            max_messages=10000,
+            allowed_mentions=allowed_mentions,
+        )
 
         # コマンドとイベントのセットアップ
         self._setup()

@@ -79,11 +79,12 @@
 - `CHANNEL_BUFFER_SIZE`: チャンネルごとに保持するメッセージの最大数 (デフォルト: 50)
 - `CHANNEL_BUFFER_TTL_MINUTES`: メッセージをバッファに保持する時間（分） (デフォルト: 30)
 
+> 使用モデル: 要約・反省会は `BOT_MODEL`、LLM Judge は `BOT_LITE_MODEL`（機能別のモデル変数はない）
+
 ### 中期記憶 (Channel Context)
 - `LIVING_MEMORY_ENABLED`: チャンネルコンテキスト・ユーザープロファイル・反省会を一括有効にするか (デフォルト: true)
 - `SUMMARIZE_EVERY_N_MESSAGES`: 何件のメッセージごとに要約を実行するか (デフォルト: 20)
 - `SUMMARIZE_EVERY_N_MINUTES`: 何分経過で要約を実行するか (デフォルト: 15)
-- `SUMMARIZE_MODEL`: 要約に使用するモデル名（空の場合はメインモデルを使用）
 
 ### 自律応答 (Autonomous Response) & LLM Judge
 > 詳細は [docs/vanguard.md](./vanguard.md) を参照
@@ -95,7 +96,6 @@
 - `ENGAGEMENT_DURATION_SECONDS`: 応答後のエンゲージメント（会話継続）とみなす期間（秒） (デフォルト: 300)
 - `ENGAGEMENT_BOOST`: エンゲージメント中のスコア加算値 (デフォルト: 40)
 - `JUDGE_KEYWORDS`: スコアをブーストするキーワード（カンマ区切り）
-- `JUDGE_MODEL`: LLM Judgeに使用するモデル名（空の場合はメインモデルを使用）
 - `JUDGE_LLM_THRESHOLD_LOW`: LLM Judgeが発動するスコアの下限 (デフォルト: 20)
 - `JUDGE_LLM_THRESHOLD_HIGH`: LLM Judgeが発動するスコアの上限 (デフォルト: 60)
 
@@ -108,7 +108,6 @@
 - `REFLECTION_LULL_MINUTES`: 沈黙が何分続いたら反省会をトリガーするか (デフォルト: 10)
 - `REFLECTION_MIN_MESSAGES`: 反省会をトリガーするために必要な最低メッセージ数 (デフォルト: 10)
 - `REFLECTION_MAX_BUFFER_MESSAGES`: バッファ蓄積量での強制反省会トリガー件数 (デフォルト: 30)
-- `REFLECTION_MODEL`: 反省会に使用するモデル名（空の場合はメインモデルを使用）
 
 ### 長期記憶: ファクトストア (Fact Store)
 - `FACT_STORE_MAX_FACTS_PER_CHANNEL`: チャンネルあたりの最大ファクト保持件数 (デフォルト: 100)

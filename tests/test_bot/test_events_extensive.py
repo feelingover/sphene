@@ -20,6 +20,7 @@ from bot.events import (
     is_bot_mentioned,
     process_conversation,
     _handle_on_ready,
+    _handle_setup_hook,
     _handle_on_guild_join,
     _handle_on_guild_remove,
     translate_and_reply,
@@ -120,10 +121,23 @@ class TestEventsExtensive:
 
         await _handle_on_ready(bot, command_group)
 
-        bot.tree.add_command.assert_called_once_with(command_group)
-        bot.tree.sync.assert_called_once()
+        # コマンド登録・同期は setup_hook 側で行うため、on_ready では呼ばれない
+        bot.tree.add_command.assert_not_called()
+        bot.tree.sync.assert_not_called()
         # 各ギルドの設定が初期化される
         assert mock_config_manager.get_config.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_handle_setup_hook_registers_and_syncs_once(self):
+        """setup_hookでコマンド登録と同期が1回だけ行われること"""
+        bot = MagicMock()
+        bot.tree.sync = AsyncMock()
+        command_group = MagicMock()
+
+        await _handle_setup_hook(bot, command_group)
+
+        bot.tree.add_command.assert_called_once_with(command_group)
+        bot.tree.sync.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch("bot.events.config_manager")
@@ -223,6 +237,20 @@ class TestEventsExtensive:
         assert bot.event.call_count >= 5
         # bot.tree.error (デコレータ) が呼ばれたことを確認
         assert bot.tree.error.called
+
+    @pytest.mark.asyncio
+    async def test_setup_events_assigns_setup_hook(self):
+        """setup_events が setup_hook を差し替え、コマンド同期を委譲すること"""
+        bot = MagicMock()
+        bot.tree.sync = AsyncMock()
+        command_group = MagicMock()
+        from bot.events import setup_events
+
+        setup_events(bot, command_group)
+        await bot.setup_hook()
+
+        bot.tree.add_command.assert_called_once_with(command_group)
+        bot.tree.sync.assert_awaited_once()
 
 
 class TestCollectAiContext:
