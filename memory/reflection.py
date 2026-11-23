@@ -92,11 +92,35 @@ def _parse_user_id(value: object) -> int | None:
     return None
 
 
-def _parse_fact_item(item: object) -> dict | None:
+def _participant_ids(messages: list[ChannelMessage]) -> set[int]:
+    """会話ログに登場した人間ユーザーのIDを返す（ボットは除外）"""
+    return {msg.author_id for msg in messages if not msg.is_bot}
+
+
+def _filter_source_ids(raw_ids: object, allowed_ids: set[int]) -> list[int]:
+    """LLMが返した source_user_ids を会話の参加者だけに絞り、重複を除く
+
+    会話内容で誘導された無関係なユーザーIDにファクトが紐づくと、
+    そのユーザーの検索時にブーストがかかってしまうため除外する。
+    """
+    result: list[int] = []
+    for value in raw_ids if isinstance(raw_ids, list) else []:
+        uid = _parse_user_id(value)
+        if uid is None or uid in result:
+            continue
+        if uid not in allowed_ids:
+            logger.warning(f"会話に登場しないsource_user_idを除外: user_id={uid}")
+            continue
+        result.append(uid)
+    return result
+
+
+def _parse_fact_item(item: object, allowed_ids: set[int]) -> dict | None:
     """反省会LLMが返したファクト1件を検証・正規化する
 
     Args:
         item: JSON配列の1要素
+        allowed_ids: source_user_ids として許可する会話参加者のID
 
     Returns:
         content / keywords / source_user_ids / shareable を持つ辞書。不正な場合は None。
@@ -106,11 +130,7 @@ def _parse_fact_item(item: object) -> dict | None:
     content = sanitize_llm_text(item.get("content"), _MAX_FACT_CONTENT_LENGTH)
     if not content:
         return None
-    raw_ids = item.get("source_user_ids")
-    source_ids = [
-        uid for uid in (_parse_user_id(v) for v in (raw_ids if isinstance(raw_ids, list) else []))
-        if uid is not None
-    ]
+    source_ids = _filter_source_ids(item.get("source_user_ids"), allowed_ids)
     return {
         "content": content,
         "keywords": sanitize_llm_text_list(
@@ -143,7 +163,7 @@ def _apply_user_profile_results(
     if guild_id is None:
         logger.debug("ギルドIDが不明なためユーザープロファイル反省会をスキップ")
         return 0
-    allowed_ids = {msg.author_id for msg in messages if not msg.is_bot}
+    allowed_ids = _participant_ids(messages)
     store = get_user_profile_store()
     updated_count = 0
     for item in result:
@@ -344,8 +364,11 @@ class ReflectionEngine:
 
         store = get_fact_store()
         now = datetime.now(timezone.utc)
+        allowed_ids = _participant_ids(messages)
         parsed = [
-            item for item in (_parse_fact_item(raw) for raw in raw_facts) if item
+            item
+            for item in (_parse_fact_item(raw, allowed_ids) for raw in raw_facts)
+            if item
         ]
 
         embeddings = await asyncio.gather(

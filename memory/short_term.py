@@ -6,6 +6,10 @@ from datetime import datetime, timedelta, timezone
 
 import config
 from log_utils.logger import logger
+from memory.sanitize import safe_author_name, sanitize_llm_text
+
+# 1発言あたりの最大文字数（Discordのメッセージ上限に合わせる）
+_MAX_CONTEXT_CONTENT_LENGTH = 4000
 
 
 def _to_utc(ts: datetime) -> datetime:
@@ -28,6 +32,14 @@ class ChannelMessage:
     is_bot: bool = False
     attachments: list[str] = field(default_factory=list)
     guild_id: int | None = None
+
+
+def _format_context_line(msg: ChannelMessage) -> str:
+    """メッセージを ``名前[BOT]: 本文`` 形式の1行にする（偽装対策済み）"""
+    name = safe_author_name(msg.author_name, strip_markers=True)
+    role = "[BOT]" if msg.is_bot else ""
+    content = sanitize_llm_text(msg.content, _MAX_CONTEXT_CONTENT_LENGTH) or ""
+    return f"{name}{role}: {content}"
 
 
 class ChannelMessageBuffer:
@@ -66,15 +78,16 @@ class ChannelMessageBuffer:
         return messages[-limit:]
 
     def get_context_string(self, channel_id: int, limit: int = 10) -> str:
-        """LLMに渡すためのフォーマット済みコンテキスト文字列を返す"""
+        """LLMに渡すためのフォーマット済みコンテキスト文字列を返す
+
+        1発言を必ず1行に収める。本文の改行・制御文字はつぶし、名前からは
+        ``[BOT]`` 表記や ``:`` 区切りを偽装できる記号を取り除くことで、
+        他人やボットの発言行を挿入するプロンプトインジェクションを防ぐ。
+        """
         messages = self.get_recent_messages(channel_id, limit)
         if not messages:
             return ""
-        lines = []
-        for msg in messages:
-            role = "[BOT]" if msg.is_bot else ""
-            lines.append(f"{msg.author_name}{role}: {msg.content}")
-        return "\n".join(lines)
+        return "\n".join(_format_context_line(msg) for msg in messages)
 
     def cleanup_expired(self) -> int:
         """TTL超過メッセージを全チャンネルから削除する"""

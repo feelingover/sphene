@@ -11,6 +11,11 @@ from typing import Any
 # 改行・タブなどの空白類は1つの空白にまとめる
 _WHITESPACE_RE = re.compile(r"\s+")
 
+_MAX_AUTHOR_NAME_LENGTH = 32
+# 行形式のコンテキストで発言者・ロール表記の偽装に使える記号
+# （"Foo[BOT]" や "名前: 本文" の区切りを名前側で作らせない）
+_AUTHOR_NAME_SPOOF_RE = re.compile(r"[\[\]［］:：]")
+
 
 def sanitize_llm_text(value: Any, max_length: int) -> str | None:
     """LLMが返した文字列を保存用に正規化する。
@@ -57,3 +62,20 @@ def sanitize_llm_text_list(
         if len(result) >= max_items:
             break
     return result
+
+
+def safe_author_name(author_name: str, strip_markers: bool = False) -> str:
+    """発言者名から改行・制御文字を除去し、長さを制限する（行の偽装対策）
+
+    Args:
+        author_name: Discordの表示名
+        strip_markers: True の場合、ロール表記（``[BOT]``）や
+            ``名前: 本文`` の区切りを偽装できる括弧・コロンも除去する
+
+    Returns:
+        正規化済みの名前。空になった場合は "ユーザー"。
+    """
+    name = author_name
+    if strip_markers and isinstance(name, str):
+        name = _AUTHOR_NAME_SPOOF_RE.sub("", name)
+    return sanitize_llm_text(name, _MAX_AUTHOR_NAME_LENGTH) or "ユーザー"
