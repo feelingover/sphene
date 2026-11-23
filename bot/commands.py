@@ -6,7 +6,7 @@ from discord import app_commands, ui
 import config
 from ai.conversation import channel_conversations
 from log_utils.logger import logger
-from utils.channel_config import ChannelConfigManager
+from utils.channel_config import ChannelConfig, ChannelConfigManager
 
 # チャンネル設定マネージャーのシングルトンインスタンスを取得
 config_manager = ChannelConfigManager.get_instance()
@@ -43,6 +43,34 @@ async def _reply(
         await interaction.response.send_message(content, view=view)
 
 
+_LOAD_FAILED_MESSAGE = (
+    "⚠️ 設定を読み込めなかったため、このサーバーでの発言を一時的に止めています。"
+    "しばらくしてからもう一度試してください"
+)
+
+
+async def _get_config_or_notify(
+    interaction: discord.Interaction, guild_id: int
+) -> ChannelConfig | None:
+    """ギルドの設定を取得する。読み込みに失敗していればその旨を返信して None を返す
+
+    読み込み失敗中の設定はデフォルト値のため、そのまま表示・変更すると実際の挙動
+    （発言停止）と食い違う。
+
+    Args:
+        interaction: インタラクションオブジェクト
+        guild_id: ギルドID
+
+    Returns:
+        設定インスタンス。読み込みに失敗している場合は None。
+    """
+    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
+    if channel_config.load_failed is True:
+        await _reply(interaction, _LOAD_FAILED_MESSAGE)
+        return None
+    return channel_config
+
+
 class ModeSelect(ui.Select):
     """評価モード選択ドロップダウン"""
 
@@ -74,7 +102,9 @@ class ModeSelect(ui.Select):
             return
         await _defer(interaction)
         # 保存済みのguild_idを使用
-        channel_config = await asyncio.to_thread(config_manager.get_config, self.guild_id)
+        channel_config = await _get_config_or_notify(interaction, self.guild_id)
+        if channel_config is None:
+            return
 
         selected_mode = self.values[0]
         success = await asyncio.to_thread(channel_config.set_behavior, selected_mode)
@@ -123,7 +153,9 @@ class TranslationSelect(ui.Select):
             return
         await _defer(interaction)
         # 保存済みのguild_idを使用
-        channel_config = await asyncio.to_thread(config_manager.get_config, self.guild_id)
+        channel_config = await _get_config_or_notify(interaction, self.guild_id)
+        if channel_config is None:
+            return
 
         selected_value = (
             self.values[0] == "true"
@@ -178,7 +210,9 @@ class ClearConfirmView(ui.View):
             return
         await _defer(interaction)
         # 保存済みのguild_idを使用
-        channel_config = await asyncio.to_thread(config_manager.get_config, self.guild_id)
+        channel_config = await _get_config_or_notify(interaction, self.guild_id)
+        if channel_config is None:
+            return
 
         success = await asyncio.to_thread(channel_config.clear_channels)
 
@@ -216,7 +250,9 @@ async def cmd_mode(interaction: discord.Interaction) -> None:
     # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
     await _defer(interaction)
-    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
+    channel_config = await _get_config_or_notify(interaction, guild_id)
+    if channel_config is None:
+        return
 
     # 現在のモード情報表示
     current_mode = channel_config.get_mode_display_name()
@@ -295,7 +331,9 @@ async def cmd_list_channels(
     # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
     await _defer(interaction)
-    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
+    channel_config = await _get_config_or_notify(interaction, guild_id)
+    if channel_config is None:
+        return
 
     # 現在のモードを取得
     behavior = channel_config.get_behavior()
@@ -356,7 +394,9 @@ async def cmd_add_channel(interaction: discord.Interaction) -> None:
     # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
     await _defer(interaction)
-    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
+    channel_config = await _get_config_or_notify(interaction, guild_id)
+    if channel_config is None:
+        return
 
     channel = interaction.channel
     if channel is None:
@@ -409,7 +449,9 @@ async def cmd_remove_channel(interaction: discord.Interaction) -> None:
     # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
     await _defer(interaction)
-    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
+    channel_config = await _get_config_or_notify(interaction, guild_id)
+    if channel_config is None:
+        return
 
     channel = interaction.channel
     if channel is None:
@@ -466,7 +508,9 @@ async def cmd_clear_channels(interaction: discord.Interaction) -> None:
     # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
     await _defer(interaction)
-    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
+    channel_config = await _get_config_or_notify(interaction, guild_id)
+    if channel_config is None:
+        return
 
     list_name = channel_config.get_list_display_name()
 
@@ -494,7 +538,9 @@ async def cmd_translation(interaction: discord.Interaction) -> None:
     # ギルド固有の設定を取得（I/O の前に応答を保留する）
     guild_id = interaction.guild.id
     await _defer(interaction)
-    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
+    channel_config = await _get_config_or_notify(interaction, guild_id)
+    if channel_config is None:
+        return
 
     # 現在の翻訳機能状態を取得
     is_enabled = channel_config.get_translation_enabled()

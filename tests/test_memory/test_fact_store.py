@@ -416,12 +416,14 @@ class TestFactStoreFirestore:
             with patch("utils.firestore_client.get_firestore_client", return_value=mock_db):
                 store._save_to_firestore(100, [fact])
 
-    def test_load_from_firestore_returns_none_on_exception(self):
-        """Firestore 読み込みで例外が発生した場合 None を返すこと"""
+    def test_load_from_firestore_raises_on_exception(self):
+        """Firestore 読み込みで例外が発生した場合 StorageLoadError を送出すること（未存在と区別する）"""
+        from memory.errors import StorageLoadError
+
         store = FactStore()
         with patch("utils.firestore_client.get_firestore_client", side_effect=Exception("接続エラー")):
-            result = store._load_from_firestore(100)
-        assert result is None
+            with pytest.raises(StorageLoadError):
+                store._load_from_firestore(100)
 
 
 class TestGetFactStore:

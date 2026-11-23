@@ -11,6 +11,7 @@ from bot.commands import (
     ModeView,
     TranslationSelect,
     TranslationView,
+    _LOAD_FAILED_MESSAGE,
     _reply,
     cmd_add_channel,
     cmd_clear_channels,
@@ -162,3 +163,51 @@ class TestReply:
         view = MagicMock()
         await _reply(interaction, "hi", view=view)
         interaction.response.send_message.assert_awaited_once_with("hi", view=view)
+
+
+class TestLoadFailedConfig:
+    """設定の読み込みに失敗しているときは、デフォルト値を表示・変更せずに知らせること"""
+
+    def _failed_manager(self) -> tuple[MagicMock, MagicMock]:
+        channel_config = MagicMock()
+        channel_config.load_failed = True
+        manager = MagicMock()
+        manager.get_config.return_value = channel_config
+        return manager, channel_config
+
+    def _assert_notified(self, interaction: MagicMock, channel_config: MagicMock) -> None:
+        interaction.followup.send.assert_awaited_once_with(_LOAD_FAILED_MESSAGE)
+        channel_config.get_mode_display_name.assert_not_called()
+        channel_config.get_channels.assert_not_called()
+        channel_config.set_behavior.assert_not_called()
+        channel_config.set_translation_enabled.assert_not_called()
+        channel_config.clear_channels.assert_not_called()
+        channel_config.add_channel.assert_not_called()
+        channel_config.remove_channel.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("command", COMMANDS)
+    async def test_commands_notify_load_failure(self, command):
+        interaction = _interaction()
+        manager, channel_config = self._failed_manager()
+        with patch("bot.commands.config_manager", manager):
+            await command(interaction)
+
+        self._assert_notified(interaction, channel_config)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "make_callback",
+        [
+            lambda: _select_callback(ModeSelect(1), "allow"),
+            lambda: _select_callback(TranslationSelect(1), "true"),
+            lambda: ClearConfirmView(1).confirm.callback,
+        ],
+    )
+    async def test_view_callbacks_notify_load_failure(self, make_callback):
+        interaction = _interaction()
+        manager, channel_config = self._failed_manager()
+        with patch("bot.commands.config_manager", manager):
+            await make_callback()(interaction)
+
+        self._assert_notified(interaction, channel_config)

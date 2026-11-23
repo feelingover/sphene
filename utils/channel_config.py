@@ -423,7 +423,18 @@ class ChannelConfig:
             >>> config.add_channel(456, "general")
             >>> config.can_bot_speak(456)  # True
             >>> config.can_bot_speak(789)  # False
+
+        Note:
+            設定の読み込みに失敗している場合は、許可していないチャンネルで
+            発言しないよう常に False を返す（fail-closed）。
         """
+        if self.load_failed:
+            logger.warning(
+                f"can_bot_speak: ギルドID={self.guild_id} の設定読み込みに失敗しているため"
+                f"発言を見送ります（チャンネルID={channel_id}）"
+            )
+            return False
+
         channels = self.get_channels()
         behavior = self.get_behavior()
         str_channel_id = str(channel_id)

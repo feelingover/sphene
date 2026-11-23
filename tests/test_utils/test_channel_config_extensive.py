@@ -125,6 +125,27 @@ class TestChannelConfigLoadFailure:
         doc_ref.set.assert_not_called()
 
     @patch("utils.channel_config.get_firestore_client")
+    def test_load_failed_config_denies_speaking(self, mock_get_fs):
+        """読み込み失敗時は全体モードのデフォルトに落ちず、発言不可になること（fail-closed）"""
+        mock_db, _ = self._firestore_db(get_side_effect=Exception("unavailable"))
+        mock_get_fs.return_value = mock_db
+
+        cfg = ChannelConfig(guild_id="123", storage_type="firestore")
+
+        assert cfg.load_failed is True
+        assert cfg.can_bot_speak(456) is False
+
+    @patch("utils.channel_config.get_firestore_client")
+    def test_missing_document_still_allows_speaking(self, mock_get_fs):
+        """ドキュメント未作成（正常系）は従来どおり全体モードで発言可能なこと"""
+        mock_db, _ = self._firestore_db(exists=False)
+        mock_get_fs.return_value = mock_db
+
+        cfg = ChannelConfig(guild_id="123", storage_type="firestore")
+
+        assert cfg.can_bot_speak(456) is True
+
+    @patch("utils.channel_config.get_firestore_client")
     def test_missing_document_uses_defaults_and_allows_save(self, mock_get_fs):
         """ドキュメント未作成は正常系としてデフォルト設定で保存できること"""
         mock_db, doc_ref = self._firestore_db(exists=False)

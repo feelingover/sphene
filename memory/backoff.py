@@ -9,6 +9,8 @@ import time
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass
 
+import config
+
 
 @dataclass
 class _FailureState:
@@ -62,3 +64,13 @@ class FailureBackoff:
     def failure_count(self, key: Hashable) -> int:
         state = self._states.get(key)
         return state.count if state else 0
+
+
+def new_storage_load_backoff() -> FailureBackoff:
+    """記憶ストアの読み込み失敗用のバックオフを作る
+
+    ロックを持たないため、呼び出し側のストアのロック内で操作すること。
+    """
+    return FailureBackoff(
+        config.STORAGE_LOAD_BACKOFF_BASE_SECONDS, config.STORAGE_LOAD_BACKOFF_MAX_SECONDS
+    )
