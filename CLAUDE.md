@@ -44,6 +44,7 @@ utils/
   background_tasks.py     # Strong refs for fire-and-forget asyncio tasks
   channel_config.py       # Channel permissions (local/Firestore)
   file_utils.py           # atomic_write_json
+  keyed_lock.py           # Per-key threading locks (serialize saves per channel/profile)
   firestore_client.py     # Firestore client (singleton)
   rate_limit.py           # Sliding-window rate limiter (mention throttling)
   text_utils.py           # Text processing, translation
