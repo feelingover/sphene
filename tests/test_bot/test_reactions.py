@@ -81,7 +81,8 @@ class TestTranslationResponse:
         message.channel.send.assert_called_once()
         args, kwargs = message.channel.send.call_args
         assert "🇺🇸 Translated text" == args[0]
-        assert kwargs["reference"] == message
+        assert kwargs["reference"] is message.to_reference.return_value
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
 
     @pytest.mark.asyncio
     async def test_send_translation_response_thread(self):
@@ -99,7 +100,8 @@ class TestTranslationResponse:
         message.channel.send.assert_called_once()
         args, kwargs = message.channel.send.call_args
         assert "🇺🇸 Translated text" == args[0]
-        assert kwargs["reference"] == message
+        assert kwargs["reference"] is message.to_reference.return_value
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
 
 
 class TestReactionHandling:
@@ -389,7 +391,8 @@ class TestReactionHandling:
         message.channel.send.assert_called_once()
         args, kwargs = message.channel.send.call_args
         assert "🇺🇸 This is a translated text." == args[0]
-        assert kwargs["reference"] == message
+        assert kwargs["reference"] is message.to_reference.return_value
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
 
     @pytest.mark.asyncio
     @patch("utils.text_utils.translate_to_english")
@@ -414,7 +417,8 @@ class TestReactionHandling:
         message.channel.send.assert_called_once()
         args, kwargs = message.channel.send.call_args
         assert "エラー" in args[0]
-        assert kwargs["reference"] == message
+        assert kwargs["reference"] is message.to_reference.return_value
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
 
     @pytest.mark.asyncio
     @patch("utils.text_utils.translate_to_english")
@@ -453,7 +457,8 @@ class TestReactionHandling:
         message.channel.send.assert_called_once()
         args, kwargs = message.channel.send.call_args
         assert "🇯🇵 これは翻訳されたテキストです。" in args[0]
-        assert kwargs["reference"] == message
+        assert kwargs["reference"] is message.to_reference.return_value
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
 
     @pytest.mark.asyncio
     @patch("utils.text_utils.translate_to_japanese")
@@ -478,4 +483,5 @@ class TestReactionHandling:
         message.channel.send.assert_called_once()
         args, kwargs = message.channel.send.call_args
         assert "エラー" in args[0]
-        assert kwargs["reference"] == message
+        assert kwargs["reference"] is message.to_reference.return_value
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)

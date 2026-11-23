@@ -16,22 +16,31 @@ def truncate_text(text: str, max_length: int = PREVIEW_LENGTH) -> str:
 
 
 def split_message(text: str, max_length: int = 1900) -> list[str]:
-    if len(text) <= max_length:
-        return [text]
-    chunks = []
-    curr_text = text
-    while curr_text:
-        if len(curr_text) <= max_length:
-            chunks.append(curr_text)
-            break
-        split_index = curr_text.rfind("\n", 0, max_length)
-        if split_index == -1:
-            split_index = max_length
-        chunks.append(curr_text[:split_index])
-        if curr_text[split_index] == "\n":
-             curr_text = curr_text[split_index + 1:]
+    """Discordの文字数上限に収まるようテキストをチャンクに分割する
+
+    可能な限り改行位置で分割し、改行が見つからない（または先頭にしかない）
+    場合は ``max_length`` で強制分割する。空白のみのチャンクは
+    Discordに送信できないため結果から除外する。
+
+    Args:
+        text: 分割対象のテキスト
+        max_length: 1チャンクの最大文字数
+
+    Returns:
+        list[str]: 空白のみのチャンクを含まない分割結果
+    """
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > max_length:
+        split_index = remaining.rfind("\n", 0, max_length)
+        if split_index <= 0:
+            chunk, remaining = remaining[:max_length], remaining[max_length:]
         else:
-             curr_text = curr_text[split_index:]
+            chunk, remaining = remaining[:split_index], remaining[split_index + 1:]
+        if chunk.strip():
+            chunks.append(chunk)
+    if remaining.strip():
+        chunks.append(remaining)
     return chunks
 
 

@@ -173,9 +173,33 @@ class TestEventsExtensive:
         # 2つのチャンクが送信される
         assert message.channel.send.call_count == 2
         # 最初はリプライ（referenceあり）
-        message.channel.send.assert_any_call("Chunk 1", reference=message)
+        message.channel.send.assert_any_call("Chunk 1", reference=message.to_reference.return_value)
+        message.to_reference.assert_called_with(fail_if_not_exists=False)
         # 次は通常送信
         message.channel.send.assert_any_call("Chunk 2")
+
+    @pytest.mark.asyncio
+    @patch("bot.events.channel_conversations")
+    async def test_process_conversation_error_reply_tolerates_deleted_message(
+        self, mock_conversations
+    ):
+        """応答生成失敗時のエラー返信も、元メッセージ削除で失敗しない reference を使う"""
+        mock_api = MagicMock()
+        mock_api.async_input_message = AsyncMock(return_value=None)
+        mock_conversations.__getitem__.return_value = mock_api
+
+        message = MagicMock()
+        message.content = ""
+        message.channel.send = AsyncMock()
+
+        await process_conversation(message, "question", is_reply=True)
+
+        message.channel.send.assert_called_once()
+        assert (
+            message.channel.send.call_args.kwargs["reference"]
+            is message.to_reference.return_value
+        )
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
 
     @pytest.mark.asyncio
     @patch("bot.events.config_manager")
@@ -514,7 +538,10 @@ class TestSendChunks:
 
         await _send_chunks(message, ["hello"], is_reply=True)
 
-        message.channel.send.assert_called_once_with("hello", reference=message)
+        message.channel.send.assert_called_once_with(
+            "hello", reference=message.to_reference.return_value
+        )
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
 
     @pytest.mark.asyncio
     async def test_multi_chunk_reply_first_is_reference(self) -> None:
@@ -527,8 +554,9 @@ class TestSendChunks:
 
         assert message.channel.send.call_count == 3
         calls = message.channel.send.call_args_list
-        # 1チャンク目: reference=message
-        assert calls[0].kwargs.get("reference") is message
+        # 1チャンク目: 元メッセージ削除時も失敗しない reference
+        assert calls[0].kwargs.get("reference") is message.to_reference.return_value
+        message.to_reference.assert_called_once_with(fail_if_not_exists=False)
         # 2チャンク目以降: reference なし
         assert "reference" not in calls[1].kwargs
         assert "reference" not in calls[2].kwargs
