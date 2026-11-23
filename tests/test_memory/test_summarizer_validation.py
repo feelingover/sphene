@@ -183,7 +183,6 @@ class TestEmptyMessages:
 
         assert context.message_count_since_update == 3
 
-
     @pytest.mark.asyncio
     @patch("memory.summarizer.get_channel_context_store")
     async def test_empty_does_not_reset_existing_failures(self, mock_get_store):
