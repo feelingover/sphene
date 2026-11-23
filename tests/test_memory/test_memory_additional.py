@@ -105,6 +105,12 @@ class TestMemoryAdditional:
     def test_reflection_apply_facts_filtering(self):
         engine = ReflectionEngine()
         raw_facts = [{"content": "valid", "source_user_ids": [123, "inv"]}]
+        messages = [
+            ChannelMessage(
+                message_id=1, channel_id=123, author_id=123, author_name="u",
+                content="c", timestamp=datetime.now(timezone.utc),
+            )
+        ]
         with (
             patch("memory.fact_store.get_fact_store") as mock_store_fn,
             patch("memory.short_term.get_channel_buffer") as mock_buffer_fn,
@@ -112,7 +118,7 @@ class TestMemoryAdditional:
             mock_store = MagicMock()
             mock_store_fn.return_value = mock_store
             with patch("ai.client.generate_embedding", return_value=None):
-                asyncio.run(engine._apply_facts(123, raw_facts, []))
+                asyncio.run(engine._apply_facts(123, raw_facts, messages))
             mock_store.add_fact.assert_called_once()
             fact = mock_store.add_fact.call_args[0][0]
             assert fact.source_user_ids == [123]

@@ -445,9 +445,9 @@ class TestParseFactItem:
         """content が文字列でなければ None を返すこと"""
         from memory.reflection import _parse_fact_item
 
-        assert _parse_fact_item({"content": 123}) is None
-        assert _parse_fact_item({"content": "   "}) is None
-        assert _parse_fact_item("text") is None
+        assert _parse_fact_item({"content": 123}, set()) is None
+        assert _parse_fact_item({"content": "   "}, set()) is None
+        assert _parse_fact_item("text", set()) is None
 
     def test_normalizes_fields(self):
         """keywords・source_user_ids・shareable を正規化すること"""
@@ -459,7 +459,8 @@ class TestParseFactItem:
                 "keywords": "猫",
                 "source_user_ids": [1, "2", "x", True],
                 "shareable": "yes",
-            }
+            },
+            {1, 2},
         )
         assert parsed == {
             "content": "猫を 飼っている",
@@ -467,6 +468,41 @@ class TestParseFactItem:
             "source_user_ids": [1, 2],
             "shareable": False,
         }
+
+    def test_drops_source_ids_not_in_conversation(self):
+        """会話の参加者でない source_user_ids を除外し、重複も取り除くこと"""
+        from memory.reflection import _parse_fact_item
+
+        parsed = _parse_fact_item(
+            {"content": "猫を飼っている", "source_user_ids": [1, 999, "1", 2]},
+            {1, 2},
+        )
+        assert parsed is not None
+        assert parsed["source_user_ids"] == [1, 2]
+
+
+class TestApplyFactsSourceUserIds:
+    """_apply_facts が source_user_ids を会話参加者に絞るテスト"""
+
+    def test_injected_user_id_is_not_attached(self):
+        """会話内容で誘導された無関係なID・ボットのIDがファクトに付かないこと"""
+        engine = ReflectionEngine()
+        messages = [
+            _make_message(author_id=111),
+            _make_message(author_id=222, is_bot=True),
+        ]
+        raw_facts = [
+            {"content": "ファクト", "source_user_ids": [111, 222, 999999]},
+        ]
+        mock_store = MagicMock()
+
+        with patch("memory.fact_store.get_fact_store", return_value=mock_store), \
+             patch("memory.short_term.get_channel_buffer", return_value=MagicMock()), \
+             patch("ai.client.generate_embedding", return_value=None):
+            asyncio.run(engine._apply_facts(100, raw_facts, messages))
+
+        fact = mock_store.add_fact.call_args[0][0]
+        assert fact.source_user_ids == [111]
 
 
 class TestApplyFactsCheckpoint:
