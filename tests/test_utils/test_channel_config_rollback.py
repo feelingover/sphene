@@ -103,3 +103,60 @@ class TestLocalStorageDir:
         ):
             assert manager.delete_guild_config("g1") is True
         assert not (tmp_path / "channel_list.g1.json").exists()
+
+
+class TestConcurrentUpdates:
+    """共有インスタンスへの並行更新が直列化される"""
+
+    def test_rollback_does_not_wipe_other_threads_change(self, local_conf: ChannelConfig) -> None:
+        """A の保存失敗ロールバックが B の成功した変更を消さない"""
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        import utils.file_utils as fu
+
+        real_write = fu.atomic_write_json
+        a_entered = threading.Event()
+        release_a = threading.Event()
+
+        def _write(path: str, data: dict[str, Any], **kw: Any) -> None:
+            if data.get("behavior") == "allow" and not a_entered.is_set():
+                # A の保存: B が割り込める時間を作ってから失敗させる
+                a_entered.set()
+                release_a.wait(timeout=0.5)
+                raise OSError("disk full")
+            real_write(path, data, **kw)
+
+        with patch("utils.file_utils.atomic_write_json", side_effect=_write):
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                fut_a = ex.submit(local_conf.set_behavior, "allow")
+                assert a_entered.wait(timeout=2)
+                fut_b = ex.submit(local_conf.add_channel, 300, "b")
+                release_a.set()
+                assert fut_a.result(timeout=5) is False
+                assert fut_b.result(timeout=5) is True
+
+        assert local_conf.get_behavior() == "deny"
+        assert local_conf.is_channel_in_list(300) is True
+        with open(local_conf._get_config_file_path(), encoding="utf-8") as f:
+            on_disk = json.load(f)
+        assert on_disk["channels"] == local_conf.config_data["channels"]
+
+
+class TestLocalStoragePath:
+    """記憶系のローカル保存先も LOCAL_STORAGE_DIR に従う"""
+
+    def test_local_storage_path_default(self) -> None:
+        from utils.file_utils import local_storage_path
+
+        with patch("config.LOCAL_STORAGE_DIR", "storage"):
+            assert local_storage_path("facts.1.json") == os.path.join("storage", "facts.1.json")
+
+    def test_memory_paths_follow_env_dir(self, tmp_path: Path) -> None:
+        from memory.fact_store import FactStore
+        from memory.user_profile import _local_path
+
+        with patch("config.LOCAL_STORAGE_DIR", str(tmp_path)):
+            assert _local_path(1, 2) == os.path.join(str(tmp_path), "user_profile.1.2.json")
+            assert FactStore()._save_to_local(42, []) is True
+        assert (tmp_path / "facts.42.json").exists()

@@ -2,32 +2,65 @@
 
 import json
 import os
+import secrets
 import stat
-import tempfile
-from typing import Any
+from typing import Any, Optional
 
-# 新規ファイル作成時のデフォルト権限（umask 適用前）
-_DEFAULT_FILE_MODE = 0o666
+import config
+
+# 一時ファイル名の衝突時に再試行する上限
+_TEMP_CREATE_ATTEMPTS = 100
 
 
-def _resolve_target_mode(file_path: str) -> int:
-    """置き換え後のファイルに付与する権限を決める
-
-    既存ファイルがあればその権限を維持し、なければ通常の open() と同じく
-    umask を適用したデフォルト権限を返す。
+def local_storage_path(filename: str) -> str:
+    """ローカルストレージ（LOCAL_STORAGE_DIR）配下のファイルパスを返す
 
     Args:
-        file_path: 書き込み先のファイルパス
+        filename: ファイル名
 
     Returns:
-        int: 付与する権限ビット
+        str: LOCAL_STORAGE_DIR と結合したパス
+    """
+    return os.path.join(config.LOCAL_STORAGE_DIR, filename)
+
+
+def _existing_mode(file_path: str) -> Optional[int]:
+    """既存ファイルの権限ビットを返す（存在しなければ None）
+
+    Args:
+        file_path: 対象のファイルパス
+
+    Returns:
+        Optional[int]: 権限ビット。ファイルが存在しない場合は None
     """
     try:
         return stat.S_IMODE(os.stat(file_path).st_mode)
     except FileNotFoundError:
-        umask = os.umask(0)
-        os.umask(umask)
-        return _DEFAULT_FILE_MODE & ~umask
+        return None
+
+
+def _create_temp(parent: str) -> tuple[int, str]:
+    """親ディレクトリに一時ファイルを排他作成する
+
+    mode 0o666 で作成しカーネルに umask を適用させる。umask をプロセス全体で
+    読み書きしないため、複数スレッドから並行に呼ばれても安全。
+
+    Args:
+        parent: 一時ファイルを作るディレクトリ
+
+    Returns:
+        tuple[int, str]: ファイルディスクリプタとパス
+
+    Raises:
+        FileExistsError: 名前の衝突が上限回数続いた場合
+    """
+    for _ in range(_TEMP_CREATE_ATTEMPTS):
+        name = os.path.join(parent, f".{secrets.token_hex(8)}.tmp")
+        try:
+            return os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666), name
+        except FileExistsError:
+            continue
+    raise FileExistsError(f"一時ファイル名の衝突が続きました: {parent}")
 
 
 def _fsync_directory(directory: str) -> None:
@@ -68,15 +101,16 @@ def atomic_write_json(file_path: str, data: dict[str, Any], *, ensure_ascii: boo
     """
     parent = os.path.dirname(file_path) or "."
     os.makedirs(parent, exist_ok=True)
-    mode = _resolve_target_mode(file_path)
+    mode = _existing_mode(file_path)
 
-    fd, temp_name = tempfile.mkstemp(dir=parent, suffix=".tmp")
+    fd, temp_name = _create_temp(parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tf:
             json.dump(data, tf, ensure_ascii=ensure_ascii, indent=2)
             tf.flush()
             os.fsync(tf.fileno())
-        os.chmod(temp_name, mode)
+        if mode is not None:
+            os.chmod(temp_name, mode)
         os.replace(temp_name, file_path)
     except BaseException:
         try:

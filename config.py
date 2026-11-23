@@ -34,7 +34,7 @@ SYSTEM_PROMPT_FILENAME: str = str(os.getenv("SYSTEM_PROMPT_FILENAME", "system.tx
 # ストレージタイプ（local または firestore）
 STORAGE_TYPE: str = str(os.getenv("STORAGE_TYPE", "local"))
 
-# ローカルストレージのディレクトリ（STORAGE_TYPE=local 時のチャンネル設定などの保存先）
+# ローカルストレージのディレクトリ（STORAGE_TYPE=local 時のチャンネル設定・記憶系の保存先）
 LOCAL_STORAGE_DIR: str = str(os.getenv("LOCAL_STORAGE_DIR", "storage"))
 
 # システムプロンプトのファイルパス

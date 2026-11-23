@@ -15,6 +15,7 @@ import config
 from log_utils.logger import logger
 from memory.backoff import new_storage_load_backoff
 from memory.errors import StorageLoadError, log_storage_load_failure
+from utils.file_utils import local_storage_path
 from utils.keyed_lock import KeyedLock
 
 # ひらがなストップワード（形態素解析なしの簡易除去）
@@ -446,7 +447,7 @@ class FactStore:
         """ローカルファイルにアトミック書き込み"""
         from utils.file_utils import atomic_write_json
 
-        file_path = f"storage/facts.{channel_id}.json"
+        file_path = local_storage_path(f"facts.{channel_id}.json")
         try:
             data = {
                 "channel_id": channel_id,
@@ -460,7 +461,7 @@ class FactStore:
 
     def _load_from_local(self, channel_id: int) -> list[Fact] | None:
         """ローカルファイルからファクトを読み込む"""
-        file_path = f"storage/facts.{channel_id}.json"
+        file_path = local_storage_path(f"facts.{channel_id}.json")
         try:
             if os.path.exists(file_path):
                 with open(file_path, "r", encoding="utf-8") as f:
@@ -585,7 +586,7 @@ class FactStore:
         """ローカルアーカイブファイルにファクトを追記する"""
         from utils.file_utils import atomic_write_json
 
-        file_path = f"storage/facts_archive.{channel_id}.json"
+        file_path = local_storage_path(f"facts_archive.{channel_id}.json")
         try:
             existing: list[dict] = []
             if os.path.exists(file_path):

@@ -228,6 +228,9 @@ class ChannelConfig:
         # 読み込みエラー（未作成を除く）時は True。保存を拒否して既存データの上書きを防ぐ
         self.load_failed = False
 
+        # 共有インスタンスへの並行コマンドで変更・保存・ロールバックが交錯しないよう直列化する
+        self._lock = threading.RLock()
+
         # 設定を読み込み
         try:
             self.load_config()
@@ -311,17 +314,18 @@ class ChannelConfig:
             )
             return False
 
-        # 更新日時を記録
-        self.config_data["updated_at"] = datetime.now().isoformat()
+        with self._lock:
+            # 更新日時を記録
+            self.config_data["updated_at"] = datetime.now().isoformat()
 
-        try:
-            if self.storage_type == "firestore":
-                return self._save_to_firestore()
-            else:
-                return self._save_to_local()
-        except Exception as e:
-            logger.error(f"チャンネル設定の保存に失敗しました: {str(e)}", exc_info=True)
-            return False
+            try:
+                if self.storage_type == "firestore":
+                    return self._save_to_firestore()
+                else:
+                    return self._save_to_local()
+            except Exception as e:
+                logger.error(f"チャンネル設定の保存に失敗しました: {str(e)}", exc_info=True)
+                return False
 
     def _save_to_local(self) -> bool:
         """ローカルファイルに設定を保存 (アトミック保存)"""
@@ -360,11 +364,12 @@ class ChannelConfig:
         Returns:
             bool: 保存が成功したかどうか
         """
-        snapshot = copy.deepcopy(self.config_data)
-        mutate(self.config_data)
-        if self.save_config():
-            return True
-        self.config_data = snapshot
+        with self._lock:
+            snapshot = copy.deepcopy(self.config_data)
+            mutate(self.config_data)
+            if self.save_config():
+                return True
+            self.config_data = snapshot
         logger.warning(
             f"ギルドID {self.guild_id} の設定保存に失敗したため、変更を取り消しました"
         )
@@ -612,4 +617,6 @@ def _config_file_path(guild_id: str) -> str:
     Returns:
         str: LOCAL_STORAGE_DIR 配下の設定ファイルパス
     """
-    return os.path.join(config.LOCAL_STORAGE_DIR, f"channel_list.{guild_id}.json")
+    from utils.file_utils import local_storage_path
+
+    return local_storage_path(f"channel_list.{guild_id}.json")

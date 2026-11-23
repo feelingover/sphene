@@ -56,7 +56,7 @@ class TestAtomicWriteJson:
                 atomic_write_json(file_path, data)
 
         # テンポラリファイル（.tmp）が残っていない
-        tmp_files = list(tmp_path.glob("*.tmp"))
+        tmp_files = [n for n in os.listdir(tmp_path) if n.endswith(".tmp")]
         assert tmp_files == []
 
     def test_path_without_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -136,7 +136,7 @@ class TestAtomicWriteJsonDurability:
         with pytest.raises(TypeError):
             atomic_write_json(file_path, {"bad": object()})
 
-        assert list(tmp_path.glob("*.tmp")) == []
+        assert [n for n in os.listdir(tmp_path) if n.endswith(".tmp")] == []
         with open(file_path, encoding="utf-8") as f:
             assert json.load(f) == {"v": 1}
 
@@ -148,7 +148,7 @@ class TestAtomicWriteJsonDurability:
             with pytest.raises(OSError, match="fsync failed"):
                 atomic_write_json(file_path, {"k": 1})
 
-        assert list(tmp_path.glob("*.tmp")) == []
+        assert [n for n in os.listdir(tmp_path) if n.endswith(".tmp")] == []
         assert not os.path.exists(file_path)
 
     @pytest.mark.skipif(os.name == "nt", reason="POSIX パーミッション前提")
