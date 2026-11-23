@@ -298,9 +298,9 @@ class TestFactStoreEviction:
     def test_evicts_oldest_on_overflow(self):
         """上限超過で decay_factor 最小（最古）が削除されること"""
         store = FactStore()
-        f_new = _make_fact(fact_id="new", days_ago=1)
-        f_mid = _make_fact(fact_id="mid", days_ago=15)
-        f_old = _make_fact(fact_id="old", days_ago=60)
+        f_new = _make_fact(fact_id="new", content="新しいファクト", days_ago=1)
+        f_mid = _make_fact(fact_id="mid", content="中くらいのファクト", days_ago=15)
+        f_old = _make_fact(fact_id="old", content="古いファクト", days_ago=60)
 
         store._loaded_channels.add(100)
         # 上限2件: new と mid をセットした後、old を追加 → old は decay 最小なので即削除される
@@ -312,6 +312,61 @@ class TestFactStoreEviction:
         ids = [f.fact_id for f in store._facts[100]]
         assert len(ids) == 2
         assert "old" not in ids
+
+
+class TestFactStoreDedup:
+    """add_fact の重複排除テスト"""
+
+    def test_skips_same_content_after_normalization(self):
+        """空白・記号・全半角の違いだけの同一内容は追加しないこと"""
+        store = FactStore()
+        store._loaded_channels.add(100)
+        assert store.add_fact(_make_fact(fact_id="a", content="ユーザーは猫を飼っている。")) is True
+        assert store.add_fact(_make_fact(fact_id="b", content=" ユーザーは 猫を飼っている！ ")) is False
+        assert [f.fact_id for f in store._facts[100]] == ["a"]
+
+    def test_skips_similar_embedding(self):
+        """Embeddingのコサイン類似度が閾値以上なら重複とみなすこと"""
+        store = FactStore()
+        store._loaded_channels.add(100)
+        with patch("config.FACT_DEDUP_SIMILARITY_THRESHOLD", 0.95):
+            store.add_fact(_make_fact(fact_id="a", content="猫を飼っている", embedding=[1.0, 0.0]))
+            added = store.add_fact(
+                _make_fact(fact_id="b", content="ペットの猫がいる", embedding=[0.99, 0.01])
+            )
+        assert added is False
+        assert len(store._facts[100]) == 1
+
+    def test_adds_different_content(self):
+        """内容もEmbeddingも異なれば追加すること"""
+        store = FactStore()
+        store._loaded_channels.add(100)
+        with patch("config.FACT_DEDUP_SIMILARITY_THRESHOLD", 0.95):
+            store.add_fact(_make_fact(fact_id="a", content="猫を飼っている", embedding=[1.0, 0.0]))
+            added = store.add_fact(
+                _make_fact(fact_id="b", content="東京に住んでいる", embedding=[0.0, 1.0])
+            )
+        assert added is True
+        assert len(store._facts[100]) == 2
+
+    def test_ignores_embedding_dimension_mismatch(self):
+        """次元の異なるEmbedding同士は類似度判定しないこと"""
+        store = FactStore()
+        store._loaded_channels.add(100)
+        store.add_fact(_make_fact(fact_id="a", content="猫を飼っている", embedding=[1.0, 0.0]))
+        added = store.add_fact(
+            _make_fact(fact_id="b", content="東京に住んでいる", embedding=[1.0, 0.0, 0.0])
+        )
+        assert added is True
+
+    def test_dedup_is_per_channel(self):
+        """別チャンネルの同一内容は重複扱いしないこと"""
+        store = FactStore()
+        store._loaded_channels.update({100, 200})
+        store.add_fact(_make_fact(channel_id=100, fact_id="a", content="猫を飼っている"))
+        assert store.add_fact(
+            _make_fact(channel_id=200, fact_id="b", content="猫を飼っている")
+        ) is True
 
 
 class TestFactStoreLocalStorage:

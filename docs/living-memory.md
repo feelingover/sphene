@@ -112,6 +112,7 @@
 ### 長期記憶: ファクトストア (Fact Store)
 - `FACT_STORE_MAX_FACTS_PER_CHANNEL`: チャンネルあたりの最大ファクト保持件数 (デフォルト: 100)
 - `FACT_DECAY_HALF_LIFE_DAYS`: ファクトのスコア減衰の半減期（日数） (デフォルト: 30)
+- `FACT_DEDUP_SIMILARITY_THRESHOLD`: ファクト重複判定のコサイン類似度閾値。正規化した本文の一致、または両方にEmbeddingがありこの値以上なら追加しない (デフォルト: 0.95)
 - `FACT_USER_BOOST_FACTOR`: 発言ユーザーIDが一致するファクトの検索スコアブースト倍率 (デフォルト: 1.5)
 
 ### 長期記憶: ファクト忘却クリーンアップ (Fact Decay Cleanup)

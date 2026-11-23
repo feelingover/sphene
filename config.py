@@ -136,4 +136,6 @@ REFLECTION_MAX_BUFFER_MESSAGES: int = int(os.getenv("REFLECTION_MAX_BUFFER_MESSA
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
 VECTOR_SEARCH_ENABLED: bool = os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
 HYBRID_ALPHA: float = float(os.getenv("HYBRID_ALPHA", "0.5"))  # ベクトル/キーワードスコアのバランス係数
+# ファクト重複判定のコサイン類似度閾値（両方にEmbeddingがある場合のみ使用）
+FACT_DEDUP_SIMILARITY_THRESHOLD: float = float(os.getenv("FACT_DEDUP_SIMILARITY_THRESHOLD", "0.95"))
 

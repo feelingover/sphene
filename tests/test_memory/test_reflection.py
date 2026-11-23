@@ -236,7 +236,8 @@ class TestApplyFacts:
                 with patch("ai.client.generate_embedding", return_value=None):
                     asyncio.run(engine._apply_facts(100, raw_facts, messages))
 
-        mock_buffer.mark_reflected.assert_called_once_with(100)
+        # 処理したメッセージの最大タイムスタンプでチェックポイントを進める
+        mock_buffer.mark_reflected.assert_called_once_with(100, until=messages[0].timestamp)
 
     def test_skips_non_dict_items(self):
         """辞書でないアイテムはスキップされること"""
@@ -394,3 +395,107 @@ class TestUserProfileTags:
             with patch("memory.reflection._generate_content_with_retry") as mock_api:
                 engine._call_user_profile_llm([])
                 mock_api.assert_not_called()
+
+
+
+class TestApplyUserProfileResults:
+    """_apply_user_profile_results の user_id 照合テスト"""
+
+    def test_only_updates_authors_in_conversation(self):
+        """会話に登場した人間ユーザーのみ更新し、それ以外のIDは無視すること"""
+        from memory.reflection import _apply_user_profile_results
+
+        messages = [
+            _make_message(author_id=111),
+            _make_message(author_id=999, is_bot=True),
+        ]
+        result = [
+            {"user_id": 111, "nickname": "本人"},
+            {"user_id": "222", "nickname": "部外者"},
+            {"user_id": 999, "nickname": "ボット"},
+            {"user_id": True, "nickname": "bool"},
+            "not-a-dict",
+        ]
+        mock_store = MagicMock()
+        with patch("memory.user_profile.get_user_profile_store", return_value=mock_store):
+            count = _apply_user_profile_results(result, messages)
+
+        assert count == 1
+        mock_store.update_from_reflection.assert_called_once_with(111, result[0])
+
+    def test_accepts_numeric_string_user_id(self):
+        """数字文字列の user_id も発言者と一致すれば受け付けること"""
+        from memory.reflection import _apply_user_profile_results
+
+        messages = [_make_message(author_id=111)]
+        mock_store = MagicMock()
+        with patch("memory.user_profile.get_user_profile_store", return_value=mock_store):
+            count = _apply_user_profile_results([{"user_id": "111"}], messages)
+
+        assert count == 1
+        mock_store.update_from_reflection.assert_called_once_with(111, {"user_id": "111"})
+
+
+class TestParseFactItem:
+    """_parse_fact_item の検証テスト"""
+
+    def test_rejects_non_string_content(self):
+        """content が文字列でなければ None を返すこと"""
+        from memory.reflection import _parse_fact_item
+
+        assert _parse_fact_item({"content": 123}) is None
+        assert _parse_fact_item({"content": "   "}) is None
+        assert _parse_fact_item("text") is None
+
+    def test_normalizes_fields(self):
+        """keywords・source_user_ids・shareable を正規化すること"""
+        from memory.reflection import _parse_fact_item
+
+        parsed = _parse_fact_item(
+            {
+                "content": "猫を\n飼っている",
+                "keywords": "猫",
+                "source_user_ids": [1, "2", "x", True],
+                "shareable": "yes",
+            }
+        )
+        assert parsed == {
+            "content": "猫を 飼っている",
+            "keywords": [],
+            "source_user_ids": [1, 2],
+            "shareable": False,
+        }
+
+
+class TestApplyFactsCheckpoint:
+    """_apply_facts のチェックポイント更新テスト"""
+
+    def test_marks_reflected_even_if_all_duplicates(self):
+        """全件重複でスキップされても、処理済みとしてチェックポイントを進めること"""
+        engine = ReflectionEngine()
+        messages = [_make_message()]
+        raw_facts = [{"content": "既知のファクト"}]
+        mock_store = MagicMock()
+        mock_store.add_fact.return_value = False
+        mock_buffer = MagicMock()
+
+        with patch("memory.fact_store.get_fact_store", return_value=mock_store), \
+             patch("memory.short_term.get_channel_buffer", return_value=mock_buffer), \
+             patch("ai.client.generate_embedding", return_value=None):
+            asyncio.run(engine._apply_facts(100, raw_facts, messages))
+
+        mock_store.persist_channel.assert_not_called()
+        mock_buffer.mark_reflected.assert_called_once_with(100, until=messages[0].timestamp)
+
+    def test_does_not_mark_when_all_invalid(self):
+        """全件不正な場合はチェックポイントを進めないこと"""
+        engine = ReflectionEngine()
+        messages = [_make_message()]
+        mock_buffer = MagicMock()
+
+        with patch("memory.fact_store.get_fact_store", return_value=MagicMock()), \
+             patch("memory.short_term.get_channel_buffer", return_value=mock_buffer), \
+             patch("ai.client.generate_embedding", return_value=None):
+            asyncio.run(engine._apply_facts(100, [{"content": None}], messages))
+
+        mock_buffer.mark_reflected.assert_not_called()

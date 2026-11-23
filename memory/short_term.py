@@ -122,9 +122,42 @@ class ChannelMessageBuffer:
                 count += 1
         return count
 
-    def mark_reflected(self, channel_id: int) -> None:
-        """反省会実行後に呼ぶ。現在時刻をチェックポイントとして記録する"""
-        self._last_reflected[channel_id] = datetime.now(timezone.utc)
+    def get_messages_since_reflection(
+        self, channel_id: int, limit: int = 100
+    ) -> list[ChannelMessage]:
+        """最後の反省会以降のメッセージを返す（TTL超過を除外）
+
+        反省会に同じメッセージを繰り返し渡さないよう、チェックポイント以降の差分だけを返す。
+
+        Args:
+            channel_id: チャンネルID
+            limit: 返す最大件数（新しい方から）
+
+        Returns:
+            チェックポイントより新しいメッセージのリスト（古い順）
+        """
+        messages = self.get_recent_messages(channel_id, limit=self._max_size)
+        last_reflected = self._last_reflected.get(channel_id)
+        if last_reflected is not None:
+            messages = [m for m in messages if _to_utc(m.timestamp) > last_reflected]
+        return messages[-limit:]
+
+    def mark_reflected(
+        self, channel_id: int, until: datetime | None = None
+    ) -> None:
+        """反省会実行後に呼び、チェックポイントを記録する
+
+        Args:
+            channel_id: チャンネルID
+            until: 処理済みメッセージの最大タイムスタンプ。指定すると、反省会の
+                LLM呼び出し中に届いたメッセージを次回の対象として取りこぼさない。
+                省略時は現在時刻。
+        """
+        checkpoint = _to_utc(until) if until is not None else datetime.now(timezone.utc)
+        previous = self._last_reflected.get(channel_id)
+        if previous is not None and checkpoint <= previous:
+            return
+        self._last_reflected[channel_id] = checkpoint
 
     @property
     def channel_count(self) -> int:
