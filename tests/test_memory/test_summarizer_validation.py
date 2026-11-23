@@ -4,8 +4,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from datetime import datetime, timezone
+
 from memory.channel_context import ChannelContext
+from memory.short_term import ChannelMessage
 from memory.summarizer import Summarizer, _parse_summary_result
+
+
+def _msg() -> ChannelMessage:
+    return ChannelMessage(
+        message_id=1, channel_id=1, author_id=1, author_name="U",
+        content="c", timestamp=datetime.now(timezone.utc),
+    )
 
 
 class TestParseSummaryResult:
@@ -56,7 +66,7 @@ class TestApplyParsedResult:
         context = ChannelContext(channel_id=1, summary="旧", mood="旧ムード", topic_keywords=["旧"])
         parsed = _parse_summary_result({"summary": "新", "mood": 1, "topic_keywords": "x"})
 
-        Summarizer()._apply_result(context, parsed, [])
+        Summarizer()._apply_result(context, parsed, [], 0)
 
         assert context.summary == "新"
         assert context.mood == "旧ムード"
@@ -66,7 +76,7 @@ class TestApplyParsedResult:
         context = ChannelContext(channel_id=1, summary="旧", topic_keywords=["旧"])
         parsed = _parse_summary_result({"summary": "新", "topic_keywords": []})
 
-        Summarizer()._apply_result(context, parsed, [])
+        Summarizer()._apply_result(context, parsed, [], 0)
 
         assert context.topic_keywords == []
 
@@ -94,7 +104,7 @@ class TestSummarizerBackoff:
     async def test_failure_records_backoff(self):
         summarizer = Summarizer()
         with patch.object(summarizer, "_call_summarize_llm", return_value=None):
-            await summarizer._run_summarize(1, ChannelContext(channel_id=1), [])
+            await summarizer._run_summarize(1, ChannelContext(channel_id=1), [_msg()], 0)
 
         assert summarizer._backoff.is_blocked(1)
         assert 1 not in summarizer._running
@@ -103,7 +113,7 @@ class TestSummarizerBackoff:
     async def test_exception_records_backoff(self):
         summarizer = Summarizer()
         with patch.object(summarizer, "_call_summarize_llm", side_effect=RuntimeError("x")):
-            await summarizer._run_summarize(1, ChannelContext(channel_id=1), [])
+            await summarizer._run_summarize(1, ChannelContext(channel_id=1), [_msg()], 0)
 
         assert summarizer._backoff.failure_count(1) == 1
 
@@ -116,7 +126,7 @@ class TestSummarizerBackoff:
             summarizer, "_call_summarize_llm",
             return_value={"summary": "s", "mood": None, "topic_keywords": None},
         ):
-            await summarizer._run_summarize(1, ChannelContext(channel_id=1), [])
+            await summarizer._run_summarize(1, ChannelContext(channel_id=1), [_msg()], 0)
 
         assert summarizer._backoff.failure_count(1) == 0
         mock_get_store.return_value.save_context.assert_called_once()
@@ -132,3 +142,112 @@ class TestSummarizerBackoff:
 
         mock_task.assert_not_called()
         assert 1 not in summarizer._running
+
+
+class TestEmptyMessages:
+    """メッセージが空のときは失敗扱いせずカウントを消化する (#137)"""
+
+    @pytest.mark.asyncio
+    @patch("memory.summarizer.get_channel_context_store")
+    async def test_empty_messages_do_not_record_failure(self, mock_get_store):
+        summarizer = Summarizer()
+        context = ChannelContext(channel_id=1, message_count_since_update=3)
+
+        with patch.object(summarizer, "_call_summarize_llm") as mock_llm:
+            await summarizer._run_summarize(1, context, [], 3)
+
+        mock_llm.assert_not_called()
+        assert summarizer._backoff.failure_count(1) == 0
+        assert not summarizer._backoff.is_blocked(1)
+        assert context.message_count_since_update == 0
+        mock_get_store.return_value.save_context.assert_called_once_with(context)
+        assert 1 not in summarizer._running
+
+    @pytest.mark.asyncio
+    @patch("memory.summarizer.get_channel_context_store")
+    async def test_repeated_empty_checks_never_block(self, mock_get_store):
+        """15分ごとの空チェックが続いてもバックオフが積み上がらない"""
+        summarizer = Summarizer()
+        for _ in range(5):
+            await summarizer._run_summarize(1, ChannelContext(channel_id=1), [], 1)
+
+        assert summarizer._backoff.failure_count(1) == 0
+
+    @pytest.mark.asyncio
+    @patch("memory.summarizer.get_channel_context_store")
+    async def test_empty_keeps_count_added_after_start(self, mock_get_store):
+        summarizer = Summarizer()
+        context = ChannelContext(channel_id=1, message_count_since_update=5)
+
+        await summarizer._run_summarize(1, context, [], 2)
+
+        assert context.message_count_since_update == 3
+
+    @pytest.mark.asyncio
+    @patch("memory.summarizer.get_channel_context_store")
+    async def test_empty_does_not_reset_existing_failures(self, mock_get_store):
+        """空スキップで連続失敗回数（指数バックオフの段階）を巻き戻さない"""
+        summarizer = Summarizer()
+        summarizer._backoff.record_failure(1)
+        summarizer._backoff.record_failure(1)
+
+        await summarizer._run_summarize(1, ChannelContext(channel_id=1), [], 1)
+
+        assert summarizer._backoff.failure_count(1) == 2
+
+
+class TestConsumedCount:
+    """要約開始時点のカウントだけを差し引く (#137)"""
+
+    def test_apply_result_keeps_messages_added_during_summary(self):
+        context = ChannelContext(channel_id=1, message_count_since_update=10)
+        # 要約開始時は 10、LLM 呼び出し中に 3 件増えた想定
+        for _ in range(3):
+            context.increment_message_count()
+        context.dirty = False
+
+        Summarizer()._apply_result(context, {"summary": "s"}, [_msg()], 10)
+
+        assert context.message_count_since_update == 3
+        assert context.dirty
+
+    def test_apply_result_never_goes_negative(self):
+        context = ChannelContext(channel_id=1, message_count_since_update=1)
+
+        Summarizer()._apply_result(context, {"summary": "s"}, [_msg()], 5)
+
+        assert context.message_count_since_update == 0
+
+    @pytest.mark.asyncio
+    @patch("memory.summarizer.get_channel_context_store")
+    async def test_run_summarize_subtracts_start_count(self, mock_get_store):
+        summarizer = Summarizer()
+        context = ChannelContext(channel_id=1, message_count_since_update=10)
+
+        def _llm(ctx, _messages):
+            # LLM 呼び出し中に新しいメッセージが届く
+            ctx.increment_message_count()
+            ctx.increment_message_count()
+            return {"summary": "s", "mood": None, "topic_keywords": None}
+
+        with patch.object(summarizer, "_call_summarize_llm", side_effect=_llm):
+            await summarizer._run_summarize(1, context, [_msg()], 10)
+
+        assert context.message_count_since_update == 2
+        assert context.summary == "s"
+
+    @patch("memory.summarizer.get_channel_context_store")
+    def test_maybe_summarize_passes_start_count(self, mock_get_store):
+        context = ChannelContext(channel_id=1, message_count_since_update=7)
+        mock_get_store.return_value.get_context.return_value = context
+        summarizer = Summarizer()
+        msgs = [_msg()]
+
+        with patch("memory.summarizer.asyncio.create_task") as mock_task, \
+                patch("memory.summarizer.track_background_task"), \
+                patch.object(summarizer, "_run_summarize", new=MagicMock()) as mock_run:
+            with patch("memory.summarizer.config.SUMMARIZE_EVERY_N_MESSAGES", 5):
+                summarizer.maybe_summarize(1, msgs)
+
+        mock_task.assert_called_once()
+        mock_run.assert_called_once_with(1, context, msgs, 7)
