@@ -51,6 +51,28 @@ def _create_formatter() -> logging.Formatter:
     return logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
+# サードパーティライブラリの最低ログレベル。LOG_LEVEL=DEBUG でもこれより詳細には出さない
+# （HTTP のリクエスト/レスポンスや Gateway のペイロードがログに流れるのを防ぐ）
+_THIRD_PARTY_MIN_LEVELS: dict[str, int] = {
+    "discord": logging.INFO,
+    "httpx": logging.WARNING,
+    "httpcore": logging.WARNING,
+    "urllib3": logging.WARNING,
+    "google": logging.WARNING,
+    "grpc": logging.WARNING,
+}
+
+
+def _configure_third_party_loggers(app_level: int) -> None:
+    """サードパーティロガーのレベルを、アプリのレベルと最低レベルの厳しい方に揃える
+
+    Args:
+        app_level: アプリケーションのログレベル
+    """
+    for name, min_level in _THIRD_PARTY_MIN_LEVELS.items():
+        logging.getLogger(name).setLevel(max(app_level, min_level))
+
+
 def setup_logger(name: str = "sphene") -> logging.Logger:
     """アプリケーション用のロガーをセットアップする
 
@@ -66,6 +88,7 @@ def setup_logger(name: str = "sphene") -> logging.Logger:
     handler.setFormatter(_create_formatter())
 
     logging.basicConfig(level=log_level, handlers=[handler])
+    _configure_third_party_loggers(log_level)
     return logging.getLogger(name)
 
 

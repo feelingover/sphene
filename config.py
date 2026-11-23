@@ -139,3 +139,36 @@ HYBRID_ALPHA: float = float(os.getenv("HYBRID_ALPHA", "0.5"))  # ベクトル/�
 # ファクト重複判定のコサイン類似度閾値（両方にEmbeddingがある場合のみ使用）
 FACT_DEDUP_SIMILARITY_THRESHOLD: float = float(os.getenv("FACT_DEDUP_SIMILARITY_THRESHOLD", "0.95"))
 
+
+# === 廃止済みの環境変数 ===
+# 設定されていても無視される。起動時に警告して、ConfigMap 等の設定の残骸に気づけるようにする
+_VANGUARD_HINT = "VANGUARD_ENABLED に統合されました"
+_LIVING_MEMORY_HINT = "LIVING_MEMORY_ENABLED に統合されました"
+_MODEL_HINT = "機能別のモデル指定は廃止。BOT_MODEL / BOT_LITE_MODEL を使ってください"
+DEPRECATED_ENV_VARS: dict[str, str] = {
+    "AUTONOMOUS_RESPONSE_ENABLED": _VANGUARD_HINT,
+    "LLM_JUDGE_ENABLED": _VANGUARD_HINT,
+    "RESPONSE_DIVERSITY_ENABLED": _VANGUARD_HINT,
+    "REACTION_ENABLED": _VANGUARD_HINT,
+    "MEMORY_ENABLED": _LIVING_MEMORY_HINT,
+    "CHANNEL_CONTEXT_ENABLED": _LIVING_MEMORY_HINT,
+    "USER_PROFILE_ENABLED": _LIVING_MEMORY_HINT,
+    "USER_PROFILE_TAGS_ENABLED": _LIVING_MEMORY_HINT,
+    "REFLECTION_ENABLED": _LIVING_MEMORY_HINT,
+    "PROACTIVE_CONVERSATION_ENABLED": "自発会話機能は削除されました（issue #104）",
+    "JUDGE_MODEL": _MODEL_HINT,
+    "SUMMARIZE_MODEL": _MODEL_HINT,
+    "REFLECTION_MODEL": _MODEL_HINT,
+    "GEMINI_MODEL": "BOT_MODEL に置き換わりました",
+    "CHANNEL_CONFIG_STORAGE_TYPE": "STORAGE_TYPE に統合されました",
+    "FIRESTORE_COLLECTION_NAME": "コレクション名は FIRESTORE_NAMESPACE から自動決定されます",
+}
+
+
+def find_deprecated_env_vars() -> list[tuple[str, str]]:
+    """設定されている廃止済みの環境変数を返す
+
+    Returns:
+        (環境変数名, 移行先の案内) のリスト
+    """
+    return [(name, hint) for name, hint in DEPRECATED_ENV_VARS.items() if name in os.environ]
