@@ -1,7 +1,6 @@
 import asyncio
 import signal
 import sys
-from types import FrameType
 
 import discord
 from discord.ext import commands, tasks
@@ -11,6 +10,7 @@ from ai.conversation import cleanup_expired_conversations, load_system_prompt
 from bot.commands import setup_commands
 from bot.events import setup_events
 from log_utils.logger import logger
+from utils.background_tasks import track_background_task
 from xivapi.client import close_http_client
 
 
@@ -48,6 +48,10 @@ class SpheneBot:
             allowed_mentions=allowed_mentions,
         )
 
+        # 終了処理の状態（SIGTERM の多重受信・永続化の二重実行を防ぐ）
+        self._shutdown_requested = False
+        self._memory_persisted = False
+
         # コマンドとイベントのセットアップ
         self._setup()
 
@@ -58,6 +62,9 @@ class SpheneBot:
 
         # イベントのセットアップ
         setup_events(self.bot, command_group)
+
+        # ログイン時（イベントループ起動後）にシグナルハンドラを登録する
+        self.bot.setup_hook = self._setup_hook  # type: ignore[method-assign]
 
         # クリーンアップタスクの開始を準備
         @self.bot.listen("on_ready")
@@ -157,42 +164,71 @@ class SpheneBot:
                     f"反省会チェック/ファクトストア永続化でエラー: {str(e)}", exc_info=True
                 )
 
+    async def _setup_hook(self) -> None:
+        """discord.py の setup_hook: イベントループ上で SIGTERM ハンドラを登録する"""
+        self._install_sigterm_handler(asyncio.get_running_loop())
+
+    def _install_sigterm_handler(self, loop: asyncio.AbstractEventLoop) -> None:
+        """SIGTERM で graceful shutdown するためのハンドラを登録する
+
+        Python 既定の SIGTERM は即時終了で後始末が一切走らないため、
+        イベントループのシグナルハンドラで受けて終了処理タスクに変換する。
+        """
+        try:
+            loop.add_signal_handler(signal.SIGTERM, self._request_shutdown)
+        except (NotImplementedError, RuntimeError, ValueError):
+            # Windows やメインスレッド外のループでは登録できない
+            logger.warning("SIGTERMハンドラを登録できませんでした", exc_info=True)
+
+    def _request_shutdown(self) -> None:
+        """SIGTERM 受信時に終了処理タスクを起動する（2回目以降は無視）"""
+        if self._shutdown_requested:
+            logger.info("SIGTERMを再受信しましたが、終了処理が進行中のため無視します")
+            return
+        self._shutdown_requested = True
+        logger.info("SIGTERMを受信しました。終了処理を開始します")
+        track_background_task(
+            asyncio.create_task(self._graceful_shutdown(), name="graceful_shutdown")
+        )
+
+    async def _graceful_shutdown(self) -> None:
+        """記憶を永続化してから Discord との接続を閉じる
+
+        ``asyncio.run`` は終了時に既定 executor のスレッド終了を最大300秒待つため、
+        LLM 呼び出し（``asyncio.to_thread``）が実行中だと ``run`` の ``finally`` に
+        着く前に猶予期間（k8s 既定30秒）を超えて SIGKILL されうる。そのため
+        ループ内で先に永続化する。``to_thread`` を使わないのは、既定 executor が
+        実行中の LLM 呼び出しで埋まっていると永続化がその後ろに並んでしまうため。
+        """
+        self._persist_memory_once()
+        await self.bot.close()
+
+    def _persist_memory_once(self) -> None:
+        """終了時の永続化を1回だけ行う（SIGTERM 経路と finally の二重実行を防ぐ）"""
+        if self._memory_persisted:
+            return
+        self._memory_persisted = True
+        _persist_memory_on_shutdown()
+
     def run(self) -> None:
         """ボットを起動する"""
         logger.info("Discordボットの起動を開始")
         # discord.py 独自のログハンドラは登録せず、アプリのルートロガー設定
         # （LOG_FORMAT / LOG_LEVEL）に一本化する。二重出力を防ぐため
-        _install_sigterm_handler()
         try:
             self.bot.run(config.DISCORD_TOKEN, log_handler=None)
         finally:
-            _persist_memory_on_shutdown()
+            # SIGTERM 以外の終了経路（SIGINT・例外など）向けのフォールバック
+            self._persist_memory_once()
             close_http_client()
-
-
-def _raise_keyboard_interrupt(signum: int, frame: FrameType | None) -> None:
-    """SIGTERM を SIGINT と同じ経路（KeyboardInterrupt）で終了させる"""
-    raise KeyboardInterrupt
-
-
-def _install_sigterm_handler() -> None:
-    """SIGTERM で graceful shutdown するためのハンドラを登録する
-
-    Python 既定の SIGTERM は即時終了で ``finally`` が実行されないため、
-    discord.py が KeyboardInterrupt として後始末できるよう変換する。
-    """
-    try:
-        signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
-    except ValueError:
-        # メインスレッド以外からは登録できない
-        logger.warning("SIGTERMハンドラを登録できませんでした（メインスレッド外）")
 
 
 def _persist_memory_on_shutdown() -> None:
     """終了時に未保存の記憶（プロファイル・ファクト・チャンネルコンテキスト）を永続化する
 
     定期タスク（15分ごと）の間に溜まった dirty な状態を再起動で失わないために呼ぶ。
-    1つのストアの失敗で他のストアの保存を止めない。
+    1つのストアの失敗で他のストアの保存を止めない。個々の書き込み失敗は
+    各ストアがログに残す。
     """
     if not config.LIVING_MEMORY_ENABLED:
         return
@@ -209,6 +245,6 @@ def _persist_memory_on_shutdown() -> None:
     for label, persist in targets:
         try:
             persist()
-            logger.info(f"終了時の永続化完了: {label}")
+            logger.info(f"終了時の永続化処理を実行しました: {label}")
         except Exception as e:
             logger.error(f"終了時の永続化に失敗しました: {label}, error={str(e)}", exc_info=True)

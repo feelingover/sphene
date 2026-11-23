@@ -52,7 +52,7 @@ def test_sphene_bot_run() -> None:
     """SpheneBot の実行メソッドをテスト"""
     with patch("bot.discord_bot.commands.Bot") as mock_bot_cls, patch(
         "bot.discord_bot.config"
-    ) as mock_config, patch("bot.discord_bot._install_sigterm_handler"), patch(
+    ) as mock_config, patch(
         "bot.discord_bot._persist_memory_on_shutdown"
     ) as mock_persist:
 
