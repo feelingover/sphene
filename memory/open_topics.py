@@ -113,12 +113,20 @@ def load_open_topics(raw: Any) -> list[OpenTopic]:
         raw: to_dict で保存したリスト（旧データではキーが無く None）
 
     Returns:
-        復元できた話題のリスト
+        復元できた話題のリスト。id が重複した要素は先頭の1件だけを残す
+        （自発会話で id をキーに言及済みを判定するため）
     """
     if not isinstance(raw, list):
         return []
-    topics = [OpenTopic.from_dict(item) for item in raw]
-    return [t for t in topics if t is not None][:MAX_OPEN_TOPICS]
+    seen: set[str] = set()
+    topics: list[OpenTopic] = []
+    for item in raw:
+        topic = OpenTopic.from_dict(item)
+        if topic is None or topic.id in seen:
+            continue
+        seen.add(topic.id)
+        topics.append(topic)
+    return topics[:MAX_OPEN_TOPICS]
 
 
 def parse_open_topics_result(

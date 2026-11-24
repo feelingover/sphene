@@ -5,6 +5,7 @@ import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 import config
 from log_utils.logger import logger
@@ -13,6 +14,9 @@ from memory.cache_eviction import LruTracker
 from memory.errors import StorageLoadError, log_storage_load_failure
 from memory.open_topics import OpenTopic, load_open_topics
 from utils.file_utils import local_storage_path
+
+# 言及済みとして覚えておく話題 id の上限
+_MAX_MENTIONED_TOPIC_IDS = 50
 
 
 @dataclass
@@ -28,6 +32,13 @@ class ChannelContext:
     message_count_since_update: int = 0
     # 未解決の話題（要約LLMが抽出。format_for_injection には含めない）
     open_topics: list[OpenTopic] = field(default_factory=list)
+    # 自発会話（issue #104）: 言及済みの話題 id（古い順）と最後の自発会話の時刻
+    mentioned_topic_ids: list[str] = field(default_factory=list)
+    last_proactive_at: datetime | None = None
+    # 最後の人間の発言・自分の発言の時刻（沈黙と「最後の発言が自分か」の判定に使う）。
+    # チャンネルバッファは TTL で消えるため、永続化されるここに持つ。None は「不明」
+    last_human_message_at: datetime | None = None
+    last_self_message_at: datetime | None = None
     # 永続化先の読み込みに失敗した一時コンテキストなら True（シリアライズしない）。
     # 保存すると既存の要約を上書きしてしまうため、save_context はこれを拒否する
     load_failed: bool = field(default=False, compare=False, repr=False)
@@ -37,6 +48,43 @@ class ChannelContext:
     def increment_message_count(self) -> None:
         """メッセージカウンタをインクリメントする"""
         self.message_count_since_update += 1
+        self.dirty = True
+
+    def record_human_message(self, at: datetime) -> None:
+        """人間の発言時刻を記録する（古い時刻では巻き戻さない）
+
+        Args:
+            at: 発言時刻
+        """
+        at = _to_utc(at)
+        if self.last_human_message_at is None or at > self.last_human_message_at:
+            self.last_human_message_at = at
+            self.dirty = True
+
+    def record_self_message(self, at: datetime | None = None) -> None:
+        """自分（このインスタンス）の発言時刻を記録する
+
+        Args:
+            at: 発言時刻（省略時は現在時刻）
+        """
+        at = _to_utc(at or datetime.now(timezone.utc))
+        if self.last_self_message_at is None or at > self.last_self_message_at:
+            self.last_self_message_at = at
+            self.dirty = True
+
+    def record_proactive(self, topic_id: str, at: datetime) -> None:
+        """自発会話の送信を記録する（言及済みの話題・最終送信時刻・自分の発言時刻）
+
+        Args:
+            topic_id: 言及した話題の id
+            at: 送信時刻
+        """
+        if topic_id not in self.mentioned_topic_ids:
+            self.mentioned_topic_ids.append(topic_id)
+        # 古い id から捨てる（要約の open_topics は最大5件なので十分に残る）
+        del self.mentioned_topic_ids[:-_MAX_MENTIONED_TOPIC_IDS]
+        self.last_proactive_at = _to_utc(at)
+        self.record_self_message(at)
         self.dirty = True
 
     def should_summarize_by_count(self) -> bool:
@@ -79,6 +127,10 @@ class ChannelContext:
             "last_updated": self.last_updated.isoformat(),
             "message_count_since_update": self.message_count_since_update,
             "open_topics": [t.to_dict() for t in self.open_topics],
+            "mentioned_topic_ids": list(self.mentioned_topic_ids),
+            "last_proactive_at": _iso_or_none(self.last_proactive_at),
+            "last_human_message_at": _iso_or_none(self.last_human_message_at),
+            "last_self_message_at": _iso_or_none(self.last_self_message_at),
         }
 
     @classmethod
@@ -100,7 +152,45 @@ class ChannelContext:
             message_count_since_update=data.get("message_count_since_update", 0),
             # 旧データ（キーなし）や不正な要素は空リスト・除外で読み込む
             open_topics=load_open_topics(data.get("open_topics")),
+            mentioned_topic_ids=_load_topic_ids(data.get("mentioned_topic_ids")),
+            last_proactive_at=_parse_datetime(data.get("last_proactive_at")),
+            last_human_message_at=_parse_datetime(data.get("last_human_message_at")),
+            last_self_message_at=_parse_datetime(data.get("last_self_message_at")),
         )
+
+
+def _to_utc(at: datetime) -> datetime:
+    """naive は UTC とみなし、aware は UTC に変換する"""
+    if at.tzinfo is None:
+        return at.replace(tzinfo=timezone.utc)
+    return at.astimezone(timezone.utc)
+
+
+def _iso_or_none(at: datetime | None) -> str | None:
+    """datetime を ISO8601 文字列にする（None はそのまま）"""
+    return at.isoformat() if at else None
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    """永続化された時刻を UTC の datetime に戻す（旧データ・不正な値は None）
+
+    Firestore は datetime を返すことがあるため、文字列と datetime の両方を受け付ける。
+    """
+    if isinstance(value, datetime):
+        return _to_utc(value)
+    if isinstance(value, str) and value:
+        try:
+            return _to_utc(datetime.fromisoformat(value))
+        except ValueError:
+            logger.warning(f"チャンネルコンテキストの時刻が不正なため無視します: {value!r}")
+    return None
+
+
+def _load_topic_ids(raw: Any) -> list[str]:
+    """言及済みの話題 id を復元する（旧データ・不正な要素に寛容）"""
+    if not isinstance(raw, list):
+        return []
+    return [i for i in raw if isinstance(i, str) and i][-_MAX_MENTIONED_TOPIC_IDS:]
 
 
 class ChannelContextStore:

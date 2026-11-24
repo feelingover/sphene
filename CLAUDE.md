@@ -39,6 +39,7 @@ memory/                   # Living Memory + VANGUARD judge (docs/living-memory.m
   reflection.py           # Fact extraction (反省会)
   backoff.py              # Failure backoff for summary/reflection LLM
   judge.py, llm_judge.py  # Autonomous response judge
+  proactive.py            # Proactive conversation (timer check, topic selection, generate & send)
 xivapi/
   client.py               # XIVAPI v2 search
 utils/

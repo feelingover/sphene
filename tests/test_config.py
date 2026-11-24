@@ -126,3 +126,103 @@ def test_deprecated_env_vars_are_not_read_by_config() -> None:
     source = inspect.getsource(config)
     for name in config.DEPRECATED_ENV_VARS:
         assert f'os.getenv("{name}"' not in source, name
+
+
+class TestParseQuietHours:
+    """PROACTIVE_QUIET_HOURS の解釈"""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("0-8", (0, 8)), ("22-6", (22, 6)), (" 1 - 5 ", (1, 5)), ("", None), ("3-3", None)],
+    )
+    def test_valid(self, raw, expected):
+        from config import parse_quiet_hours
+
+        assert parse_quiet_hours(raw) == expected
+
+    @pytest.mark.parametrize("raw", ["0", "0-8-9", "a-b", "-1-8", "0-24", "25-3", "0:8"])
+    def test_invalid(self, raw):
+        from config import parse_quiet_hours
+
+        with pytest.raises(ValueError, match="PROACTIVE_QUIET_HOURS"):
+            parse_quiet_hours(raw)
+
+
+class TestValidateProactiveConfig:
+    """PROACTIVE_ENABLED=true のときの起動時バリデーション"""
+
+    _DEFAULTS = {
+        "LIVING_MEMORY_ENABLED": True,
+        "PROACTIVE_CHECK_INTERVAL_MINUTES": 10,
+        "PROACTIVE_MIN_SILENCE_MINUTES": 120,
+        "PROACTIVE_MAX_SILENCE_HOURS": 24,
+        "PROACTIVE_COOLDOWN_HOURS": 24,
+        "PROACTIVE_QUIET_HOURS": "0-8",
+        "PROACTIVE_TIMEZONE": "Asia/Tokyo",
+        "PROACTIVE_FOLLOW_UP_WINDOW_HOURS": 24,
+    }
+
+    def _validate(self, **overrides):
+        import config as cfg
+
+        values = {**self._DEFAULTS, **overrides}
+        patches = [patch.object(cfg, k, v) for k, v in values.items()]
+        for p in patches:
+            p.start()
+        try:
+            cfg.validate_proactive_config()
+        finally:
+            for p in patches:
+                p.stop()
+
+    def test_defaults_are_valid(self):
+        self._validate()
+
+    def test_requires_living_memory(self):
+        with pytest.raises(ValueError, match="LIVING_MEMORY_ENABLED"):
+            self._validate(LIVING_MEMORY_ENABLED=False)
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "PROACTIVE_CHECK_INTERVAL_MINUTES",
+            "PROACTIVE_MIN_SILENCE_MINUTES",
+            "PROACTIVE_MAX_SILENCE_HOURS",
+            "PROACTIVE_FOLLOW_UP_WINDOW_HOURS",
+        ],
+    )
+    def test_non_positive_rejected(self, name):
+        with pytest.raises(ValueError, match=name):
+            self._validate(**{name: 0})
+
+    def test_cooldown_zero_allowed(self):
+        self._validate(PROACTIVE_COOLDOWN_HOURS=0)
+
+    def test_negative_cooldown_rejected(self):
+        with pytest.raises(ValueError, match="PROACTIVE_COOLDOWN_HOURS"):
+            self._validate(PROACTIVE_COOLDOWN_HOURS=-1)
+
+    def test_min_silence_over_max_rejected(self):
+        with pytest.raises(ValueError, match="PROACTIVE_MIN_SILENCE_MINUTES"):
+            self._validate(PROACTIVE_MIN_SILENCE_MINUTES=25 * 60)
+
+    def test_invalid_quiet_hours_rejected(self):
+        with pytest.raises(ValueError, match="PROACTIVE_QUIET_HOURS"):
+            self._validate(PROACTIVE_QUIET_HOURS="night")
+
+    def test_invalid_timezone_rejected(self):
+        with pytest.raises(ValueError, match="PROACTIVE_TIMEZONE"):
+            self._validate(PROACTIVE_TIMEZONE="Mars/Olympus")
+
+    def test_enabled_without_living_memory_fails_at_import(self):
+        import importlib
+
+        import config as cfg
+
+        env = {"PROACTIVE_ENABLED": "true", "LIVING_MEMORY_ENABLED": "false"}
+        try:
+            with patch.dict(os.environ, env, clear=False):
+                with pytest.raises(ValueError, match="LIVING_MEMORY_ENABLED"):
+                    importlib.reload(cfg)
+        finally:
+            importlib.reload(cfg)

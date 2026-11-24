@@ -336,6 +336,26 @@ async def _send_chunks(
             await message.channel.send(chunk)
 
 
+def _record_self_message(channel_id: int) -> None:
+    """自分が発言した時刻をチャンネルコンテキストに記録する（自発会話の判定用）
+
+    記録の失敗で応答処理を止めない。
+
+    Args:
+        channel_id: 発言したチャンネルのID
+    """
+    if not config.LIVING_MEMORY_ENABLED:
+        return
+    try:
+        from memory.channel_context import get_channel_context_store
+
+        get_channel_context_store().get_context(channel_id).record_self_message()
+    except Exception:
+        logger.error(
+            f"自分の発言時刻の記録に失敗しました: channel_id={channel_id}", exc_info=True
+        )
+
+
 def _post_response_update(
     message: discord.Message,
     answer: str,
@@ -352,6 +372,7 @@ def _post_response_update(
     """
     from memory.short_term import ChannelMessage, get_channel_buffer
 
+    _record_self_message(message.channel.id)
     if config.LIVING_MEMORY_ENABLED and topic_keywords:
         from memory.user_profile import get_user_profile_store
 
@@ -670,6 +691,7 @@ async def _process_short_ack(
             f"応答={truncate_text(answer)}"
         )
         get_judge().record_response(message.channel.id)
+        _record_self_message(message.channel.id)
 
         # ボット自身の応答もバッファに追加
         if bot.user:
@@ -1046,7 +1068,10 @@ def _record_living_memory(
     from memory.user_profile import get_user_profile_store
 
     channel_id = message.channel.id
-    get_channel_context_store().get_context(channel_id).increment_message_count()
+    context = get_channel_context_store().get_context(channel_id)
+    context.increment_message_count()
+    # 自発会話の沈黙判定用（バッファは TTL で消えるため永続化されるコンテキストに持つ）
+    context.record_human_message(message.created_at)
     get_summarizer().maybe_summarize(
         channel_id, buffer.get_recent_messages(channel_id, limit=20)
     )

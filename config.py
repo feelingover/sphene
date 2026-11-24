@@ -207,6 +207,84 @@ VANGUARD_ENABLED: bool = _env_bool("VANGUARD_ENABLED", True)
 # LIVING_MEMORY: チャンネルコンテキスト・ユーザープロファイル・ユーザープロファイルタグ・反省会 を一括制御
 LIVING_MEMORY_ENABLED: bool = _env_bool("LIVING_MEMORY_ENABLED", True)
 
+# === 自発会話 (issue #104) ===
+# opt-in したチャンネルで、担当インスタンスが未解決の話題に沈黙明けに触れる（LIVING_MEMORY_ENABLED が必要）
+PROACTIVE_ENABLED: bool = _env_bool("PROACTIVE_ENABLED", False)
+PROACTIVE_CHECK_INTERVAL_MINUTES: int = _env_int("PROACTIVE_CHECK_INTERVAL_MINUTES", 10)
+# 最後の人間の発言からの沈黙が [MIN 分, MAX 時間] のときだけ話しかける
+PROACTIVE_MIN_SILENCE_MINUTES: int = _env_int("PROACTIVE_MIN_SILENCE_MINUTES", 120)
+PROACTIVE_MAX_SILENCE_HOURS: int = _env_int("PROACTIVE_MAX_SILENCE_HOURS", 24)
+# 前回の自発会話からの最短間隔（全種類合算）
+PROACTIVE_COOLDOWN_HOURS: int = _env_int("PROACTIVE_COOLDOWN_HOURS", 24)
+# 静音時間帯（"開始-終了" の時。開始を含み終了を含まない。"22-6" のような日またぎも可）
+PROACTIVE_QUIET_HOURS: str = os.getenv("PROACTIVE_QUIET_HOURS", "0-8").strip()
+# 静音時間帯を判定するタイムゾーン（IANA 名）
+PROACTIVE_TIMEZONE: str = os.getenv("PROACTIVE_TIMEZONE", "Asia/Tokyo").strip()
+# follow_up_after を持つ話題は、その時刻からこの時間内なら沈黙の上限を無視して触れる
+PROACTIVE_FOLLOW_UP_WINDOW_HOURS: int = _env_int("PROACTIVE_FOLLOW_UP_WINDOW_HOURS", 24)
+
+
+def parse_quiet_hours(raw: str) -> tuple[int, int] | None:
+    """静音時間帯の文字列を (開始時, 終了時) に変換する
+
+    Args:
+        raw: "0-8" 形式の文字列。空文字なら静音時間帯なし
+
+    Returns:
+        (開始時, 終了時)。空文字・開始と終了が同じなら None（静音時間帯なし）
+
+    Raises:
+        ValueError: 書式が不正、または時が 0〜23 の範囲外の場合
+    """
+    if not raw.strip():
+        return None
+    parts = raw.split("-")
+    if len(parts) != 2 or not all(p.strip().isdigit() for p in parts):
+        raise ValueError(f"PROACTIVE_QUIET_HOURS は \"開始-終了\"（例: 0-8）で指定してください: {raw!r}")
+    start, end = (int(p) for p in parts)
+    if not (0 <= start <= 23 and 0 <= end <= 23):
+        raise ValueError(f"PROACTIVE_QUIET_HOURS の時は 0〜23 で指定してください: {raw!r}")
+    if start == end:
+        return None
+    return start, end
+
+
+def validate_proactive_config() -> None:
+    """自発会話の設定を検証する（PROACTIVE_ENABLED=true のときだけ起動時に呼ぶ）
+
+    Raises:
+        ValueError: LIVING_MEMORY_ENABLED が無効、数値が範囲外、
+            静音時間帯・タイムゾーンが不正な場合
+    """
+    from zoneinfo import ZoneInfo
+
+    if not LIVING_MEMORY_ENABLED:
+        raise ValueError("PROACTIVE_ENABLED=true には LIVING_MEMORY_ENABLED=true が必要です")
+    positives = {
+        "PROACTIVE_CHECK_INTERVAL_MINUTES": PROACTIVE_CHECK_INTERVAL_MINUTES,
+        "PROACTIVE_MIN_SILENCE_MINUTES": PROACTIVE_MIN_SILENCE_MINUTES,
+        "PROACTIVE_MAX_SILENCE_HOURS": PROACTIVE_MAX_SILENCE_HOURS,
+        "PROACTIVE_FOLLOW_UP_WINDOW_HOURS": PROACTIVE_FOLLOW_UP_WINDOW_HOURS,
+    }
+    for name, value in positives.items():
+        if value <= 0:
+            raise ValueError(f"{name} は1以上で指定してください: {value}")
+    if PROACTIVE_COOLDOWN_HOURS < 0:
+        raise ValueError(f"PROACTIVE_COOLDOWN_HOURS は0以上で指定してください: {PROACTIVE_COOLDOWN_HOURS}")
+    if PROACTIVE_MIN_SILENCE_MINUTES > PROACTIVE_MAX_SILENCE_HOURS * 60:
+        raise ValueError(
+            "PROACTIVE_MIN_SILENCE_MINUTES は PROACTIVE_MAX_SILENCE_HOURS 以下にしてください"
+        )
+    parse_quiet_hours(PROACTIVE_QUIET_HOURS)
+    try:
+        ZoneInfo(PROACTIVE_TIMEZONE)
+    except Exception as e:
+        raise ValueError(f"PROACTIVE_TIMEZONE が不正です: {PROACTIVE_TIMEZONE!r}") from e
+
+
+if PROACTIVE_ENABLED:
+    validate_proactive_config()
+
 # 自律応答
 JUDGE_SCORE_THRESHOLD: int = _env_int("JUDGE_SCORE_THRESHOLD", 20)
 JUDGE_SCORE_FULL_RESPONSE: int = _env_int("JUDGE_SCORE_FULL_RESPONSE", 60)

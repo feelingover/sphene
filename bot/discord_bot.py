@@ -76,6 +76,25 @@ class SpheneBot:
             if not self._cleanup_task.is_running():
                 self._cleanup_task.start()
                 logger.info("クリーンアップタスクを開始しました")
+            self._start_proactive_task()
+
+    def _start_proactive_task(self) -> None:
+        """自発会話のタイマーループを開始する（PROACTIVE_ENABLED=false なら何もしない）"""
+        if not config.PROACTIVE_ENABLED or self._proactive_task.is_running():
+            return
+        self._proactive_task.change_interval(minutes=config.PROACTIVE_CHECK_INTERVAL_MINUTES)
+        self._proactive_task.start()
+        logger.info(
+            f"自発会話のタイマーループを開始しました: "
+            f"間隔={config.PROACTIVE_CHECK_INTERVAL_MINUTES}分"
+        )
+
+    @tasks.loop(minutes=10)
+    async def _proactive_task(self) -> None:
+        """担当チャンネルで自発会話の条件を判定し、満たせば送信する（間隔は開始時に設定）"""
+        from memory.proactive import run_proactive_check
+
+        await run_proactive_check(self.bot)
 
     @tasks.loop(minutes=15)
     async def _cleanup_task(self) -> None:
@@ -135,6 +154,8 @@ class SpheneBot:
         ループ内で先に永続化する。``to_thread`` を使わないのは、既定 executor が
         実行中の LLM 呼び出しで埋まっていると永続化がその後ろに並んでしまうため。
         """
+        if self._proactive_task.is_running():
+            self._proactive_task.cancel()
         self._persist_memory_once()
         await self.bot.close()
 
