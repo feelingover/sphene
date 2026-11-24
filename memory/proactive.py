@@ -1,5 +1,7 @@
 """自発会話 (issue #104): 沈黙明けに、会話に残った未解決の話題へさりげなく触れる
 
+触れられる未解決の話題がないときは、shareable な fact を話題にする（未解決の話題 > facts）。
+
 タイマーループ（bot/discord_bot.py）から ``run_proactive_check`` を呼ぶ。``on_message`` には
 依存せず、opt-in したチャンネルのうち登録簿で自分が担当のチャンネルだけを対象にする。
 
@@ -8,8 +10,11 @@
 """
 
 import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import discord
@@ -19,6 +24,7 @@ import config
 from ai.conversation import generate_proactive_message, get_or_reset_conversation
 from log_utils.logger import logger
 from memory.channel_context import ChannelContext, get_channel_context_store
+from memory.fact_store import Fact, get_fact_store
 from memory.open_topics import OpenTopic, format_now_jst
 from memory.short_term import ChannelMessage, format_context_line, get_channel_buffer
 from utils.channel_config import ChannelConfigManager
@@ -27,6 +33,35 @@ from utils.text_utils import split_message, truncate_text
 
 # 生成プロンプトに渡す直近ログの件数（Discord の履歴から取得する）
 RECENT_HISTORY_LIMIT = 10
+
+ProactiveSource = Literal["open_topic", "fact"]
+
+
+@dataclass(frozen=True)
+class ProactiveTarget:
+    """自発会話で触れる対象（未解決の話題 or shareable な fact）
+
+    Attributes:
+        source: 対象の種類（open_topic / fact）
+        id: 話題の id または fact_id（言及済み・使用済みの記録に使う）
+        text: 話題・fact の本文
+        kind: 話題の種類（plan / question / pending）。fact は "fact"
+    """
+
+    source: ProactiveSource
+    id: str
+    text: str
+    kind: str
+
+    @classmethod
+    def from_topic(cls, topic: OpenTopic) -> "ProactiveTarget":
+        """未解決の話題から作る"""
+        return cls(source="open_topic", id=topic.id, text=topic.text, kind=topic.kind)
+
+    @classmethod
+    def from_fact(cls, fact: Fact) -> "ProactiveTarget":
+        """fact から作る"""
+        return cls(source="fact", id=fact.fact_id, text=fact.content, kind="fact")
 
 
 @lru_cache(maxsize=None)
@@ -107,15 +142,54 @@ def select_topic(
     return next((t for t in candidates if t.follow_up_after is None), None)
 
 
-def plan_proactive(ctx: ChannelContext, now: datetime) -> OpenTopic | None:
-    """送信条件を満たしていれば、触れる話題を返す
+def select_fact(ctx: ChannelContext, facts: list[Fact]) -> Fact | None:
+    """話題にする fact を1件選ぶ（使用済み・本文が空の fact は除く）
+
+    Args:
+        ctx: チャンネルコンテキスト
+        facts: shareable な fact（優先度の高い順。get_shareable_facts の順番）
+
+    Returns:
+        未使用の fact のうち最初の1件。候補がなければ None
+    """
+    used = set(ctx.used_fact_ids)
+    return next((f for f in facts if f.fact_id not in used and f.content.strip()), None)
+
+
+def _fact_cooldown_active(ctx: ChannelContext, now: datetime) -> bool:
+    """facts での話題振りのクールダウン中かを返す"""
+    last = ctx.last_fact_proactive_at
+    cooldown = timedelta(hours=config.PROACTIVE_FACT_COOLDOWN_HOURS)
+    return last is not None and now - last < cooldown
+
+
+def load_shareable_facts(channel_id: int) -> list[Fact]:
+    """チャンネルの shareable な fact を取得する（同期。失敗したら空リスト）"""
+    try:
+        return get_fact_store().get_shareable_facts(channel_id)
+    except Exception:
+        logger.error(f"自発会話用の fact の取得に失敗しました: channel_id={channel_id}", exc_info=True)
+        return []
+
+
+def plan_proactive(
+    ctx: ChannelContext,
+    now: datetime,
+    load_facts: Callable[[int], list[Fact]] = load_shareable_facts,
+) -> ProactiveTarget | None:
+    """送信条件を満たしていれば、触れる対象を返す（未解決の話題 > facts）
+
+    今この時点で触れられる未解決の話題がないときだけ facts にフォールバックする。
+    facts は沈黙の上限・下限の両方に従い、独自のクールダウンも適用する。
+    fact の取得は I/O を伴うため、イベントループからは ``asyncio.to_thread`` 経由で呼ぶこと。
 
     Args:
         ctx: チャンネルコンテキスト
         now: 現在時刻（UTC）
+        load_facts: チャンネルの shareable な fact を返す関数（facts が必要なときだけ呼ぶ）
 
     Returns:
-        触れる話題。送らない場合は None
+        触れる対象。送らない場合は None
     """
     reason = _skip_reason(ctx, now)
     if reason is not None or ctx.last_human_message_at is None:
@@ -124,9 +198,15 @@ def plan_proactive(ctx: ChannelContext, now: datetime) -> OpenTopic | None:
     silence = now - ctx.last_human_message_at
     within_max = silence <= timedelta(hours=config.PROACTIVE_MAX_SILENCE_HOURS)
     topic = select_topic(ctx, now, within_max)
-    if topic is None:
+    if topic is not None:
+        return ProactiveTarget.from_topic(topic)
+    fact = None
+    if within_max and not _fact_cooldown_active(ctx, now):
+        fact = select_fact(ctx, load_facts(ctx.channel_id))
+    if fact is None:
         logger.debug(f"自発会話をスキップ: channel_id={ctx.channel_id}, 理由=触れる話題がない")
-    return topic
+        return None
+    return ProactiveTarget.from_fact(fact)
 
 
 async def run_proactive_check(bot: commands.Bot) -> None:
@@ -202,8 +282,8 @@ async def _maybe_speak(bot: commands.Bot, channel: discord.TextChannel) -> None:
     if ctx.load_failed:
         return
     now = datetime.now(timezone.utc)
-    topic = plan_proactive(ctx, now)
-    if topic is None:
+    target = await asyncio.to_thread(plan_proactive, ctx, now)
+    if target is None:
         return
     history = await _fetch_recent_history(channel)
     if history is None or not _history_allows(history, bot, now):
@@ -213,9 +293,10 @@ async def _maybe_speak(bot: commands.Bot, channel: discord.TextChannel) -> None:
         generate_proactive_message,
         ctx.format_for_injection(),
         _format_history(history),
-        topic.text,
-        topic.kind,
+        target.text,
+        target.kind,
         format_now_jst(now),
+        source=target.source,
     )
     if not message:
         return
@@ -224,7 +305,7 @@ async def _maybe_speak(bot: commands.Bot, channel: discord.TextChannel) -> None:
         logger.info(f"生成中に状況が変わったため自発会話を見送りました: channel_id={channel.id}")
         return
     if await _send(channel, message):
-        await _record_sent(channel, ctx, topic, message)
+        await _record_sent(channel, ctx, target, message)
 
 
 async def _fetch_recent_history(channel: discord.TextChannel) -> list[discord.Message] | None:
@@ -303,16 +384,19 @@ async def _send(channel: discord.TextChannel, message: str) -> bool:
 
 
 async def _record_sent(
-    channel: discord.TextChannel, ctx: ChannelContext, topic: OpenTopic, message: str
+    channel: discord.TextChannel, ctx: ChannelContext, target: ProactiveTarget, message: str
 ) -> None:
     """送信した自発会話を、コンテキスト・会話履歴・バッファ・judge に記録する
 
-    二度と同じ話題に触れないよう、コンテキストへの記録と保存を最初に行う。
+    二度と同じ話題・fact に触れないよう、コンテキストへの記録と保存を最初に行う。
     """
     from memory.judge import get_judge
 
     sent_at = datetime.now(timezone.utc)
-    ctx.record_proactive(topic.id, sent_at)
+    if target.source == "fact":
+        ctx.record_fact_proactive(target.id, sent_at)
+    else:
+        ctx.record_proactive(target.id, sent_at)
     await asyncio.to_thread(get_channel_context_store().save_context, ctx)
     await get_or_reset_conversation(str(channel.id)).add_proactive_turn(message)
     me = channel.guild.me
@@ -330,6 +414,6 @@ async def _record_sent(
     )
     get_judge().record_response(channel.id)
     logger.info(
-        f"自発会話を送信しました: channel_id={channel.id}, topic_id={topic.id}, "
-        f"kind={topic.kind}, 内容={truncate_text(message)}"
+        f"自発会話を送信しました: channel_id={channel.id}, source={target.source}, "
+        f"id={target.id}, kind={target.kind}, 内容={truncate_text(message)}"
     )

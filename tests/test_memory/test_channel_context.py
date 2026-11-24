@@ -290,6 +290,8 @@ class TestToDictFromDict:
             "open_topics",
             "mentioned_topic_ids",
             "last_proactive_at",
+            "used_fact_ids",
+            "last_fact_proactive_at",
             "last_human_message_at",
             "last_self_message_at",
         }
@@ -574,6 +576,66 @@ class TestProactiveFields:
         assert ctx.mentioned_topic_ids == ["a", "b"]
         assert ctx.last_proactive_at is None
         assert ctx.last_human_message_at is None
+
+    def test_record_fact_proactive(self):
+        ctx = ChannelContext(channel_id=1)
+        at = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        ctx.record_fact_proactive("f1", at)
+        ctx.record_fact_proactive("f1", at)
+        assert ctx.used_fact_ids == ["f1"]
+        assert ctx.mentioned_topic_ids == []
+        assert ctx.last_fact_proactive_at == at
+        # 合算のクールダウンと「最後の発言が自分」の判定にも反映する
+        assert ctx.last_proactive_at == at
+        assert ctx.last_self_message_at == at
+        assert ctx.dirty is True
+
+    def test_record_proactive_does_not_touch_fact_state(self):
+        ctx = ChannelContext(channel_id=1)
+        ctx.record_proactive("a", datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc))
+        assert ctx.used_fact_ids == []
+        assert ctx.last_fact_proactive_at is None
+
+    def test_record_fact_proactive_caps_ids(self):
+        ctx = ChannelContext(channel_id=1)
+        at = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        for i in range(210):
+            ctx.record_fact_proactive(f"f{i}", at)
+        assert len(ctx.used_fact_ids) == 200
+        assert ctx.used_fact_ids[0] == "f10"
+        assert ctx.used_fact_ids[-1] == "f209"
+
+    def test_fact_state_round_trip(self):
+        at = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        ctx = ChannelContext(channel_id=1, used_fact_ids=["f1", "f2"], last_fact_proactive_at=at)
+        data = ctx.to_dict()
+        assert data["last_fact_proactive_at"] == at.isoformat()
+        restored = ChannelContext.from_dict(data)
+        assert restored.used_fact_ids == ["f1", "f2"]
+        assert restored.last_fact_proactive_at == at
+
+    def test_legacy_data_without_fact_fields(self):
+        ctx = ChannelContext.from_dict({"channel_id": 1, "mentioned_topic_ids": ["a"]})
+        assert ctx.used_fact_ids == []
+        assert ctx.last_fact_proactive_at is None
+        assert ctx.mentioned_topic_ids == ["a"]
+
+    def test_invalid_fact_values_ignored(self):
+        ctx = ChannelContext.from_dict(
+            {
+                "channel_id": 1,
+                "used_fact_ids": ["f1", 2, "", None, "f2"],
+                "last_fact_proactive_at": "not-a-date",
+            }
+        )
+        assert ctx.used_fact_ids == ["f1", "f2"]
+        assert ctx.last_fact_proactive_at is None
+        assert ChannelContext.from_dict({"channel_id": 1, "used_fact_ids": "f1"}).used_fact_ids == []
+
+    def test_used_fact_ids_capped_on_load(self):
+        ids = [f"f{i}" for i in range(250)]
+        ctx = ChannelContext.from_dict({"channel_id": 1, "used_fact_ids": ids})
+        assert ctx.used_fact_ids == ids[-200:]
 
     def test_mentioned_ids_not_list(self):
         assert ChannelContext.from_dict({"channel_id": 1, "mentioned_topic_ids": "a"}).mentioned_topic_ids == []

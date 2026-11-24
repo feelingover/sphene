@@ -216,6 +216,8 @@ PROACTIVE_MIN_SILENCE_MINUTES: int = _env_int("PROACTIVE_MIN_SILENCE_MINUTES", 1
 PROACTIVE_MAX_SILENCE_HOURS: int = _env_int("PROACTIVE_MAX_SILENCE_HOURS", 24)
 # 前回の自発会話からの最短間隔（全種類合算）
 PROACTIVE_COOLDOWN_HOURS: int = _env_int("PROACTIVE_COOLDOWN_HOURS", 24)
+# facts（shareable なファクト）を話題にする自発会話の最短間隔（合算のクールダウンも併せて適用する）
+PROACTIVE_FACT_COOLDOWN_HOURS: int = _env_int("PROACTIVE_FACT_COOLDOWN_HOURS", 72)
 # 静音時間帯（"開始-終了" の時。開始を含み終了を含まない。"22-6" のような日またぎも可）
 PROACTIVE_QUIET_HOURS: str = os.getenv("PROACTIVE_QUIET_HOURS", "0-8").strip()
 # 静音時間帯を判定するタイムゾーン（IANA 名）
@@ -269,8 +271,13 @@ def validate_proactive_config() -> None:
     for name, value in positives.items():
         if value <= 0:
             raise ValueError(f"{name} は1以上で指定してください: {value}")
-    if PROACTIVE_COOLDOWN_HOURS < 0:
-        raise ValueError(f"PROACTIVE_COOLDOWN_HOURS は0以上で指定してください: {PROACTIVE_COOLDOWN_HOURS}")
+    non_negatives = {
+        "PROACTIVE_COOLDOWN_HOURS": PROACTIVE_COOLDOWN_HOURS,
+        "PROACTIVE_FACT_COOLDOWN_HOURS": PROACTIVE_FACT_COOLDOWN_HOURS,
+    }
+    for name, value in non_negatives.items():
+        if value < 0:
+            raise ValueError(f"{name} は0以上で指定してください: {value}")
     if PROACTIVE_MIN_SILENCE_MINUTES > PROACTIVE_MAX_SILENCE_HOURS * 60:
         raise ValueError(
             "PROACTIVE_MIN_SILENCE_MINUTES は PROACTIVE_MAX_SILENCE_HOURS 以下にしてください"

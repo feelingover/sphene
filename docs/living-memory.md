@@ -207,6 +207,19 @@
 - `PROACTIVE_QUIET_HOURS`: 静音時間帯（`開始-終了` の時、開始を含み終了を含まない。空文字で無効） (デフォルト: `0-8`)
 - `PROACTIVE_TIMEZONE`: 静音時間帯のタイムゾーン（IANA 名） (デフォルト: `Asia/Tokyo`)
 - `PROACTIVE_FOLLOW_UP_WINDOW_HOURS`: `follow_up_after` からこの時間内なら沈黙の上限を無視して触れる (デフォルト: 24)
+- `PROACTIVE_FACT_COOLDOWN_HOURS`: facts を話題にする自発会話の最短間隔（時間）。合算の `PROACTIVE_COOLDOWN_HOURS` も併せて適用する (デフォルト: 72)
+
+### 自発会話: facts ベースの話題振り (#104 PR4)
+今この時点で触れられる未解決の話題がないときだけ、反省会で抽出した shareable な fact（`memory/fact_store.py`）を話題にする。優先順位は **未解決の話題 > facts**。
+
+- **フォールバックする条件:** 上記の送信条件（沈黙の下限・最後の発言が自分でない・合算のクールダウン・静音時間帯）をすべて満たし、かつ次のすべてを満たすとき
+  - 触れられる未解決の話題がない（話題がない・全部言及済み・`follow_up_after` がまだ来ていない・ウィンドウを過ぎた）。`follow_up_after` 待ちの話題があっても facts は止めない
+  - 沈黙が `PROACTIVE_MAX_SILENCE_HOURS` 以内（facts は沈黙の上限・下限の両方に従う。`follow_up_after` の「上限を無視」は適用しない）
+  - 前回 facts で話しかけてから `PROACTIVE_FACT_COOLDOWN_HOURS` 以上経っている（合算の1日1回も適用されるので、両方を満たす必要がある）
+- **fact の選び方:** `get_shareable_facts` の順番（`decay_factor` の降順＝新しい順）で、使用済みの `fact_id`（`used_fact_ids`）を除いた最初の1件。本文が空の fact は使わない。shareable な fact がない・全部使用済みなら送らない（LIVING_MEMORY が有効でも facts が無ければフォールバックしないだけで、エラーにはしない）。fact の取得は条件をすべて満たしたときだけ行い、取得に失敗したら送らない
+- **生成:** `generate_proactive_message(..., source="fact")`。fact の本文も LLM が生成したデータなので、`<shared_fact>` タグで囲みエスケープする。「そういえば…」のようにふと思い出した風に切り出させ、「記録によると」のような記憶の仕組みには触れさせない。`speak=false` なら送らない
+- **送信後の記録:** `ChannelContext.record_fact_proactive` で使用済みの `fact_id`（新しい順に最大200件）・`last_fact_proactive_at`・合算の `last_proactive_at`・`last_self_message_at` を記録して保存する（同じ fact は二度と使わない）。会話履歴・バッファ・judge への記録は未解決の話題と同じ
+- **永続化:** `used_fact_ids` / `last_fact_proactive_at` は local / Firestore の両方に保存する。フィールドの無い旧データは空リスト・None として読み込む
 
 ---
 
