@@ -40,8 +40,8 @@
   - `kind`: `plan`（予定・挑戦の結果待ち）/ `question`（未回答の質問）/ `pending`（迷い中・相談中）
   - プロンプトには現在時刻（JST・曜日付き）と前回の open_topics を渡し、解決済みの話題は LLM に削除させる。継続中の話題は前回の `id` を返させ、新しい話題は `id: null` → コード側で採番する（前回に無い id・重複 id も採番し直す）
   - 検証: kind が不正・text が空の要素は捨てる。`follow_up_after` はタイムゾーンなしなら JST とみなし、UTC に正規化して保存（解釈できなければ null）。最大5件。キーの欠落・型不正は前回値を維持し、空配列はクリアとして扱う
-  - 永続化: `ChannelContext.open_topics` として local / Firestore の両方に保存する。フィールドの無い旧データは空リストとして読み込む
-  - 会話プロンプトへの注入（`format_for_injection`）には含めない（使い道は自発会話の PR3 で決める）
+  - 永続化: `ChannelContext.open_topics` として local / Firestore の両方に保存する。フィールドの無い旧データは空リストとして読み込む。保存済みデータに同じ `id` が重複していたら先頭の1件だけを残す（自発会話が `id` をキーに言及済みを判定するため）
+  - 会話プロンプトへの注入（`format_for_injection`）には含めない。自発会話（下記「自発会話: スケジューラ・生成・送信」）だけが使う
 
 ### ③ 長期記憶 (Long-term Memory) - 知識と関係性
 ユーザーごとの特性や、過去の重要な「事実」を永続化。
@@ -160,7 +160,7 @@
 - `HYBRID_ALPHA`: ハイブリッドスコアのバランス係数。0=Jaccardのみ、1=ベクトルのみ (デフォルト: 0.5)
 
 ### 自発会話: チャンネルの opt-in と担当インスタンス (#104 PR2)
-自発会話はタイマーベースで作り直し中（送信処理は PR3）。PR2 では「どのチャンネルで、どのインスタンスが話しかけるか」を決める仕組みだけを入れている。
+「どのチャンネルで、どのインスタンスが話しかけるか」を決める仕組み。送信の条件・流れは次の節を参照。
 
 - **運用ルール: 1チャンネルの担当は1インスタンス。** 同じサーバーで複数のインスタンス（別キャラ）が動いていても、1つのチャンネルで自発会話をするのは担当の1インスタンスだけ。複数のインスタンスが同時に話しかける問題（旧実装）を防ぐため
 - **opt-in:** 管理者が対象チャンネルで `/<prefix> proactive enabled:True` を実行する。`ChannelConfig` の `proactive_channels`（チャンネルIDの文字列のリスト）に追加される。対象はチャンネルのみで、スレッドで実行した場合は案内だけ返して何もしない。フィールドの無い旧データは空リストとして読み込む
@@ -175,6 +175,38 @@
 環境変数:
 - `PROACTIVE_REGISTRY_COLLECTION`: 登録簿の Firestore コレクション名。同じサーバーで動く全インスタンスで同じ値にする (デフォルト: `proactive_channel_registry`)
 - `PROACTIVE_REGISTRY_FILE`: `STORAGE_TYPE=local` 時の登録簿ファイル (デフォルト: `{LOCAL_STORAGE_DIR}/proactive_channel_registry.json`)。同じホストの複数インスタンスで共有するには全インスタンスで同じパスを指定する
+
+### 自発会話: スケジューラ・生成・送信 (#104 PR3)
+沈黙が続いたチャンネルで、会話に残った未解決の話題（open_topics）に担当インスタンスがさりげなく触れる（`memory/proactive.py`）。`PROACTIVE_ENABLED=true` のときだけ動く。
+
+- **タイマーループ:** `PROACTIVE_CHECK_INTERVAL_MINUTES` ごとの `tasks.loop`（`bot/discord_bot.py`）。`on_ready` で開始し（再接続では二重に開始しない）、終了処理（SIGTERM）で止める。`on_message` には依存しない。1ギルド・1チャンネルの例外でループ全体を止めない
+- **対象チャンネル:** 全ギルドの `proactive_channels` のうち、取得できるテキストチャンネル（スレッドは除く）で、`can_bot_speak` が True、かつ登録簿の担当が自分（`INSTANCE_NAME`）のもの
+- **送信条件（すべて満たすとき）:**
+  - 最後の人間の発言からの沈黙が `PROACTIVE_MIN_SILENCE_MINUTES` 以上 `PROACTIVE_MAX_SILENCE_HOURS` 以下
+  - 最後の発言が自分ではない（`last_self_message_at < last_human_message_at`）
+  - 前回の自発会話から `PROACTIVE_COOLDOWN_HOURS` 以上経っている（全種類合算で1日1回まで）
+  - 静音時間帯 `PROACTIVE_QUIET_HOURS`（`PROACTIVE_TIMEZONE` の時刻）の外。`"0-8"` は 0:00〜7:59。`"22-6"` のような日またぎも可
+  - 最後の人間の発言時刻が不明（再起動直後で旧データしかない等）なら送らない
+- **沈黙の判定に使う時刻:** チャンネルバッファは TTL（`CHANNEL_BUFFER_TTL_MINUTES`）で消えるため使わず、`ChannelContext` に持つ
+  - `last_human_message_at`: 人間の発言を記録したとき（`increment_message_count` と同じ場所）に更新する。発言可能なチャンネルの、ボット以外の発言だけが対象
+  - `last_self_message_at`: 自分が発言したとき（メンション応答・自律応答・相槌・自発会話）に更新する
+  - これらは要約時・終了時にだけ永続化されるので、クラッシュ後は古い値が残りうる。そのため生成の前に Discord の直近の履歴（10件）を取得し、最後の発言が自分、または最後の発言が `PROACTIVE_MIN_SILENCE_MINUTES` 以内なら送らない。履歴を取得できなければ送らない
+- **話題の選び方（1回に1件）:** 言及済みの `id`（`mentioned_topic_ids`）を除く → `follow_up_after` を過ぎて `PROACTIVE_FOLLOW_UP_WINDOW_HOURS` 以内の話題を優先する（時刻の早い順。沈黙の上限は無視するが、下限・静音時間帯・クールダウンは適用する）→ なければ沈黙が上限内のときだけ `follow_up_after` を持たない話題から選ぶ。`follow_up_after` が未来の話題・ウィンドウを過ぎた話題は選ばない
+- **生成:** `ai/conversation.py` の `generate_proactive_message`。`system.txt` ＋ チャンネル要約 ＋ 直近の履歴 ＋ 対象の話題（`<open_topic>` タグで囲みエスケープ）から、構造化出力 `{speak, message}`（`response_json_schema`）で返させる。`speak` が `true` でない・メッセージが空・JSON 不正・API 失敗なら送らない
+- **送信:** 返信先がないのでチャンネルに直接 `split_message` → `channel.send`。生成中に人間が発言した、または担当が変わった（送信直前に登録簿を再確認）場合は送らない
+- **送信後の記録:** 1チャンクでも送れたら、まず `ChannelContext` に言及済みの `id`（最大50件）・`last_proactive_at`・`last_self_message_at` を記録して保存する（同じ話題に二度と触れないため）。続けて会話履歴（`channel_conversations`）に「自分から話しかけた」記録＋モデルの発言を追加し（返信されたときに文脈を持つため）、チャンネルバッファに `is_bot=True` で追加し、`judge.record_response()` を呼ぶ
+- **永続化:** 新しいフィールドは local / Firestore の両方に保存する。フィールドの無い旧データは「不明（None）」・空リストとして読み込む
+- **既知の制約:** 言及済みの判定は話題の `id` で行う。要約LLMが継続中の話題に `id: null` や前回に無い id を返すと、コード側で新しい id が採番される（`open_topics.py` の `_parse_topic_item`）。そのため同じ話題でも `mentioned_topic_ids` に一致せず、クールダウン（`PROACTIVE_COOLDOWN_HOURS`）が明けたあとに同じ話題へもう一度触れることがある。クールダウンで頻度は抑えられるので、現時点では許容している
+
+環境変数:
+- `PROACTIVE_ENABLED`: 自発会話を有効にする (デフォルト: `false`)。`LIVING_MEMORY_ENABLED=true` が必要で、起動時に設定を検証する（不正なら起動しない）
+- `PROACTIVE_CHECK_INTERVAL_MINUTES`: 判定の間隔（分） (デフォルト: 10)
+- `PROACTIVE_MIN_SILENCE_MINUTES`: 沈黙の下限（分） (デフォルト: 120)
+- `PROACTIVE_MAX_SILENCE_HOURS`: 沈黙の上限（時間） (デフォルト: 24)
+- `PROACTIVE_COOLDOWN_HOURS`: 前回の自発会話からの最短間隔（時間） (デフォルト: 24)
+- `PROACTIVE_QUIET_HOURS`: 静音時間帯（`開始-終了` の時、開始を含み終了を含まない。空文字で無効） (デフォルト: `0-8`)
+- `PROACTIVE_TIMEZONE`: 静音時間帯のタイムゾーン（IANA 名） (デフォルト: `Asia/Tokyo`)
+- `PROACTIVE_FOLLOW_UP_WINDOW_HOURS`: `follow_up_after` からこの時間内なら沈黙の上限を無視して触れる (デフォルト: 24)
 
 ---
 

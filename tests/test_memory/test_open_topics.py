@@ -178,6 +178,15 @@ class TestOpenTopicSerialization:
     def test_invalid_data_returns_none(self, data):
         assert OpenTopic.from_dict(data) is None
 
+    def test_load_open_topics_dedups_ids(self):
+        raw = [
+            {"id": "a", "text": "一件目", "kind": "plan"},
+            {"id": "a", "text": "重複", "kind": "plan"},
+            {"id": "b", "text": "二件目", "kind": "question"},
+        ]
+        topics = load_open_topics(raw)
+        assert [(t.id, t.text) for t in topics] == [("a", "一件目"), ("b", "二件目")]
+
     def test_load_open_topics_skips_invalid(self):
         raw = [_topic("a").to_dict(), {"id": "b"}, "x", _topic("c").to_dict()]
         assert [t.id for t in load_open_topics(raw)] == ["a", "c"]

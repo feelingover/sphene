@@ -99,3 +99,66 @@ class TestDiscordBotAdditional:
             patch("memory.reflection.get_reflection_engine", side_effect=Exception("error5")),
         ):
             await bot_wrapper._cleanup_task()
+
+
+class TestProactiveTask:
+    """自発会話のタイマーループ"""
+
+    def _bot(self):
+        with (
+            patch("bot.discord_bot.commands.Bot"),
+            patch("bot.discord_bot.load_system_prompt"),
+        ):
+            return SpheneBot()
+
+    def test_not_started_when_disabled(self):
+        bot_wrapper = self._bot()
+        with (
+            patch("config.PROACTIVE_ENABLED", False),
+            patch.object(bot_wrapper._proactive_task, "start") as mock_start,
+        ):
+            bot_wrapper._start_proactive_task()
+        mock_start.assert_not_called()
+
+    def test_started_with_configured_interval(self):
+        bot_wrapper = self._bot()
+        with (
+            patch("config.PROACTIVE_ENABLED", True),
+            patch("config.PROACTIVE_CHECK_INTERVAL_MINUTES", 7),
+            patch.object(bot_wrapper._proactive_task, "is_running", return_value=False),
+            patch.object(bot_wrapper._proactive_task, "change_interval") as mock_interval,
+            patch.object(bot_wrapper._proactive_task, "start") as mock_start,
+        ):
+            bot_wrapper._start_proactive_task()
+        mock_interval.assert_called_once_with(minutes=7)
+        mock_start.assert_called_once()
+
+    def test_not_restarted_on_reconnect(self):
+        bot_wrapper = self._bot()
+        with (
+            patch("config.PROACTIVE_ENABLED", True),
+            patch.object(bot_wrapper._proactive_task, "is_running", return_value=True),
+            patch.object(bot_wrapper._proactive_task, "start") as mock_start,
+        ):
+            bot_wrapper._start_proactive_task()
+        mock_start.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_loop_body_runs_check(self):
+        bot_wrapper = self._bot()
+        with patch("memory.proactive.run_proactive_check", new_callable=AsyncMock) as mock_run:
+            await bot_wrapper._proactive_task()
+        mock_run.assert_awaited_once_with(bot_wrapper.bot)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_on_shutdown(self):
+        bot_wrapper = self._bot()
+        bot_wrapper.bot.close = AsyncMock()
+        with (
+            patch.object(bot_wrapper._proactive_task, "is_running", return_value=True),
+            patch.object(bot_wrapper._proactive_task, "cancel") as mock_cancel,
+            patch("bot.discord_bot._persist_memory_on_shutdown"),
+        ):
+            await bot_wrapper._graceful_shutdown()
+        mock_cancel.assert_called_once()
+        bot_wrapper.bot.close.assert_awaited_once()

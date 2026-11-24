@@ -288,6 +288,10 @@ class TestToDictFromDict:
             "last_updated",
             "message_count_since_update",
             "open_topics",
+            "mentioned_topic_ids",
+            "last_proactive_at",
+            "last_human_message_at",
+            "last_self_message_at",
         }
         assert set(data.keys()) == expected_keys
 
@@ -486,3 +490,113 @@ class TestChannelContextStoreConcurrency:
             snapshot = store.get_all_contexts()
             store.get_context(2)
         assert list(snapshot) == [1]
+
+
+class TestProactiveFields:
+    """自発会話用のフィールド（issue #104 PR3）"""
+
+    def test_record_human_message_does_not_rewind(self):
+        ctx = ChannelContext(channel_id=1)
+        later = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        ctx.record_human_message(later)
+        ctx.record_human_message(later - timedelta(minutes=1))
+        assert ctx.last_human_message_at == later
+        assert ctx.dirty is True
+
+    def test_record_human_message_naive_treated_as_utc(self):
+        ctx = ChannelContext(channel_id=1)
+        ctx.record_human_message(datetime(2026, 11, 24, 12, 0))
+        assert ctx.last_human_message_at == datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+
+    def test_record_self_message_defaults_to_now(self):
+        ctx = ChannelContext(channel_id=1)
+        before = datetime.now(timezone.utc)
+        ctx.record_self_message()
+        assert ctx.last_self_message_at >= before
+        assert ctx.dirty is True
+
+    def test_record_proactive(self):
+        ctx = ChannelContext(channel_id=1)
+        at = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        ctx.record_proactive("a", at)
+        ctx.record_proactive("a", at)
+        assert ctx.mentioned_topic_ids == ["a"]
+        assert ctx.last_proactive_at == at
+        assert ctx.last_self_message_at == at
+
+    def test_record_proactive_caps_ids(self):
+        ctx = ChannelContext(channel_id=1)
+        at = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        for i in range(60):
+            ctx.record_proactive(f"id{i}", at)
+        assert len(ctx.mentioned_topic_ids) == 50
+        assert ctx.mentioned_topic_ids[0] == "id10"
+        assert ctx.mentioned_topic_ids[-1] == "id59"
+
+    def test_round_trip(self):
+        at = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        ctx = ChannelContext(
+            channel_id=1,
+            mentioned_topic_ids=["a", "b"],
+            last_proactive_at=at,
+            last_human_message_at=at - timedelta(hours=1),
+            last_self_message_at=at,
+        )
+        restored = ChannelContext.from_dict(ctx.to_dict())
+        assert restored.mentioned_topic_ids == ["a", "b"]
+        assert restored.last_proactive_at == at
+        assert restored.last_human_message_at == at - timedelta(hours=1)
+        assert restored.last_self_message_at == at
+
+    def test_none_values_serialize_as_none(self):
+        data = ChannelContext(channel_id=1).to_dict()
+        assert data["last_proactive_at"] is None
+        assert data["last_human_message_at"] is None
+        assert data["last_self_message_at"] is None
+        assert data["mentioned_topic_ids"] == []
+
+    def test_legacy_data_without_fields(self):
+        ctx = ChannelContext.from_dict({"channel_id": 1, "summary": "s"})
+        assert ctx.mentioned_topic_ids == []
+        assert ctx.last_proactive_at is None
+        assert ctx.last_human_message_at is None
+        assert ctx.last_self_message_at is None
+
+    def test_invalid_values_ignored(self):
+        ctx = ChannelContext.from_dict(
+            {
+                "channel_id": 1,
+                "mentioned_topic_ids": ["a", 1, "", None, "b"],
+                "last_proactive_at": "not-a-date",
+                "last_human_message_at": 12345,
+            }
+        )
+        assert ctx.mentioned_topic_ids == ["a", "b"]
+        assert ctx.last_proactive_at is None
+        assert ctx.last_human_message_at is None
+
+    def test_mentioned_ids_not_list(self):
+        assert ChannelContext.from_dict({"channel_id": 1, "mentioned_topic_ids": "a"}).mentioned_topic_ids == []
+
+    def test_firestore_datetime_values_accepted(self):
+        # Firestore は datetime を返すことがある
+        at = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        ctx = ChannelContext.from_dict({"channel_id": 1, "last_self_message_at": at})
+        assert ctx.last_self_message_at == at
+
+    @patch("memory.channel_context.local_storage_path")
+    @patch("memory.channel_context.config")
+    def test_local_store_persists_fields(self, mock_config, mock_path, tmp_path):
+        mock_config.STORAGE_TYPE = "local"
+        mock_path.side_effect = lambda name: str(tmp_path / name)
+        at = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        ctx = ChannelContext(channel_id=7)
+        ctx.record_human_message(at)
+        ctx.record_proactive("a", at + timedelta(hours=3))
+
+        assert ChannelContextStore().save_context(ctx)
+        restored = ChannelContextStore().get_context(7)
+
+        assert restored.last_human_message_at == at
+        assert restored.mentioned_topic_ids == ["a"]
+        assert restored.last_proactive_at == at + timedelta(hours=3)

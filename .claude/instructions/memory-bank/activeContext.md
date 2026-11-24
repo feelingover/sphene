@@ -6,9 +6,9 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 1368件全パス
+- テスト: 1504件全パス
 - カバレッジ: 96%
-- mypy: 120ファイル no issues
+- mypy: 124ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -27,7 +27,8 @@ applyTo: "**"
 | レイヤー | ファイル | 役割 |
 |---------|---------|------|
 | 短期 | `short_term.py` | チャンネルバッファ（deque, TTL, 反省会チェックポイント） |
-| 中期 | `channel_context.py`, `summarizer.py` | ローリング要約（mood, topic_keywords, open_topics） |
+| 中期 | `channel_context.py`, `summarizer.py` | ローリング要約（mood, topic_keywords, open_topics）＋自発会話用の時刻（最後の人間・自分の発言、前回の自発会話）と言及済みの話題 id |
+| 自発 | `proactive.py` | 自発会話（タイマー判定・未解決の話題の選定・生成・送信。`PROACTIVE_ENABLED`） |
 | 長期 | `user_profile.py` | ユーザー関係性（stranger→close, last_topic）。ギルド単位（guild_id, user_id） |
 | 長期 | `fact_store.py` | ファクトストア（Jaccard×decay, embedding対応, 忘却機能） |
 | 思考 | `reflection.py` | 反省会エンジン（LLMファクト抽出, fire-and-forget） |
@@ -43,6 +44,9 @@ applyTo: "**"
 - `COMMAND_GROUP_NAME`: スラッシュコマンドプレフィックス（デフォルト: `INSTANCE_NAME`）
 - `PROACTIVE_REGISTRY_COLLECTION`: 自発会話の担当インスタンス登録簿の Firestore コレクション（デフォルト: `proactive_channel_registry`。`FIRESTORE_NAMESPACE` を付けない共有コレクション）
 - `PROACTIVE_REGISTRY_FILE`: `STORAGE_TYPE=local` 時の登録簿ファイル（デフォルト: `{LOCAL_STORAGE_DIR}/proactive_channel_registry.json`）
+- `PROACTIVE_ENABLED`: 自発会話（デフォルト: false。`LIVING_MEMORY_ENABLED=true` が必要、起動時に検証）
+- `PROACTIVE_CHECK_INTERVAL_MINUTES` / `PROACTIVE_MIN_SILENCE_MINUTES` / `PROACTIVE_MAX_SILENCE_HOURS` / `PROACTIVE_COOLDOWN_HOURS` / `PROACTIVE_FOLLOW_UP_WINDOW_HOURS`: 判定間隔・沈黙の下限/上限・クールダウン・follow_up のウィンドウ（デフォルト: 10分 / 120分 / 24時間 / 24時間 / 24時間）
+- `PROACTIVE_QUIET_HOURS` / `PROACTIVE_TIMEZONE`: 静音時間帯（デフォルト: `0-8`、開始を含み終了を含まない、日またぎ可）とそのタイムゾーン（デフォルト: `Asia/Tokyo`）
 
 **AI制御**
 - `MAX_TOOL_CALL_ROUNDS`: ツール呼び出し最大ラウンド数（デフォルト: 15）
@@ -88,6 +92,7 @@ applyTo: "**"
 | Vertex AI Native SDK (`google-genai`) | OpenAI 互換 API の制限を回避、Gemini 最新モデル対応 |
 | 自発会話機能削除（issue #104） | マルチテナント競合・トリガー設計の根本見直し、タイマーベースへ再設計を継続検討 |
 | 自発会話の担当は1チャンネル1インスタンス（#104 PR2、`utils/proactive_registry.py`） | 複数インスタンスが同じチャンネルで同時に話しかける問題を防ぐ。登録簿はインスタンス間で共有するため Firestore では `FIRESTORE_NAMESPACE` を付けない（`get_collection_name` を通さない）。登録・削除は transaction（local は flock）。ON は claim → 設定保存で、保存失敗時は今回新規に claim した場合だけ release（元から担当だった登録は消さない）。OFF は設定削除 → release |
+| 自発会話の沈黙判定は `ChannelContext` の時刻で行う（#104 PR3） | チャンネルバッファは TTL（30分）で消えるため、2時間の沈黙を判定する時点では空になっている。`last_human_message_at` / `last_self_message_at` を永続化して再起動後も判定し、None（不明）なら送らない。永続化は要約時・終了時だけなので、送る前に Discord の直近履歴でも「最後が自分でない・沈黙している」を確認する |
 | 旧 8 フラグ → 2 グループフラグ（issue #108） | 設定の複雑さを削減、デフォルト有効化 |
 | Gen AI タイムアウトは長め（300秒） | 混雑時は長時間待つと正確な応答が返ることが多い。早期打ち切りより正確さを優先 |
 | チャンネル設定の読み込み失敗時は保存拒否＋非キャッシュ＋発言不可（fail-closed） | 一時障害でデフォルト設定が本番データを上書きするのを防ぐ。デフォルトは全体モードのため、判定に使うと限定モードのギルドで全チャンネルに発言してしまう（#130） |
@@ -127,7 +132,7 @@ applyTo: "**"
 2. **コスト最適化**: モデル選択、プロンプト最適化、キャッシング
 3. **フル async 化**: google-genai `client.aio` への移行（中期候補）
 4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索（現状は in-memory コサイン類似度）
-5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）。PR1（open_topics）・PR2（opt-in と担当インスタンスの登録簿）済み、次は PR3（スケジューラ・送信・`PROACTIVE_ENABLED`）
+5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）。PR1（open_topics）・PR2（opt-in と担当インスタンスの登録簿）・PR3（スケジューラ・生成・送信、`PROACTIVE_ENABLED`）済み、次は PR4（facts ベースの話題振り）
 6. **2026/11 全体レビュー（2回目）**: issue #130〜#141 に登録。#130・#131・#140 ほか対応済み
 7. ~~**2026/11 コードレビュー残課題**~~: 全件対応済み（PR #124〜#129）。Router プリフィルタは対応前から実装済みだった。残る検討事項: 7文字以下の短文（例: 「ガンブレイカー」）もプリフィルタで none になり、ツールが使われない
 8. **EMBEDDING_MODEL**: `text-embedding-004` の提供状況を要確認。移行すると次元が変わり既存ベクトルと非互換になるため要マイグレーション検討。高次元モデル（例: 3072次元）に移行すると1チャンネル1ドキュメントのファクトが1MiB上限に当たるため、移行時にサブコレクション（`facts/{channel_id}/items/{fact_id}`）化もあわせて検討する（現状は上限超過分を関連度の低い順に保存対象外にするガードのみ）

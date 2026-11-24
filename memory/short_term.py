@@ -34,7 +34,7 @@ class ChannelMessage:
     guild_id: int | None = None
 
 
-def _format_context_line(msg: ChannelMessage) -> str:
+def format_context_line(msg: ChannelMessage) -> str:
     """メッセージを ``名前[BOT]: 本文`` 形式の1行にする（偽装対策済み）"""
     name = safe_author_name(msg.author_name)
     role = "[BOT]" if msg.is_bot else ""
@@ -87,7 +87,7 @@ class ChannelMessageBuffer:
         messages = self.get_recent_messages(channel_id, limit)
         if not messages:
             return ""
-        return "\n".join(_format_context_line(msg) for msg in messages)
+        return "\n".join(format_context_line(msg) for msg in messages)
 
     def cleanup_expired(self) -> int:
         """TTL超過メッセージを全チャンネルから削除する"""

@@ -18,13 +18,7 @@ from discord.ext import commands  # commands をインポート
 
 import config
 
-# Sphene と load_system_prompt をインポート
-from ai.conversation import (
-    Sphene,
-    generate_short_ack,
-    load_system_prompt,
-    channel_conversations,
-)
+from ai.conversation import generate_short_ack, get_or_reset_conversation
 from log_utils.logger import logger
 from utils.background_tasks import track_background_task
 from utils.channel_config import ChannelConfigManager
@@ -256,21 +250,6 @@ async def _collect_relevant_facts(message: discord.Message) -> str:
     return "\n".join(f"- {f.content}" for f in facts)
 
 
-def _get_or_reset_conversation(channel_id: str) -> "Sphene":
-    """チャンネルの会話インスタンスを取得し、期限切れなら新規作成する
-
-    Args:
-        channel_id: チャンネルID（文字列）
-
-    Returns:
-        Sphene: 会話インスタンス
-    """
-    if channel_conversations[channel_id].is_expired():
-        logger.info(f"チャンネルID {channel_id} の会話が期限切れのためリセット")
-        channel_conversations[channel_id] = Sphene(system_setting=load_system_prompt())
-    return channel_conversations[channel_id]
-
-
 @contextlib.asynccontextmanager
 async def _typing_indicator(channel: discord.abc.Messageable) -> AsyncIterator[None]:
     """応答生成中に「入力中...」インジケーターを表示する。
@@ -336,6 +315,26 @@ async def _send_chunks(
             await message.channel.send(chunk)
 
 
+def _record_self_message(channel_id: int) -> None:
+    """自分が発言した時刻をチャンネルコンテキストに記録する（自発会話の判定用）
+
+    記録の失敗で応答処理を止めない。
+
+    Args:
+        channel_id: 発言したチャンネルのID
+    """
+    if not config.LIVING_MEMORY_ENABLED:
+        return
+    try:
+        from memory.channel_context import get_channel_context_store
+
+        get_channel_context_store().get_context(channel_id).record_self_message()
+    except Exception:
+        logger.error(
+            f"自分の発言時刻の記録に失敗しました: channel_id={channel_id}", exc_info=True
+        )
+
+
 def _post_response_update(
     message: discord.Message,
     answer: str,
@@ -352,6 +351,7 @@ def _post_response_update(
     """
     from memory.short_term import ChannelMessage, get_channel_buffer
 
+    _record_self_message(message.channel.id)
     if config.LIVING_MEMORY_ENABLED and topic_keywords:
         from memory.user_profile import get_user_profile_store
 
@@ -395,7 +395,7 @@ async def process_conversation(
     channel_context, channel_summary, topic_keywords, user_profile_str, relevant_facts_str = (
         await _collect_ai_context(message)
     )
-    api = _get_or_reset_conversation(channel_id)
+    api = get_or_reset_conversation(channel_id)
 
     # 会話履歴とコンテキストを使用して応答生成（Lock で直列化）
     async with _typing_indicator(message.channel):
@@ -670,6 +670,7 @@ async def _process_short_ack(
             f"応答={truncate_text(answer)}"
         )
         get_judge().record_response(message.channel.id)
+        _record_self_message(message.channel.id)
 
         # ボット自身の応答もバッファに追加
         if bot.user:
@@ -740,7 +741,7 @@ async def _process_autonomous_response(
         logger.debug("コンテキストが空のため自律応答をスキップ")
         return
 
-    api = _get_or_reset_conversation(channel_id_str)
+    api = get_or_reset_conversation(channel_id_str)
 
     # 会話履歴を使用した応答生成（Lock で直列化）
     async with _typing_indicator(message.channel):
@@ -1046,7 +1047,10 @@ def _record_living_memory(
     from memory.user_profile import get_user_profile_store
 
     channel_id = message.channel.id
-    get_channel_context_store().get_context(channel_id).increment_message_count()
+    context = get_channel_context_store().get_context(channel_id)
+    context.increment_message_count()
+    # 自発会話の沈黙判定用（バッファは TTL で消えるため永続化されるコンテキストに持つ）
+    context.record_human_message(message.created_at)
     get_summarizer().maybe_summarize(
         channel_id, buffer.get_recent_messages(channel_id, limit=20)
     )
