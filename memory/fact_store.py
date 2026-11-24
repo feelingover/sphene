@@ -357,7 +357,7 @@ class FactStore:
         Returns:
             書き込みの成否。書き込みを行わなかった場合は None
         """
-        with self._save_locks.get(channel_id):
+        with self._save_locks.hold(channel_id):
             with self._lock:
                 if only_if_dirty and channel_id not in self._dirty:
                     return None

@@ -5,7 +5,8 @@
 """
 
 import threading
-from collections.abc import Hashable
+from collections.abc import Hashable, Iterator
+from contextlib import contextmanager
 from typing import Generic, TypeVar
 
 K = TypeVar("K", bound=Hashable)
@@ -37,6 +38,33 @@ class KeyedLock(Generic[K]):
                 lock = threading.Lock()
                 self._locks[key] = lock
             return lock
+
+    @contextmanager
+    def hold(self, key: K) -> Iterator[None]:
+        """キーのロックを取得して保持する（取得待ちの間に破棄されたロックは取り直す）
+
+        ``get`` で受け取ったロックを待っている間に ``discard`` されると、そのロックを
+        取っても新しく払い出されたロックとは直列化されない。取得後に現在のロックと
+        同じかを確かめ、違えば取り直す。
+
+        Args:
+            key: ロック対象のキー
+
+        Yields:
+            None（ブロックの間ロックを保持する）
+        """
+        while True:
+            lock = self.get(key)
+            lock.acquire()
+            with self._guard:
+                current = self._locks.get(key)
+            if current is lock:
+                break
+            lock.release()
+        try:
+            yield
+        finally:
+            lock.release()
 
     def discard(self, key: K) -> None:
         """キーのロックを破棄する（次回の ``get`` で新しいロックが生成される）

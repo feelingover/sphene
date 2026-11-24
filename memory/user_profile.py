@@ -455,7 +455,7 @@ class UserProfileStore:
         Returns:
             書き込みの成否。書き込みを行わなかった場合は None
         """
-        with self._save_locks.get(key):
+        with self._save_locks.hold(key):
             with self._lock:
                 # 待機中に別スレッドが保存を済ませていれば何もしない
                 if key not in self._dirty:

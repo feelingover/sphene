@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import config
 from log_utils.logger import logger
-from memory.short_term import ChannelMessage, _to_utc
+from memory.short_term import ChannelMessage, to_utc
 
 
 @dataclass
@@ -241,8 +241,8 @@ def _is_high_frequency(
     if len(non_bot) < threshold:
         return False
     recent = non_bot[-threshold:]
-    first_ts = _to_utc(recent[0].timestamp)
-    last_ts = _to_utc(recent[-1].timestamp)
+    first_ts = to_utc(recent[0].timestamp)
+    last_ts = to_utc(recent[-1].timestamp)
     return (last_ts - first_ts).total_seconds() <= window_seconds
 
 
@@ -256,8 +256,8 @@ def _is_first_after_silence(
         return False
     prev = non_bot[-2]
     curr = non_bot[-1]
-    prev_ts = _to_utc(prev.timestamp)
-    curr_ts = _to_utc(curr.timestamp)
+    prev_ts = to_utc(prev.timestamp)
+    curr_ts = to_utc(curr.timestamp)
     return (curr_ts - prev_ts).total_seconds() >= silence_minutes * 60
 
 
