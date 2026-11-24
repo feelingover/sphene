@@ -146,6 +146,47 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 _NORMALIZE_STRIP_RE = re.compile(r"[\s\W_]+")
 
 
+def _score_fact(
+    fact: Fact,
+    query_set: set[str],
+    half_life: int,
+    user_ids: list[int] | None,
+    query_embedding: list[float] | None,
+) -> float:
+    """検索クエリに対するファクトのスコアを算出する
+
+    VECTOR_SEARCH_ENABLED かつ双方に Embedding がある場合はコサイン類似度と
+    Jaccard 係数のハイブリッド、それ以外は Jaccard 係数のみを使い、減衰係数を掛ける。
+
+    Args:
+        fact: 評価対象ファクト
+        query_set: 検索キーワード集合
+        half_life: 減衰の半減期（日）
+        user_ids: このユーザーIDに関連するファクトをブースト（任意）
+        query_embedding: クエリのEmbeddingベクトル（任意）
+
+    Returns:
+        スコア（減衰しきったファクトは 0）
+    """
+    decay = fact.decay_factor(half_life)
+    if decay == 0:
+        return 0.0
+
+    if config.VECTOR_SEARCH_ENABLED and query_embedding and fact.embedding:
+        cosine = max(0.0, _cosine_similarity(query_embedding, fact.embedding))
+        jaccard = _jaccard_similarity(query_set, set(fact.keywords))
+        alpha = config.HYBRID_ALPHA
+        score = (alpha * cosine + (1 - alpha) * jaccard) * decay
+    else:
+        score = _jaccard_similarity(query_set, set(fact.keywords)) * decay
+
+    # user_id ブースト
+    if user_ids and any(uid in fact.source_user_ids for uid in user_ids):
+        score *= config.FACT_USER_BOOST_FACTOR
+
+    return score
+
+
 def _normalize_fact_content(text: str) -> str:
     """重複判定用にファクト本文を正規化する（NFKC・小文字化・空白/記号除去）"""
     return _NORMALIZE_STRIP_RE.sub("", unicodedata.normalize("NFKC", text).lower())
@@ -278,29 +319,22 @@ class FactStore:
         scored: list[tuple[float, Fact]] = []
 
         for fact in facts:
-            decay = fact.decay_factor(half_life)
-            if decay == 0:
-                continue
-
-            if config.VECTOR_SEARCH_ENABLED and query_embedding and fact.embedding:
-                cosine = max(0.0, _cosine_similarity(query_embedding, fact.embedding))
-                jaccard = _jaccard_similarity(query_set, set(fact.keywords))
-                alpha = config.HYBRID_ALPHA
-                score = (alpha * cosine + (1 - alpha) * jaccard) * decay
-            else:
-                score = _jaccard_similarity(query_set, set(fact.keywords)) * decay
-
-            # user_id ブースト
-            if user_ids and any(uid in fact.source_user_ids for uid in user_ids):
-                score *= config.FACT_USER_BOOST_FACTOR
-
+            score = _score_fact(fact, query_set, half_life, user_ids, query_embedding)
             if score > 0:
                 scored.append((score, fact))
 
         scored.sort(key=lambda x: x[0], reverse=True)
         results = [f for _, f in scored[:limit]]
+        self._record_access(channel_id, results)
+        return results
 
-        # ヒットしたファクトの参照頻度を更新（ロック内でアトミックに更新）
+    def _record_access(self, channel_id: int, results: list[Fact]) -> None:
+        """ヒットしたファクトの参照頻度を更新する（ロック内でアトミックに更新）
+
+        Args:
+            channel_id: 検索対象チャンネルID
+            results: 検索でヒットしたファクト
+        """
         now = datetime.now(timezone.utc)
         with self._lock:
             for fact in results:
@@ -309,8 +343,6 @@ class FactStore:
             if results:
                 # 参照頻度は忘却スコアに使うため永続化対象にする
                 self._dirty.add(channel_id)
-
-        return results
 
     def get_shareable_facts(self, channel_id: int) -> list[Fact]:
         """shareable=True のファクトを decay_factor 降順で返す"""

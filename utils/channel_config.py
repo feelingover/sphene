@@ -51,7 +51,7 @@ class ChannelConfigManager:
 
         return _channel_config_manager_instance
 
-    def __init__(self, debug_mode: bool = False):
+    def __init__(self, debug_mode: bool = False) -> None:
         """初期化"""
         self.debug_mode = debug_mode
         self.guild_configs: dict[str, "ChannelConfig"] = {}  # {guild_id: ChannelConfig}
@@ -194,7 +194,7 @@ class ChannelConfig:
         guild_id: Any,
         storage_type: Optional[str] = None,
         debug_mode: bool = False,
-    ):
+    ) -> None:
         """
         初期化
 

@@ -26,7 +26,8 @@ class SpheneBot:
             logger.info("システムプロンプトの読み込みに成功しました")
         except Exception as e:
             logger.critical(
-                f"システムプロンプト読み込み失敗のため起動を中止します: {str(e)}"
+                f"システムプロンプト読み込み失敗のため起動を中止します: {str(e)}",
+                exc_info=True,
             )
             sys.exit(1)
 
@@ -78,98 +79,21 @@ class SpheneBot:
 
     @tasks.loop(minutes=15)
     async def _cleanup_task(self) -> None:
-        """期限切れの会話を定期的にクリーンアップする"""
-        try:
-            count = cleanup_expired_conversations()
-            if count > 0:
-                logger.info(f"バックグラウンドクリーンアップ完了: {count}件の会話を削除しました")
-        except Exception as e:
-            logger.error(f"クリーンアップタスクでエラーが発生しました: {str(e)}", exc_info=True)
+        """期限切れの会話を定期的にクリーンアップし、記憶系の定期処理を行う"""
+        _cleanup_conversations()
+        _cleanup_channel_buffer()
 
-        # チャンネルバッファのクリーンアップ
-        try:
-            from memory.short_term import get_channel_buffer
-
-            expired = get_channel_buffer().cleanup_expired()
-            if expired > 0:
-                logger.info(
-                    f"チャンネルバッファクリーンアップ: {expired}件削除"
-                )
-        except Exception as e:
-            logger.error(
-                f"チャンネルバッファクリーンアップでエラー: {str(e)}",
-                exc_info=True,
-            )
+        if not config.LIVING_MEMORY_ENABLED:
+            return
 
         # ユーザープロファイルの永続化
-        if config.LIVING_MEMORY_ENABLED:
-            try:
-                from memory.user_profile import get_user_profile_store
-
-                await asyncio.to_thread(get_user_profile_store().persist_all)
-                logger.debug("ユーザープロファイルを永続化しました")
-            except Exception as e:
-                logger.error(f"ユーザープロファイル永続化エラー: {str(e)}", exc_info=True)
-
+        await _persist_user_profiles()
         # 時間ベースの要約チェック
-        if config.LIVING_MEMORY_ENABLED:
-            try:
-                from memory.channel_context import get_channel_context_store
-                from memory.short_term import get_channel_buffer
-                from memory.summarizer import get_summarizer
-
-                store = get_channel_context_store()
-                buffer = get_channel_buffer()
-                summarizer = get_summarizer()
-                for channel_id, ctx in store.get_all_contexts().items():
-                    if ctx.should_summarize_by_time():
-                        recent = buffer.get_recent_messages(channel_id, limit=20)
-                        summarizer.maybe_summarize(channel_id, recent)
-            except Exception as e:
-                logger.error(
-                    f"時間ベース要約チェックでエラー: {str(e)}",
-                    exc_info=True,
-                )
-
+        _check_time_based_summaries()
         # 沈黙ベースの反省会チェック + ファクトストアの永続化
-        if config.LIVING_MEMORY_ENABLED:
-            try:
-                from datetime import datetime, timezone
-
-                from memory.fact_store import get_fact_store
-                from memory.reflection import get_reflection_engine
-                from memory.short_term import get_channel_buffer
-
-                buffer = get_channel_buffer()
-                engine = get_reflection_engine()
-                for channel_id in buffer.get_active_channel_ids():
-                    last_time = buffer.get_last_message_time(channel_id)
-                    if last_time is None:
-                        continue
-                    silence_minutes = (
-                        datetime.now(timezone.utc) - last_time
-                    ).total_seconds() / 60
-                    if silence_minutes >= config.REFLECTION_LULL_MINUTES:
-                        pending = buffer.get_messages_since_reflection(channel_id)
-                        engine.maybe_reflect(channel_id, pending)
-
-                await asyncio.to_thread(get_fact_store().persist_all)
-                logger.debug("ファクトストアを永続化しました")
-
-                removed = await asyncio.to_thread(
-                    get_fact_store().cleanup_low_relevance_facts
-                )
-                if removed:
-                    total = sum(removed.values())
-                    logger.info(f"ファクト忘却クリーンアップ完了: 合計{total}件削除 {removed}")
-            except Exception as e:
-                logger.error(
-                    f"反省会チェック/ファクトストア永続化でエラー: {str(e)}", exc_info=True
-                )
-
+        await _run_reflection_and_persist_facts()
         # 記憶ストアのキャッシュ上限超過分を追い出す（永続化・クリーンアップの後に行う）
-        if config.LIVING_MEMORY_ENABLED:
-            await _prune_memory_caches()
+        await _prune_memory_caches()
 
     async def _setup_hook(self) -> None:
         """discord.py の setup_hook: SIGTERM ハンドラを登録し、元のフックを実行する
@@ -235,6 +159,113 @@ class SpheneBot:
             # SIGTERM 以外の終了経路（SIGINT・例外など）向けのフォールバック
             self._persist_memory_once()
             close_http_client()
+
+
+def _cleanup_conversations() -> None:
+    """期限切れの会話履歴を削除する（失敗してもログのみで継続する）"""
+    try:
+        count = cleanup_expired_conversations()
+        if count > 0:
+            logger.info(f"バックグラウンドクリーンアップ完了: {count}件の会話を削除しました")
+    except Exception as e:
+        logger.error(f"クリーンアップタスクでエラーが発生しました: {str(e)}", exc_info=True)
+
+
+def _cleanup_channel_buffer() -> None:
+    """チャンネルバッファの期限切れメッセージを削除する"""
+    try:
+        from memory.short_term import get_channel_buffer
+
+        expired = get_channel_buffer().cleanup_expired()
+        if expired > 0:
+            logger.info(
+                f"チャンネルバッファクリーンアップ: {expired}件削除"
+            )
+    except Exception as e:
+        logger.error(
+            f"チャンネルバッファクリーンアップでエラー: {str(e)}",
+            exc_info=True,
+        )
+
+
+async def _persist_user_profiles() -> None:
+    """ユーザープロファイルを永続化する"""
+    try:
+        from memory.user_profile import get_user_profile_store
+
+        await asyncio.to_thread(get_user_profile_store().persist_all)
+        logger.debug("ユーザープロファイルを永続化しました")
+    except Exception as e:
+        logger.error(f"ユーザープロファイル永続化エラー: {str(e)}", exc_info=True)
+
+
+def _check_time_based_summaries() -> None:
+    """時間経過で要約が必要になったチャンネルの要約を起動する"""
+    try:
+        from memory.channel_context import get_channel_context_store
+        from memory.short_term import get_channel_buffer
+        from memory.summarizer import get_summarizer
+
+        store = get_channel_context_store()
+        buffer = get_channel_buffer()
+        summarizer = get_summarizer()
+        for channel_id, ctx in store.get_all_contexts().items():
+            if ctx.should_summarize_by_time():
+                recent = buffer.get_recent_messages(channel_id, limit=20)
+                summarizer.maybe_summarize(channel_id, recent)
+    except Exception as e:
+        logger.error(
+            f"時間ベース要約チェックでエラー: {str(e)}",
+            exc_info=True,
+        )
+
+
+async def _run_reflection_and_persist_facts() -> None:
+    """沈黙ベースの反省会チェックを行い、ファクトストアを永続化・忘却クリーンアップする"""
+    try:
+        from memory.fact_store import get_fact_store
+
+        _trigger_lull_reflections()
+
+        await asyncio.to_thread(get_fact_store().persist_all)
+        logger.debug("ファクトストアを永続化しました")
+
+        removed = await asyncio.to_thread(
+            get_fact_store().cleanup_low_relevance_facts
+        )
+        if removed:
+            total = sum(removed.values())
+            logger.info(f"ファクト忘却クリーンアップ完了: 合計{total}件削除 {removed}")
+    except Exception as e:
+        logger.error(
+            f"反省会チェック/ファクトストア永続化でエラー: {str(e)}", exc_info=True
+        )
+
+
+def _trigger_lull_reflections() -> None:
+    """一定時間沈黙しているチャンネルについて反省会（ファクト抽出）を起動する
+
+    Raises:
+        Exception: バッファ・反省会エンジンの取得や呼び出しで発生した例外。
+            呼び出し元の ``_run_reflection_and_persist_facts`` でログに残す。
+    """
+    from datetime import datetime, timezone
+
+    from memory.reflection import get_reflection_engine
+    from memory.short_term import get_channel_buffer
+
+    buffer = get_channel_buffer()
+    engine = get_reflection_engine()
+    for channel_id in buffer.get_active_channel_ids():
+        last_time = buffer.get_last_message_time(channel_id)
+        if last_time is None:
+            continue
+        silence_minutes = (
+            datetime.now(timezone.utc) - last_time
+        ).total_seconds() / 60
+        if silence_minutes >= config.REFLECTION_LULL_MINUTES:
+            pending = buffer.get_messages_since_reflection(channel_id)
+            engine.maybe_reflect(channel_id, pending)
 
 
 async def _prune_memory_caches() -> None:

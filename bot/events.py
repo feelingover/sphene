@@ -3,13 +3,14 @@ import contextlib
 import random
 import re
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from memory.fact_store import Fact
-    from memory.short_term import ChannelMessageBuffer
+    from memory.judge import JudgeResult
+    from memory.short_term import ChannelMessage, ChannelMessageBuffer
 
 import discord
 from discord import app_commands
@@ -174,7 +175,6 @@ async def _collect_ai_context(
     """
     from memory.short_term import get_channel_buffer
 
-    channel_context = ""
     channel_summary = ""
     topic_keywords: list[str] = []
     user_profile_str = ""
@@ -190,48 +190,70 @@ async def _collect_ai_context(
         channel_summary = ctx.format_for_injection()
         topic_keywords = ctx.topic_keywords
 
-    if config.LIVING_MEMORY_ENABLED:
-        from memory.user_profile import get_user_profile_store
-
-        guild_id = message.guild.id if message.guild else 0
-        profile = await asyncio.to_thread(
-            get_user_profile_store().get_profile,
-            guild_id,
-            message.author.id,
-            message.author.display_name,
-        )
-        user_profile_str = "\n\n".join(filter(None, [
-            profile.format_for_familiarity(),
-            profile.format_for_context(),
-            profile.format_for_persona(),
-        ]))
-
-    if config.LIVING_MEMORY_ENABLED:
-        from ai.client import generate_embedding
-        from memory.fact_store import extract_keywords, get_fact_store
-
-        keywords = extract_keywords(message.content or "")
-        query_embedding = None
-        if config.VECTOR_SEARCH_ENABLED and message.content:
-            query_embedding = await asyncio.to_thread(generate_embedding, message.content)
-        # 初回は永続化先からの読み込みが発生し、類似度計算も重いためスレッドで実行する
-        facts = await asyncio.to_thread(
-            get_fact_store().search,
-            channel_id=message.channel.id,
-            keywords=keywords,
-            user_ids=[message.author.id],
-            limit=3,
-            query_embedding=query_embedding,
-        )
-        logger.debug(
-            f"関連ファクト検索: channel_id={message.channel.id}, "
-            f"keywords={keywords}, vector={'あり' if query_embedding else 'なし'}, hits={len(facts)}"
-        )
-        if facts:
-            # 見出しは build_context_section 側で付与する
-            relevant_facts_str = "\n".join(f"- {f.content}" for f in facts)
+        user_profile_str = await _collect_user_profile_context(message)
+        relevant_facts_str = await _collect_relevant_facts(message)
 
     return channel_context, channel_summary, topic_keywords, user_profile_str, relevant_facts_str
+
+
+async def _collect_user_profile_context(message: discord.Message) -> str:
+    """発言者のユーザープロファイルをプロンプト注入用の文字列に整形する
+
+    Args:
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        str: 親密度・コンテキスト・ペルソナ情報を空行区切りで連結した文字列
+    """
+    from memory.user_profile import get_user_profile_store
+
+    guild_id = message.guild.id if message.guild else 0
+    profile = await asyncio.to_thread(
+        get_user_profile_store().get_profile,
+        guild_id,
+        message.author.id,
+        message.author.display_name,
+    )
+    return "\n\n".join(filter(None, [
+        profile.format_for_familiarity(),
+        profile.format_for_context(),
+        profile.format_for_persona(),
+    ]))
+
+
+async def _collect_relevant_facts(message: discord.Message) -> str:
+    """メッセージに関連するファクトを検索し、箇条書き文字列にする
+
+    Args:
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        str: 関連ファクトの箇条書き（ヒットなしの場合は空文字列）
+    """
+    from ai.client import generate_embedding
+    from memory.fact_store import extract_keywords, get_fact_store
+
+    keywords = extract_keywords(message.content or "")
+    query_embedding = None
+    if config.VECTOR_SEARCH_ENABLED and message.content:
+        query_embedding = await asyncio.to_thread(generate_embedding, message.content)
+    # 初回は永続化先からの読み込みが発生し、類似度計算も重いためスレッドで実行する
+    facts = await asyncio.to_thread(
+        get_fact_store().search,
+        channel_id=message.channel.id,
+        keywords=keywords,
+        user_ids=[message.author.id],
+        limit=3,
+        query_embedding=query_embedding,
+    )
+    logger.debug(
+        f"関連ファクト検索: channel_id={message.channel.id}, "
+        f"keywords={keywords}, vector={'あり' if query_embedding else 'なし'}, hits={len(facts)}"
+    )
+    if not facts:
+        return ""
+    # 見出しは build_context_section 側で付与する
+    return "\n".join(f"- {f.content}" for f in facts)
 
 
 def _get_or_reset_conversation(channel_id: str) -> "Sphene":
@@ -415,13 +437,79 @@ async def _try_autonomous_response(
         images: 添付画像URLリスト
     """
     from memory.judge import get_judge
-    from memory.short_term import ChannelMessage, get_channel_buffer
+    from memory.short_term import get_channel_buffer
 
     buffer = get_channel_buffer()
     judge = get_judge()
 
-    # バッファからChannelMessageを作成
-    channel_msg = ChannelMessage(
+    recent_messages = buffer.get_recent_messages(message.channel.id, limit=20)
+
+    # ルールベース判定
+    result = judge.evaluate(
+        message=_to_channel_message(message),
+        recent_messages=recent_messages,
+    )
+
+    # リアクション先行実行（返信とは独立。LLM生成を待たない）
+    if result.should_react:
+        _schedule_reaction(message, result.reaction_emojis)
+
+    if result.score >= config.JUDGE_LLM_THRESHOLD_HIGH:
+        # 高スコア: 即応答（react_only でリアクション済みなら _dispatch_response が重複を防ぐ）
+        await _dispatch_rule_based_response(bot, message, images, result, "高スコア")
+        return
+
+    if result.score <= config.JUDGE_LLM_THRESHOLD_LOW:
+        # 低スコア: リアクション済みの場合あり、返信はスキップ
+        return
+
+    # 中間スコア: LLM Judgeで二次判定
+    if config.VANGUARD_ENABLED:
+        context = buffer.get_context_string(message.channel.id, limit=15)
+        await _respond_by_llm_judge(bot, message, images, result, context)
+    elif result.should_respond:
+        # LLM Judge無効の場合はルールベースの判定に従う
+        await _dispatch_rule_based_response(bot, message, images, result, "ルールベース")
+
+
+async def _dispatch_rule_based_response(
+    bot: commands.Bot,
+    message: discord.Message,
+    images: list[str],
+    result: "JudgeResult",
+    label: str,
+) -> None:
+    """ルールベース判定の結果に従って自律応答を実行する
+
+    Args:
+        bot: Discordクライアント
+        message: Discordメッセージオブジェクト
+        images: 添付画像URLリスト
+        result: ルールベース判定の結果
+        label: ログに出す判定経路（"高スコア" / "ルールベース"）
+    """
+    logger.info(
+        f"自律応答決定({label}): チャンネル={message.channel.id}, "
+        f"スコア={result.score}, 理由={result.reason}"
+    )
+    await _dispatch_response(
+        bot, message, images, result.response_type,
+        already_reacted=result.should_react,
+    )
+
+
+def _to_channel_message(message: discord.Message) -> "ChannelMessage":
+    """DiscordメッセージをJudge入力用のChannelMessageに変換する
+
+    Args:
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        ChannelMessage: 判定用のメッセージ
+    """
+    from memory.short_term import ChannelMessage
+
+    return ChannelMessage(
         message_id=message.id,
         channel_id=message.channel.id,
         guild_id=message.guild.id if message.guild else None,
@@ -431,75 +519,58 @@ async def _try_autonomous_response(
         timestamp=message.created_at,
     )
 
-    recent_messages = buffer.get_recent_messages(message.channel.id, limit=20)
 
-    # ルールベース判定
-    result = judge.evaluate(
-        message=channel_msg,
-        recent_messages=recent_messages,
+def _schedule_reaction(message: discord.Message, emojis: list[str]) -> None:
+    """自律リアクションをバックグラウンドタスクとして送信する（応答生成を待たない）
+
+    Args:
+        message: リアクション対象のメッセージ
+        emojis: 付与する絵文字リスト
+    """
+    track_background_task(asyncio.create_task(
+        _send_reaction(message, emojis, record=False),
+        name="reaction_task",
+    ))
+
+
+async def _respond_by_llm_judge(
+    bot: commands.Bot,
+    message: discord.Message,
+    images: list[str],
+    result: "JudgeResult",
+    context: str,
+) -> None:
+    """中間スコアのメッセージをLLM Judgeで二次判定し、必要なら応答する
+
+    Args:
+        bot: Discordクライアント
+        message: Discordメッセージオブジェクト
+        images: 添付画像URLリスト
+        result: ルールベース判定の結果
+        context: LLM Judgeに渡す直近のチャンネル文脈
+    """
+    from memory.llm_judge import get_llm_judge
+
+    llm_judge = get_llm_judge()
+    should_respond, llm_response_type, llm_should_react, llm_emojis = (
+        await llm_judge.evaluate(
+            message_content=message.content or "",
+            recent_context=context,
+            bot_name=config.BOT_NAME,
+        )
     )
-
-    # リアクション先行実行（返信とは独立。LLM生成を待たない）
-    if result.should_react:
-        track_background_task(asyncio.create_task(
-            _send_reaction(message, result.reaction_emojis, record=False),
-            name="reaction_task",
-        ))
-
-    if result.score >= config.JUDGE_LLM_THRESHOLD_HIGH:
-        # 高スコア: 即応答（react_only でリアクション済みなら _dispatch_response が重複を防ぐ）
+    # LLMがリアクションを追加すべきと判定し、ルールベースでは未実行の場合
+    if llm_should_react and not result.should_react:
+        _schedule_reaction(message, llm_emojis)
+    if should_respond and llm_response_type != "none":
         logger.info(
-            f"自律応答決定(高スコア): チャンネル={message.channel.id}, "
-            f"スコア={result.score}, 理由={result.reason}"
+            f"自律応答決定(LLM Judge): チャンネル={message.channel.id}, "
+            f"スコア={result.score}, タイプ={llm_response_type}"
         )
+        already_reacted = result.should_react or llm_should_react
         await _dispatch_response(
-            bot, message, images, result.response_type,
-            already_reacted=result.should_react,
-        )
-        return
-
-    if result.score <= config.JUDGE_LLM_THRESHOLD_LOW:
-        # 低スコア: リアクション済みの場合あり、返信はスキップ
-        return
-
-    # 中間スコア: LLM Judgeで二次判定
-    if config.VANGUARD_ENABLED:
-        from memory.llm_judge import get_llm_judge
-
-        context = buffer.get_context_string(message.channel.id, limit=15)
-        llm_judge = get_llm_judge()
-        should_respond, llm_response_type, llm_should_react, llm_emojis = (
-            await llm_judge.evaluate(
-                message_content=message.content or "",
-                recent_context=context,
-                bot_name=config.BOT_NAME,
-            )
-        )
-        # LLMがリアクションを追加すべきと判定し、ルールベースでは未実行の場合
-        if llm_should_react and not result.should_react:
-            track_background_task(asyncio.create_task(
-                _send_reaction(message, llm_emojis, record=False),
-                name="reaction_task",
-            ))
-        if should_respond and llm_response_type != "none":
-            logger.info(
-                f"自律応答決定(LLM Judge): チャンネル={message.channel.id}, "
-                f"スコア={result.score}, タイプ={llm_response_type}"
-            )
-            already_reacted = result.should_react or llm_should_react
-            await _dispatch_response(
-                bot, message, images, llm_response_type,
-                already_reacted=already_reacted,
-            )
-    elif result.should_respond:
-        # LLM Judge無効の場合はルールベースの判定に従う
-        logger.info(
-            f"自律応答決定(ルールベース): チャンネル={message.channel.id}, "
-            f"スコア={result.score}, 理由={result.reason}"
-        )
-        await _dispatch_response(
-            bot, message, images, result.response_type,
-            already_reacted=result.should_react,
+            bot, message, images, llm_response_type,
+            already_reacted=already_reacted,
         )
 
 
@@ -589,18 +660,7 @@ async def _process_short_ack(
         )
 
     if not answer or not answer.strip():
-        if already_reacted:
-            # リアクション済みの場合はフォールバックリアクションを省略し、クールダウンのみ記録
-            logger.debug(
-                "相槌生成に失敗（リアクション済みのためフォールバックをスキップ）(channel=%s)",
-                message.channel.id,
-            )
-            get_judge().record_response(message.channel.id)
-        else:
-            logger.warning(
-                "相槌生成に失敗、リアクションにフォールバック (channel=%s)", message.channel.id
-            )
-            await _send_reaction(message)
+        await _handle_short_ack_failure(message, already_reacted)
         return
 
     try:
@@ -627,6 +687,33 @@ async def _process_short_ack(
             )
     except Exception as e:
         logger.error("相槌送信エラー: %s", e, exc_info=True)
+
+
+async def _handle_short_ack_failure(
+    message: discord.Message, already_reacted: bool
+) -> None:
+    """相槌生成に失敗したときのフォールバック処理
+
+    リアクション済みならクールダウンのみ記録し、未リアクションならリアクションを送る。
+
+    Args:
+        message: トリガーとなったDiscordメッセージ
+        already_reacted: 既にリアクション済みかどうか
+    """
+    from memory.judge import get_judge
+
+    if already_reacted:
+        # リアクション済みの場合はフォールバックリアクションを省略し、クールダウンのみ記録
+        logger.debug(
+            "相槌生成に失敗（リアクション済みのためフォールバックをスキップ）(channel=%s)",
+            message.channel.id,
+        )
+        get_judge().record_response(message.channel.id)
+    else:
+        logger.warning(
+            "相槌生成に失敗、リアクションにフォールバック (channel=%s)", message.channel.id
+        )
+        await _send_reaction(message)
 
 
 async def _process_autonomous_response(
@@ -716,11 +803,8 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
     # ボットが話しかけられた場合のみ、失敗をチャンネルに通知する
     addressed = False
     try:
-        # 自分自身やボットのメッセージは無視
-        if message.author == bot.user or message.author.bot:
-            return
-
-        if message.content is None and len(message.attachments) == 0:
+        # 自分自身やボットのメッセージ・空メッセージは無視
+        if _is_ignorable_message(bot, message):
             return
 
         # ギルドIDを取得
@@ -730,37 +814,12 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             return
 
         guild_id = message.guild.id
-
-        # ギルド固有の設定を取得（初回は永続化先から読み込むためスレッドで実行）
-        channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
-
-        # チャンネル設定に基づいて発言可能かどうかをチェック
-        channel_id = message.channel.id
-        can_speak = channel_config.can_bot_speak(channel_id)
-
-        # デバッグ用の詳細なログ出力
-        logger.debug(
-            f"チャンネル評価: ギルドID={guild_id}, チャンネルID={channel_id}, "
-            f"発言可能={can_speak}, モード={channel_config.get_mode_display_name()}"
-        )
-
-        if not can_speak:
-            logger.info(
-                f"チャンネルでの発言をスキップ: ギルドID={guild_id}, モード={channel_config.get_mode_display_name()}, "
-                f"ユーザーID={message.author.id}, チャンネルID={message.channel.id}"
-            )
+        if not await _can_speak_in_channel(message, guild_id):
             return  # 処理を中断
 
         await _record_memory(message, guild_id)
 
-        # 画像添付の検出
-        images = []
-        for attachment in message.attachments:
-            if attachment.content_type and attachment.content_type.startswith("image/"):
-                logger.debug(
-                    f"画像検出: {attachment.url}, タイプ: {attachment.content_type}"
-                )
-                images.append(attachment.url)
+        images = _extract_image_urls(message)
 
         # ボットが呼ばれたかどうかをチェック
         is_mentioned, question, is_reply = await is_bot_mentioned(bot, message)
@@ -768,18 +827,7 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
             if not await _acquire_mention_quota(message, guild_id):
                 return
             addressed = True
-            # ユーザープロファイル: ボットメンション記録
-            if config.LIVING_MEMORY_ENABLED:
-                from memory.user_profile import get_user_profile_store
-
-                get_user_profile_store().record_bot_mention(guild_id, message.author.id)
-
-            await process_conversation(message, question, is_reply, images)
-            # エンゲージメント記録（自律応答のスコアブーストに使用）
-            if config.VANGUARD_ENABLED:
-                from memory.judge import get_judge
-
-                get_judge().record_response(message.channel.id)
+            await _respond_to_mention(message, guild_id, question, is_reply, images)
             return
 
         # 自律応答: メンションされていない場合の判定
@@ -790,6 +838,100 @@ async def _handle_message(bot: commands.Bot, message: discord.Message) -> None:
         logger.error(f"メッセージ処理中にエラー発生: {str(e)}", exc_info=True)
         if addressed:
             await _notify_processing_error(message)
+
+
+def _is_ignorable_message(bot: commands.Bot, message: discord.Message) -> bool:
+    """処理対象外のメッセージ（自分・他ボットの発言、内容も添付もない）かを判定する
+
+    Args:
+        bot: Discordクライアント
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        bool: 処理対象外ならTrue
+    """
+    if message.author == bot.user or message.author.bot:
+        return True
+    return message.content is None and len(message.attachments) == 0
+
+
+async def _can_speak_in_channel(message: discord.Message, guild_id: int) -> bool:
+    """チャンネル設定に基づいてボットが発言可能かを判定する
+
+    Args:
+        message: Discordメッセージオブジェクト
+        guild_id: ギルドID
+
+    Returns:
+        bool: 発言可能ならTrue
+    """
+    # ギルド固有の設定を取得（初回は永続化先から読み込むためスレッドで実行）
+    channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
+
+    channel_id = message.channel.id
+    can_speak = channel_config.can_bot_speak(channel_id)
+
+    # デバッグ用の詳細なログ出力
+    logger.debug(
+        f"チャンネル評価: ギルドID={guild_id}, チャンネルID={channel_id}, "
+        f"発言可能={can_speak}, モード={channel_config.get_mode_display_name()}"
+    )
+
+    if not can_speak:
+        logger.info(
+            f"チャンネルでの発言をスキップ: ギルドID={guild_id}, モード={channel_config.get_mode_display_name()}, "
+            f"ユーザーID={message.author.id}, チャンネルID={message.channel.id}"
+        )
+    return can_speak
+
+
+def _extract_image_urls(message: discord.Message) -> list[str]:
+    """メッセージの添付ファイルから画像のURLを抽出する
+
+    Args:
+        message: Discordメッセージオブジェクト
+
+    Returns:
+        list[str]: 画像添付のURLリスト
+    """
+    images = []
+    for attachment in message.attachments:
+        if attachment.content_type and attachment.content_type.startswith("image/"):
+            logger.debug(
+                f"画像検出: {attachment.url}, タイプ: {attachment.content_type}"
+            )
+            images.append(attachment.url)
+    return images
+
+
+async def _respond_to_mention(
+    message: discord.Message,
+    guild_id: int,
+    question: str,
+    is_reply: bool,
+    images: list[str],
+) -> None:
+    """メンション（呼びかけ）に応答し、プロファイル・エンゲージメントを記録する
+
+    Args:
+        message: Discordメッセージオブジェクト
+        guild_id: ギルドID
+        question: メンションを除いた質問文
+        is_reply: ボットへのリプライかどうか
+        images: 添付画像URLリスト
+    """
+    # ユーザープロファイル: ボットメンション記録
+    if config.LIVING_MEMORY_ENABLED:
+        from memory.user_profile import get_user_profile_store
+
+        get_user_profile_store().record_bot_mention(guild_id, message.author.id)
+
+    await process_conversation(message, question, is_reply, images)
+    # エンゲージメント記録（自律応答のスコアブーストに使用）
+    if config.VANGUARD_ENABLED:
+        from memory.judge import get_judge
+
+        get_judge().record_response(message.channel.id)
 
 
 async def _acquire_mention_quota(message: discord.Message, guild_id: int) -> bool:
@@ -973,7 +1115,9 @@ async def _handle_on_guild_join(guild: discord.Guild) -> None:
         await asyncio.to_thread(config_manager.create_guild_config, guild.id)
         logger.info(f"ギルドID {guild.id} の設定ファイルを作成しました")
     except Exception as e:
-        logger.error(f"ギルドID {guild.id} の設定ファイル作成中にエラー: {str(e)}")
+        logger.error(
+            f"ギルドID {guild.id} の設定ファイル作成中にエラー: {str(e)}", exc_info=True
+        )
 
 
 async def _handle_on_guild_remove(guild: discord.Guild) -> None:
@@ -990,7 +1134,9 @@ async def _handle_on_guild_remove(guild: discord.Guild) -> None:
         else:
             logger.warning(f"ギルドID {guild.id} の設定ファイル削除に失敗しました")
     except Exception as e:
-        logger.error(f"ギルドID {guild.id} の設定ファイル削除中にエラー: {str(e)}")
+        logger.error(
+            f"ギルドID {guild.id} の設定ファイル削除中にエラー: {str(e)}", exc_info=True
+        )
 
 
 def get_message_type(message: discord.Message) -> str:
@@ -1090,27 +1236,8 @@ async def translate_and_reply(
         )
         return
 
-    # 言語に応じて翻訳関数とフラグを選択
-    from utils.text_utils import translate_to_english, translate_to_japanese
-
-    error_message = "翻訳中にエラーが発生しました 😢"
-    if target_language == "japanese":
-        translate_func = translate_to_japanese
-        language_flag = "🇯🇵"
-    else:  # デフォルトは英語
-        translate_func = translate_to_english
-        language_flag = "🇺🇸"
-
-    # 翻訳実行（生成中は入力中インジケーターを表示）
-    try:
-        async with _typing_indicator(message.channel):
-            translated_text = await translate_func(content)
-    except BaseException:
-        _translated_messages.pop(dedup_key, None)
-        raise
-    if not translated_text:
-        # 失敗時は再リアクションで再試行できるよう記録を外す
-        _translated_messages.pop(dedup_key, None)
+    translate_func, language_flag = _select_translator(target_language)
+    translated_text = await _run_translation(message, translate_func, dedup_key)
 
     if translated_text:
         # 適切な方法で翻訳結果を送信
@@ -1118,10 +1245,59 @@ async def translate_and_reply(
         logger.info(f"翻訳結果を送信: {truncate_text(translated_text)}")
     else:
         # エラー時も同様に対応
+        error_message = "翻訳中にエラーが発生しました 😢"
         await send_translation_response(message, error_message, language_flag)
         logger.warning(
             f"翻訳エラー: タイプ={message_type}, ユーザーID={user_id}, メッセージ: {truncate_text(content)}"
         )
+
+
+def _select_translator(
+    target_language: str,
+) -> tuple[Callable[[str], Awaitable[str | None]], str]:
+    """翻訳先言語に応じた翻訳関数と国旗絵文字を選ぶ
+
+    Args:
+        target_language: 翻訳先言語 ("japanese" 以外は英語として扱う)
+
+    Returns:
+        tuple: (翻訳関数, 国旗絵文字)
+    """
+    from utils.text_utils import translate_to_english, translate_to_japanese
+
+    if target_language == "japanese":
+        return translate_to_japanese, "🇯🇵"
+    # デフォルトは英語
+    return translate_to_english, "🇺🇸"
+
+
+async def _run_translation(
+    message: discord.Message,
+    translate_func: Callable[[str], Awaitable[str | None]],
+    dedup_key: tuple[int, str],
+) -> str | None:
+    """入力中インジケーターを表示しながら翻訳を実行する
+
+    失敗・中断時は再リアクションで再試行できるよう重複抑止の記録を外す。
+
+    Args:
+        message: 翻訳対象のDiscordメッセージ（内容は空でないこと）
+        translate_func: 翻訳関数
+        dedup_key: 重複抑止キー (メッセージID, 翻訳先言語)
+
+    Returns:
+        str | None: 翻訳結果（失敗時はNoneまたは空文字列）
+    """
+    try:
+        async with _typing_indicator(message.channel):
+            translated_text = await translate_func(message.content)
+    except BaseException:
+        _translated_messages.pop(dedup_key, None)
+        raise
+    if not translated_text:
+        # 失敗時は再リアクションで再試行できるよう記録を外す
+        _translated_messages.pop(dedup_key, None)
+    return translated_text
 
 
 # 国旗リアクション絵文字 → 翻訳先言語

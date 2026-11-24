@@ -77,6 +77,7 @@ applyTo: "**"
 - 国旗リアクション翻訳の堅牢化（2026/11, #138）: `on_raw_reaction_add` に切り替えキャッシュ外メッセージは `fetch_message` で取得、翻訳にユーザー（リアクションした人）単位・チャンネル単位のレート制限（超過時 ⏳、翻訳済みメッセージは枠を消費しない）、リアクション処理エラーのチャンネル通知をクールダウン付きにし送信失敗をログに記録
 - チャンネル設定保存の堅牢化（2026/11, #139）: 設定変更メソッドは保存失敗時に変更前の `config_data` へロールバック（`ChannelConfig._update_and_save`、インスタンス単位の RLock で変更〜保存〜ロールバックおよび再読み込みを直列化）、`atomic_write_json` は fsync・失敗時の一時ファイル削除・既存権限維持に対応（umask はプロセス全体を触らず os.open の mode で適用）、ローカル保存先を `LOCAL_STORAGE_DIR`（default: `storage`、`utils/file_utils.local_storage_path`）で指定可能に（チャンネル設定・記憶系すべて）
 - Low優先度の修正まとめ（2026/11, #140）: 環境変数ヘルパー（`_env_bool`/`_env_int`/`_env_float`）、`LOG_FORMAT` の大文字小文字無視、管理コマンド応答の ephemeral 化と確認ボタンの無効化、画像取得の https 限定・リダイレクト禁止・ログURLの署名除去・mime 整形、XIVAPI の 0 フィルタで空クエリ送信を防止・レシピパース失敗のログ、LLM Judge の真偽値・絵文字パース修正、`_extract_text` の thought 除外、記憶ストアのキャッシュ LRU/TTL 追い出し、⏳ リアクションをメッセージごとに1回に
+- CLAUDE.md規約違反の解消（2026/11, #141）: 60行超の関数を `_` プレフィックスのヘルパーへ分割（`_cleanup_task`, `_try_autonomous_response`, `_handle_message`, `translate_and_reply`, `call_genai_with_tools`, `input_message`, `search_item`, `evaluate`, `_apply_facts`, `_call_llm`, `search` ほか）、except内ログへ `exc_info=True` 付与、型ヒント補完（挙動変更なし）
 - ログ・設定の整理（2026/11）: discord.py 独自ログハンドラを無効化して二重出力を解消、サードパーティロガー（discord/httpx/google 等）の最低レベルを設定、廃止済み環境変数の起動時警告を追加
 
 ## TODO
