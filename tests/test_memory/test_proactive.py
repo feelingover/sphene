@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import discord
 import pytest
 
+from ai.conversation import ProactiveReply
 from memory import proactive
 from memory.channel_context import ChannelContext
 from memory.fact_store import Fact
@@ -318,7 +319,7 @@ def _async_history(messages):
 class _Env:
     """_maybe_speak 周りの依存をまとめてモックする"""
 
-    def __init__(self, ctx, owner="me", generated="こんにちは！"):
+    def __init__(self, ctx, owner="me", generated="こんにちは！", declined=False):
         self.ctx = ctx
         self.store = MagicMock()
         self.store.get_context.return_value = ctx
@@ -329,7 +330,7 @@ class _Env:
         self.judge = MagicMock()
         self.conversation = MagicMock()
         self.conversation.add_proactive_turn = AsyncMock()
-        self.generate = MagicMock(return_value=generated)
+        self.generate = MagicMock(return_value=ProactiveReply(message=generated, declined=declined))
         self._patches = [
             patch("memory.proactive.get_channel_context_store", return_value=self.store),
             patch("memory.proactive.get_proactive_registry", return_value=self.registry),
@@ -450,7 +451,7 @@ class TestMaybeSpeak:
 
             def generate(*args, **kwargs):
                 env.ctx.last_human_message_at = NOW
-                return "こんにちは！"
+                return ProactiveReply(message="こんにちは！")
 
             env.generate.side_effect = generate
             await proactive._maybe_speak(_bot(), channel)
@@ -721,15 +722,58 @@ class TestMaybeSpeakFact:
         assert env.ctx.last_fact_proactive_at is None
 
     @pytest.mark.asyncio
-    async def test_speak_false_does_not_record_fact(self, fact_store):
+    async def test_declined_fact_is_consumed_without_cooldown(self, fact_store):
         fact_store.get_shareable_facts.return_value = [_fact()]
         channel = _text_channel()
         channel.history = _async_history([])
-        with _Env(_ctx(topics=[]), generated=None) as env:
+        with _Env(_ctx(topics=[]), generated=None, declined=True) as env:
+            await proactive._maybe_speak(_bot(), channel)
+        channel.send.assert_not_awaited()
+        # 断られた fact は使用済みにするが、送っていないので送信時刻は更新しない
+        assert env.ctx.used_fact_ids == ["f1"]
+        assert env.ctx.last_fact_proactive_at is None
+        assert env.ctx.last_proactive_at is None
+        assert env.ctx.last_self_message_at is None
+        env.store.save_context.assert_called_once_with(env.ctx)
+        env.judge.record_response.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_declined_fact_moves_to_next_fact(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact("f1"), _fact("f2", "Bさんは釣りが趣味")]
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(topics=[]), generated=None, declined=True) as env:
+            await proactive._maybe_speak(_bot(), channel)
+            env.generate.return_value = ProactiveReply(message="そういえば釣りどう？")
+            await proactive._maybe_speak(_bot(), channel)
+
+        texts = [c.args[2] for c in env.generate.call_args_list]
+        assert texts == ["Aさんは猫を飼っている", "Bさんは釣りが趣味"]
+        channel.send.assert_awaited_once_with("そういえば釣りどう？")
+        assert env.ctx.used_fact_ids == ["f1", "f2"]
+
+    @pytest.mark.asyncio
+    async def test_generation_failure_does_not_consume_fact(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact()]
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(topics=[]), generated=None, declined=False) as env:
             await proactive._maybe_speak(_bot(), channel)
         channel.send.assert_not_awaited()
         assert env.ctx.used_fact_ids == []
         assert env.ctx.last_fact_proactive_at is None
+        env.store.save_context.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_declined_open_topic_is_not_recorded(self):
+        # 未解決の話題が断られた場合の扱いは PR3 のまま（記録しない）
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(), generated=None, declined=True) as env:
+            await proactive._maybe_speak(_bot(), channel)
+        assert env.ctx.mentioned_topic_ids == []
+        assert env.ctx.used_fact_ids == []
+        env.store.save_context.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_used_fact_never_reused(self, fact_store):

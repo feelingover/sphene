@@ -2,6 +2,7 @@ import asyncio
 import json
 import urllib.parse
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
@@ -631,33 +632,52 @@ def _build_proactive_prompt(source: str, text: str, kind: str, now_text: str) ->
     return _PROACTIVE_INSTRUCTION, block
 
 
-def _parse_proactive_response(content: str | None) -> str | None:
+@dataclass(frozen=True)
+class ProactiveReply:
+    """自発会話の生成結果
+
+    Attributes:
+        message: 送るメッセージ。送らない場合は None
+        declined: LLM が話しかけないと判断した（speak=false）なら True。
+            生成失敗・不正な形式は False（対象を消費せず、次の判定で再試行してよい）
+    """
+
+    message: str | None = None
+    declined: bool = False
+
+
+def _parse_proactive_response(content: str | None) -> ProactiveReply:
     """構造化出力 {speak, message} から送るメッセージを取り出す
 
     Args:
         content: LLM が返した JSON 文字列
 
     Returns:
-        送るメッセージ。speak=false・空のメッセージ・不正な形式なら None
+        生成結果。speak=false なら declined=True、空のメッセージ・不正な形式なら
+        message=None（declined=False）
 
     Raises:
         json.JSONDecodeError: JSON として解釈できない場合
     """
     if not content:
         logger.warning("自発会話の生成結果が空でした")
-        return None
+        return ProactiveReply()
     result = json.loads(content)
     if not isinstance(result, dict):
         logger.warning(f"自発会話の生成結果がオブジェクトではありません: {type(result)}")
-        return None
-    if result.get("speak") is not True:
+        return ProactiveReply()
+    speak = result.get("speak")
+    if speak is False:
         logger.info("自発会話: LLM が話しかけないと判断しました (speak=false)")
-        return None
+        return ProactiveReply(declined=True)
+    if speak is not True:
+        logger.warning(f"自発会話の生成結果の speak が不正です: {speak!r}")
+        return ProactiveReply()
     message = result.get("message")
     if not isinstance(message, str) or not message.strip():
         logger.warning("自発会話: speak=true だがメッセージが空でした")
-        return None
-    return message.strip()[:_MAX_PROACTIVE_MESSAGE_LENGTH]
+        return ProactiveReply()
+    return ProactiveReply(message=message.strip()[:_MAX_PROACTIVE_MESSAGE_LENGTH])
 
 
 def generate_proactive_message(
@@ -667,7 +687,7 @@ def generate_proactive_message(
     topic_kind: str,
     now_text: str,
     source: str = "open_topic",
-) -> str | None:
+) -> ProactiveReply:
     """未解決の話題・fact に触れる自発会話のメッセージを生成する（同期。to_thread で呼ぶ）
 
     Args:
@@ -679,7 +699,7 @@ def generate_proactive_message(
         source: 対象の種類（open_topic / fact）。fact なら「そういえば…」と切り出させる
 
     Returns:
-        送るメッセージ。話しかけない判断・生成失敗の場合は None
+        生成結果。話しかけない判断なら declined=True、生成失敗なら message=None
     """
     try:
         user_instruction, topic_block = _build_proactive_prompt(
@@ -706,7 +726,7 @@ def generate_proactive_message(
         return _parse_proactive_response(response.text)
     except Exception as e:
         logger.error(f"自発会話の生成に失敗しました: {e}", exc_info=True)
-        return None
+        return ProactiveReply()
 
 
 # チャンネルごとの会話インスタンスを保持する辞書

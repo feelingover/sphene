@@ -98,6 +98,17 @@ class ChannelContext:
         self.last_fact_proactive_at = _to_utc(at)
         self._mark_proactive(at)
 
+    def mark_fact_declined(self, fact_id: str) -> None:
+        """LLM が話題にしないと判断した fact を使用済みにする（送信時刻は更新しない）
+
+        断られた fact が先頭に残り続けて、同じ fact で生成を繰り返さないようにする。
+
+        Args:
+            fact_id: 断られた fact の id
+        """
+        _append_capped(self.used_fact_ids, fact_id, _MAX_USED_FACT_IDS)
+        self.dirty = True
+
     def _mark_proactive(self, at: datetime) -> None:
         """合算の最終送信時刻と自分の発言時刻を記録する"""
         self.last_proactive_at = _to_utc(at)

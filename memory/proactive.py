@@ -289,7 +289,7 @@ async def _maybe_speak(bot: commands.Bot, channel: discord.TextChannel) -> None:
     if history is None or not _history_allows(history, bot, now):
         return
     human_at = ctx.last_human_message_at
-    message = await asyncio.to_thread(
+    reply = await asyncio.to_thread(
         generate_proactive_message,
         ctx.format_for_injection(),
         _format_history(history),
@@ -298,7 +298,10 @@ async def _maybe_speak(bot: commands.Bot, channel: discord.TextChannel) -> None:
         format_now_jst(now),
         source=target.source,
     )
+    message = reply.message
     if not message:
+        if reply.declined and target.source == "fact":
+            await _record_declined_fact(ctx, target)
         return
     # 生成中に人間が発言した・担当が変わった場合は送らない
     if ctx.last_human_message_at != human_at or not await _is_owner(channel.id):
@@ -381,6 +384,20 @@ async def _send(channel: discord.TextChannel, message: str) -> bool:
     except discord.HTTPException:
         logger.error(f"自発会話の送信に失敗しました: channel_id={channel.id}", exc_info=True)
     return sent > 0
+
+
+async def _record_declined_fact(ctx: ChannelContext, target: ProactiveTarget) -> None:
+    """LLM が断った fact を使用済みにして保存する（次の判定で次の fact を選べるように）
+
+    送っていないので、クールダウン用の送信時刻は更新しない。生成失敗では呼ばない
+    （一時的な失敗で fact を消費しないため）。
+    """
+    ctx.mark_fact_declined(target.id)
+    await asyncio.to_thread(get_channel_context_store().save_context, ctx)
+    logger.info(
+        f"LLM が話題にしないと判断した fact を使用済みにしました: "
+        f"channel_id={ctx.channel_id}, fact_id={target.id}"
+    )
 
 
 async def _record_sent(

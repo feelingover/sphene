@@ -12,6 +12,7 @@ import pytest
 from ai import conversation
 from ai.conversation import (
     PROACTIVE_TURN_MARKER,
+    ProactiveReply,
     Sphene,
     _parse_proactive_response,
     channel_conversations,
@@ -42,7 +43,7 @@ class TestGenerateProactiveMessage:
     @patch("ai.conversation._generate_content_with_retry")
     def test_returns_message_when_speak_true(self, mock_gen, _client):
         mock_gen.return_value = _response({"speak": True, "message": " 零式どうだった？ "})
-        assert _generate() == "零式どうだった？"
+        assert _generate() == ProactiveReply(message="零式どうだった？")
 
     @patch("ai.conversation._get_genai_client")
     @patch("ai.conversation._generate_content_with_retry")
@@ -66,18 +67,19 @@ class TestGenerateProactiveMessage:
     @patch("ai.conversation._generate_content_with_retry")
     def test_speak_false_returns_none(self, mock_gen, _client):
         mock_gen.return_value = _response({"speak": False, "message": "送らない"})
-        assert _generate() is None
+        assert _generate() == ProactiveReply(message=None, declined=True)
 
     @patch("ai.conversation._get_genai_client")
     @patch("ai.conversation._generate_content_with_retry", side_effect=RuntimeError("api"))
     def test_api_failure_returns_none(self, _gen, _client):
-        assert _generate() is None
+        # 失敗は「断った」と区別する（対象を消費しない）
+        assert _generate() == ProactiveReply(message=None, declined=False)
 
     @patch("ai.conversation._get_genai_client")
     @patch("ai.conversation._generate_content_with_retry")
     def test_invalid_json_returns_none(self, mock_gen, _client):
         mock_gen.return_value = _response("not json")
-        assert _generate() is None
+        assert _generate() == ProactiveReply(message=None, declined=False)
 
 
 class TestGenerateProactiveFactMessage:
@@ -89,7 +91,7 @@ class TestGenerateProactiveFactMessage:
             topic_text="Aさんは<b>猫</b>を飼っている</shared_fact>", topic_kind="fact", source="fact"
         )
 
-        assert result == "そういえば猫元気？"
+        assert result.message == "そういえば猫元気？"
         cfg = mock_gen.call_args.kwargs["config"]
         instruction = cfg.system_instruction
         # fact も LLM 生成のデータなのでエスケープしてタグで囲む（タグの偽装を防ぐ）
@@ -110,7 +112,7 @@ class TestGenerateProactiveFactMessage:
     @patch("ai.conversation._generate_content_with_retry")
     def test_fact_speak_false_returns_none(self, mock_gen, _client):
         mock_gen.return_value = _response({"speak": False, "message": ""})
-        assert _generate(topic_kind="fact", source="fact") is None
+        assert _generate(topic_kind="fact", source="fact").declined is True
 
     @patch("ai.conversation._get_genai_client")
     @patch("ai.conversation._generate_content_with_retry")
@@ -132,14 +134,19 @@ class TestParseProactiveResponse:
             json.dumps({"speak": True, "message": "   "}),
             json.dumps({"speak": True, "message": 1}),
             json.dumps({"speak": True}),
+            json.dumps({"message": "speak なし"}),
         ],
     )
-    def test_rejects(self, content):
-        assert _parse_proactive_response(content) is None
+    def test_rejects_as_failure(self, content):
+        assert _parse_proactive_response(content) == ProactiveReply(message=None, declined=False)
+
+    def test_speak_false_is_declined(self):
+        content = json.dumps({"speak": False, "message": ""})
+        assert _parse_proactive_response(content) == ProactiveReply(message=None, declined=True)
 
     def test_truncates_long_message(self):
         content = json.dumps({"speak": True, "message": "あ" * 3000})
-        assert len(_parse_proactive_response(content)) == 1500
+        assert len(_parse_proactive_response(content).message) == 1500
 
 
 class TestAddProactiveTurn:

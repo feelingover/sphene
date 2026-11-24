@@ -218,6 +218,7 @@
   - 前回 facts で話しかけてから `PROACTIVE_FACT_COOLDOWN_HOURS` 以上経っている（合算の1日1回も適用されるので、両方を満たす必要がある）
 - **fact の選び方:** `get_shareable_facts` の順番（`decay_factor` の降順＝新しい順）で、使用済みの `fact_id`（`used_fact_ids`）を除いた最初の1件。本文が空の fact は使わない。shareable な fact がない・全部使用済みなら送らない（LIVING_MEMORY が有効でも facts が無ければフォールバックしないだけで、エラーにはしない）。fact の取得は条件をすべて満たしたときだけ行い、取得に失敗したら送らない
 - **生成:** `generate_proactive_message(..., source="fact")`。fact の本文も LLM が生成したデータなので、`<shared_fact>` タグで囲みエスケープする。「そういえば…」のようにふと思い出した風に切り出させ、「記録によると」のような記憶の仕組みには触れさせない。`speak=false` なら送らない
+- **断られた fact:** LLM が `speak=false` を返したら、その fact を使用済み（`used_fact_ids`）にして保存する（`mark_fact_declined`）。送っていないので `last_proactive_at`・`last_fact_proactive_at` は更新せず、次の判定で次の fact を選べる。断られた fact が先頭に残って、判定のたびに同じ fact で生成を繰り返すのを防ぐため。生成失敗（API エラー・JSON 不正など）では消費しない。`generate_proactive_message` は `ProactiveReply(message, declined)` を返し、断った（declined）と失敗を区別する。未解決の話題が断られた場合は PR3 のまま記録しない
 - **送信後の記録:** `ChannelContext.record_fact_proactive` で使用済みの `fact_id`（新しい順に最大200件）・`last_fact_proactive_at`・合算の `last_proactive_at`・`last_self_message_at` を記録して保存する（同じ fact は二度と使わない）。会話履歴・バッファ・judge への記録は未解決の話題と同じ
 - **永続化:** `used_fact_ids` / `last_fact_proactive_at` は local / Firestore の両方に保存する。フィールドの無い旧データは空リスト・None として読み込む
 

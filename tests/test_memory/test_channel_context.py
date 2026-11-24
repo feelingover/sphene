@@ -596,6 +596,16 @@ class TestProactiveFields:
         assert ctx.used_fact_ids == []
         assert ctx.last_fact_proactive_at is None
 
+    def test_mark_fact_declined(self):
+        ctx = ChannelContext(channel_id=1)
+        ctx.mark_fact_declined("f1")
+        ctx.mark_fact_declined("f1")
+        assert ctx.used_fact_ids == ["f1"]
+        assert ctx.last_fact_proactive_at is None
+        assert ctx.last_proactive_at is None
+        assert ctx.last_self_message_at is None
+        assert ctx.dirty is True
+
     def test_record_fact_proactive_caps_ids(self):
         ctx = ChannelContext(channel_id=1)
         at = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
