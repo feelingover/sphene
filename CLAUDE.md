@@ -47,6 +47,7 @@ utils/
   file_utils.py           # atomic_write_json
   keyed_lock.py           # Per-key threading locks (serialize saves per channel/profile)
   firestore_client.py     # Firestore client (singleton)
+  proactive_registry.py   # Proactive channel → owner instance registry (local/Firestore, shared)
   rate_limit.py           # Sliding-window rate limiter (mention throttling)
   text_utils.py           # Text processing, translation
 log_utils/logger.py       # Logging config

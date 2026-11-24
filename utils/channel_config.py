@@ -244,6 +244,7 @@ class ChannelConfig:
             "channels": [],
             "updated_at": datetime.now().isoformat(),
             "translation_enabled": False,  # 翻訳機能はデフォルトOFF
+            "proactive_channels": [],  # 自発会話を opt-in したチャンネルID（文字列）
         }
 
         # 初期化時のデバッグ情報
@@ -639,6 +640,80 @@ class ChannelConfig:
             f"翻訳機能を{'有効' if enabled else '無効'}に設定: ギルドID={self.guild_id}"
         )
         return self._update_and_save(_mutate)
+
+    def get_proactive_channels(self) -> list[str]:
+        """自発会話を opt-in したチャンネルIDの一覧を取得する
+
+        旧データ（フィールドなし）は空リストとして扱う。
+
+        Returns:
+            list[str]: チャンネルID（文字列）のリスト
+        """
+        return _proactive_ids(self.config_data)
+
+    def is_proactive_channel(self, channel_id: int | str) -> bool:
+        """指定のチャンネルで自発会話が opt-in されているか
+
+        Args:
+            channel_id: チャンネルID
+
+        Returns:
+            bool: opt-in されていれば True
+        """
+        return str(channel_id) in self.get_proactive_channels()
+
+    def add_proactive_channel(self, channel_id: int | str) -> bool:
+        """自発会話の opt-in チャンネルに追加する（追加済みなら何もしない）
+
+        Args:
+            channel_id: チャンネルID
+
+        Returns:
+            bool: 追加と保存が成功したかどうか
+        """
+        str_channel_id = str(channel_id)
+        if self.is_proactive_channel(str_channel_id):
+            return True
+
+        def _mutate(data: dict[str, Any]) -> None:
+            data["proactive_channels"] = [*_proactive_ids(data), str_channel_id]
+
+        return self._update_and_save(_mutate)
+
+    def remove_proactive_channel(self, channel_id: int | str) -> bool:
+        """自発会話の opt-in チャンネルから削除する（未登録なら何もしない）
+
+        Args:
+            channel_id: チャンネルID
+
+        Returns:
+            bool: 削除と保存が成功したかどうか
+        """
+        str_channel_id = str(channel_id)
+        if not self.is_proactive_channel(str_channel_id):
+            return True
+
+        def _mutate(data: dict[str, Any]) -> None:
+            data["proactive_channels"] = [
+                c for c in _proactive_ids(data) if c != str_channel_id
+            ]
+
+        return self._update_and_save(_mutate)
+
+
+def _proactive_ids(data: dict[str, Any]) -> list[str]:
+    """設定データから自発会話の opt-in チャンネルID（文字列）を取り出す
+
+    Args:
+        data: チャンネル設定のデータ
+
+    Returns:
+        list[str]: チャンネルIDのリスト。フィールドがない・型が不正なら空リスト
+    """
+    channels = data.get("proactive_channels")
+    if not isinstance(channels, list):
+        return []
+    return [str(c) for c in channels]
 
 
 def _config_file_path(guild_id: str) -> str:

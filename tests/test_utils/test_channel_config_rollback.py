@@ -27,6 +27,7 @@ _MUTATIONS: list[tuple[str, Callable[[ChannelConfig], bool]]] = [
     ("remove_channel", lambda c: c.remove_channel(100)),
     ("clear_channels", lambda c: c.clear_channels()),
     ("set_translation_enabled", lambda c: c.set_translation_enabled(True)),
+    ("add_proactive_channel", lambda c: c.add_proactive_channel(300)),
 ]
 
 

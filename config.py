@@ -143,6 +143,15 @@ FIRESTORE_COLLECTION_CHANNEL_CONTEXTS: str = get_collection_name("channel_contex
 FIRESTORE_COLLECTION_FACTS: str = get_collection_name("facts")
 FIRESTORE_COLLECTION_FACTS_ARCHIVE: str = get_collection_name("facts_archive")
 
+# === 自発会話の担当インスタンス登録簿 (issue #104) ===
+# インスタンス間で共有するため、FIRESTORE_NAMESPACE を付けない（get_collection_name を通さない）
+PROACTIVE_REGISTRY_COLLECTION: str = (
+    os.getenv("PROACTIVE_REGISTRY_COLLECTION", "").strip() or "proactive_channel_registry"
+)
+# STORAGE_TYPE=local 時の登録簿ファイル。未設定なら LOCAL_STORAGE_DIR/proactive_channel_registry.json。
+# 同じホストの複数インスタンスで担当を共有するには、全インスタンスで同じパスを指定する
+PROACTIVE_REGISTRY_FILE: str = os.getenv("PROACTIVE_REGISTRY_FILE", "").strip()
+
 # === AI会話設定 ===
 MAX_TOOL_CALL_ROUNDS: int = _env_int("MAX_TOOL_CALL_ROUNDS", 15)
 # ツール結果1件あたりの最大文字数（JSON化後）。超えた分は切り詰めて履歴の肥大化を防ぐ

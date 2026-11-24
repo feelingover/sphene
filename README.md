@@ -142,6 +142,10 @@ Bot 再起動前の古いメッセージにも翻訳できます。
 - `/<prefix> updatelist` - チャンネル設定を手動で保存します（管理者のみ）
 - `/<prefix> reload_prompt` - システムプロンプトを再読み込みします（管理者のみ）
 - `/<prefix> translation` - 翻訳機能の有効/無効を切り替えます（管理者のみ）
+- `/<prefix> proactive [enabled]` - 実行したチャンネルの自発会話を ON（`True`）/ OFF（`False`）にします。指定しないと現在の状態と担当インスタンスを表示します（管理者のみ）
+  - スレッドでは使えません（ON・OFF・状態表示のどれも行いません）
+  - 1つのチャンネルを担当できるのは1インスタンスだけです。別のインスタンスが担当中のチャンネルでは ON にできません（担当インスタンス名を表示します）
+  - 送信処理は開発中（issue #104）のため、現時点では ON にしても自発的な発言はしません
 
 ## プロジェクト構成
 
@@ -185,6 +189,7 @@ Bot 再起動前の古いメッセージにも翻訳できます。
 │   ├── __init__.py
 │   ├── channel_config.py   # チャンネル設定管理（local/Firestore）
 │   ├── firestore_client.py # Firestoreクライアント（シングルトン）
+│   ├── proactive_registry.py # 自発会話の担当インスタンス登録簿（local/Firestore）
 │   └── text_utils.py       # テキスト処理・翻訳
 ├── log_utils/              # ロギング機能
 │   ├── __init__.py
