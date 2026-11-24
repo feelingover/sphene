@@ -455,18 +455,29 @@ def _parse_action_result(result: dict) -> dict:
     }
 
 
-def search_action(
-    query: str = "",
-    class_job: str = "",
-    level_min: int | None = None,
-    level_max: int | None = None,
-) -> str:
-    """FF14のアクションをXIVAPI v2で検索する（2段階取得で説明文を補完）"""
+def _resolve_action_conditions(
+    query: str,
+    class_job: str,
+    level_min: int | None,
+    level_max: int | None,
+) -> tuple[str | None, str, int | None, int | None]:
+    """アクション検索の条件（ジョブ名・レベル範囲）を検証・正規化する
+
+    Args:
+        query: 検索キーワード
+        class_job: ジョブ名
+        level_min: 習得レベル下限
+        level_max: 習得レベル上限
+
+    Returns:
+        (エラーJSON or None, ジョブ略称, 正規化したレベル下限, 正規化したレベル上限)
+    """
     job_abbreviation = ""
     if class_job:
         resolved = _resolve_job_abbreviation(class_job)
         if resolved is None:
-            return json.dumps({"found": False, "error": f"不明なジョブ名です: {class_job}"}, ensure_ascii=False)
+            error = json.dumps({"found": False, "error": f"不明なジョブ名です: {class_job}"}, ensure_ascii=False)
+            return error, "", level_min, level_max
         job_abbreviation = resolved
 
     # _build_action_query と同じく、0や解釈できない値は「指定なし」に揃える（空クエリの送信を防ぐ）
@@ -474,8 +485,84 @@ def search_action(
     level_max = _dql_int(level_max) or None
     has_filters = bool(job_abbreviation) or level_min is not None or level_max is not None
     if not query and not has_filters:
-        return json.dumps({"found": False, "error": "検索条件を1つ以上指定してください"}, ensure_ascii=False)
+        error = json.dumps({"found": False, "error": "検索条件を1つ以上指定してください"}, ensure_ascii=False)
+        return error, job_abbreviation, level_min, level_max
+    return None, job_abbreviation, level_min, level_max
 
+
+def _filter_valid_actions(search_results: list[dict]) -> list[dict]:
+    """システム予約アクションや無効なデータを除外する
+
+    名前があり、かつIDが10以上のものを有効とみなす。
+
+    Args:
+        search_results: XIVAPIの検索結果
+
+    Returns:
+        有効なアクションの検索結果
+    """
+    filtered_results = []
+    for res in search_results:
+        f = res.get("fields", {})
+        name = f.get("Name@ja") or f.get("Name", "")
+        row_id = res.get("row_id", 0)
+        if name and row_id >= 10:
+            filtered_results.append(res)
+    return filtered_results
+
+
+def _parse_actions_with_details(filtered_results: list[dict]) -> list[dict]:
+    """上位3件は詳細を取得して説明文を補完し、残りは検索結果のままパースする
+
+    詳細取得に失敗した場合は検索結果のデータでパースする。
+
+    Args:
+        filtered_results: 有効なアクションの検索結果
+
+    Returns:
+        パース済みのアクション情報のリスト
+    """
+    actions = []
+    for res in filtered_results[:3]:
+        try:
+            row_id = res.get("row_id")
+            if row_id:
+                detail = _fetch_sheet_row("Action", row_id)
+                actions.append(_parse_action_result(detail))
+            else:
+                actions.append(_parse_action_result(res))
+        except Exception:
+            actions.append(_parse_action_result(res))
+
+    for res in filtered_results[3:]:
+        actions.append(_parse_action_result(res))
+    return actions
+
+
+def search_action(
+    query: str = "",
+    class_job: str = "",
+    level_min: int | None = None,
+    level_max: int | None = None,
+) -> str:
+    """FF14のアクションをXIVAPI v2で検索する（2段階取得で説明文を補完）
+
+    Args:
+        query: 検索キーワード
+        class_job: ジョブ名
+        level_min: 習得レベル下限
+        level_max: 習得レベル上限
+
+    Returns:
+        検索結果のJSON文字列
+    """
+    error, job_abbreviation, level_min, level_max = _resolve_action_conditions(
+        query, class_job, level_min, level_max
+    )
+    if error is not None:
+        return error
+
+    has_filters = bool(job_abbreviation) or level_min is not None or level_max is not None
     search_query = _build_action_query(query, job_abbreviation, level_min, level_max)
     limit = XIVAPI_FILTERED_LIMIT if has_filters else XIVAPI_DEFAULT_LIMIT
 
@@ -485,34 +572,11 @@ def search_action(
         if not search_results:
             return _build_not_found_response(query, "アクションが見つかりませんでした")
 
-        # システム予約アクションや無効なデータをフィルタリング
-        filtered_results = []
-        for res in search_results:
-            f = res.get("fields", {})
-            name = f.get("Name@ja") or f.get("Name", "")
-            row_id = res.get("row_id", 0)
-            # 名前があり、かつIDが10以上のものを有効とみなす
-            if name and row_id >= 10:
-                filtered_results.append(res)
-        
+        filtered_results = _filter_valid_actions(search_results)
         if not filtered_results:
             return _build_not_found_response(query, "有効なアクションが見つかりませんでした")
 
-        actions = []
-        for i, res in enumerate(filtered_results[:3]):
-            try:
-                row_id = res.get("row_id")
-                if row_id:
-                    detail = _fetch_sheet_row("Action", row_id)
-                    actions.append(_parse_action_result(detail))
-                else:
-                    actions.append(_parse_action_result(res))
-            except Exception:
-                actions.append(_parse_action_result(res))
-
-        for res in filtered_results[3:]:
-            actions.append(_parse_action_result(res))
-
+        actions = _parse_actions_with_details(filtered_results)
         return json.dumps({"found": True, "query": query, "actions": actions}, ensure_ascii=False)
 
     except Exception as e:
