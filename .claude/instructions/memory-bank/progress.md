@@ -7,7 +7,7 @@ applyTo: "**"
 
 ### 基盤
 - Discord接続・基本ボット機能（メンション、名前呼び、リプライ）
-- スラッシュコマンド（reset, mode, channels, addlist/removelist/clearlist, reload_prompt, translation）
+- スラッシュコマンド（reset, mode, channels, addlist/removelist/clearlist, reload_prompt, translation, proactive）
 - 翻訳機能（国旗リアクション: 🇺🇸 / 🇯🇵）
 - チャンネル管理（全体/限定モード、Firestore/ローカル選択）
 - Vertex AI Native SDK (`google-genai`) 移行（OpenAI互換API廃止）
@@ -39,6 +39,7 @@ applyTo: "**"
 - 記憶ストアの永続化コスト削減（2026/11）: ファクトストア・ユーザープロファイルの `persist_all` を dirty なキーのみに限定（失敗時は再試行）、Firestore ドキュメントサイズの見積もり（`estimate_document_size`）とファクト／アーカイブの1MiB上限ガード、アーカイブから embedding を除去
 - 運用系の修正（2026/11）: スラッシュコマンド・ビューのコールバックで I/O 前に `defer(thinking=True)`（3秒の応答期限切れ対策）、Dockerfile で `/app/storage` を実行ユーザー所有で作成し `VOLUME` 宣言・README にボリュームマウント手順
 - 未解決の話題（open_topics）の抽出（2026/11、#104 PR1）: 要約LLMが `plan` / `question` / `pending` の話題を最大5件抽出し `ChannelContext.open_topics` に保持（local/Firestore 永続化、旧データ互換）。前回の話題と現在時刻（JST）をプロンプトに渡し、解決済みは削除・継続中は id 維持・新規はコード側で採番。`format_for_injection` には未注入（自発会話の作り直し PR3 で利用予定）
+- 自発会話のチャンネル opt-in と担当インスタンスの登録簿（2026/11、#104 PR2）: `ChannelConfig.proactive_channels`、`/<prefix> proactive`（管理者のみ、ON/OFF/状態表示）、`utils/proactive_registry.py`（firestore は namespace なしの共有コレクション＋transaction、local は flock 付き JSON ファイル）。別インスタンスが担当中なら拒否、ON は claim → 設定保存（失敗時は新規 claim のみ巻き戻し）、OFF は設定削除 → 自分が担当なら release。送信処理は PR3
 - Gen AI API のリトライ予算の制限（2026/11、#133）: `RetryPolicy` でメイン（会話応答・要約・反省会）と軽量（Router・Judge・相槌）のリトライ設定を分離、タイムアウト系の再試行回数を別枠で制限、ツールループ全体で上限時刻を共有しリクエスト単位のタイムアウトを残り時間で絞る
 
 ### リビングメモリー (Living Memory)

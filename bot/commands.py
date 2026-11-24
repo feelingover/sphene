@@ -8,6 +8,7 @@ import config
 from ai.conversation import channel_conversations
 from log_utils.logger import logger
 from utils.channel_config import ChannelConfig, ChannelConfigManager
+from utils.proactive_registry import ClaimStatus, ProactiveRegistry, get_proactive_registry
 
 # チャンネル設定マネージャーのシングルトンインスタンスを取得
 config_manager = ChannelConfigManager.get_instance()
@@ -599,6 +600,152 @@ async def cmd_translation(interaction: discord.Interaction) -> None:
     )
 
 
+_PROACTIVE_ERROR_MESSAGE = (
+    "❌ 自発会話の設定を変更できませんでした。しばらくしてからもう一度試してください"
+)
+
+
+async def _proactive_turn_on(
+    interaction: discord.Interaction, channel_config: ChannelConfig, channel_id: int
+) -> None:
+    """登録簿に担当として登録してから、チャンネル設定で自発会話を ON にする
+
+    設定の保存に失敗したら、今回新しく登録した場合だけ登録簿から削除して巻き戻す。
+
+    Args:
+        interaction: インタラクションオブジェクト
+        channel_config: ギルドのチャンネル設定
+        channel_id: 対象のチャンネルID
+    """
+    registry = get_proactive_registry()
+    instance = config.INSTANCE_NAME
+    try:
+        result = await asyncio.to_thread(registry.claim, channel_id, instance)
+    except Exception:
+        logger.error(f"自発会話の登録簿への登録に失敗: チャンネルID={channel_id}", exc_info=True)
+        await _reply(interaction, _PROACTIVE_ERROR_MESSAGE)
+        return
+
+    if result.status is ClaimStatus.OWNED_BY_OTHER:
+        await _reply(
+            interaction,
+            f"⚠️ このチャンネルの自発会話は「{result.owner}」が担当しています。"
+            "1つのチャンネルを担当できるのは1インスタンスだけです",
+        )
+        return
+
+    if await asyncio.to_thread(channel_config.add_proactive_channel, channel_id):
+        await _reply(interaction, "✅ このチャンネルの自発会話をONにしました！")
+        return
+
+    if result.status is ClaimStatus.CLAIMED:
+        await _rollback_claim(registry, channel_id, instance)
+    await _reply(interaction, _PROACTIVE_ERROR_MESSAGE)
+
+
+async def _rollback_claim(
+    registry: ProactiveRegistry, channel_id: int, instance: str
+) -> None:
+    """設定の保存に失敗したときに、登録簿への登録を取り消す
+
+    Args:
+        registry: 登録簿
+        channel_id: 対象のチャンネルID
+        instance: 自インスタンス名
+    """
+    logger.warning(f"自発会話の設定保存に失敗したため登録簿から削除します: チャンネルID={channel_id}")
+    try:
+        await asyncio.to_thread(registry.release, channel_id, instance)
+    except Exception:
+        logger.error(
+            f"自発会話の登録簿の巻き戻しに失敗: チャンネルID={channel_id}", exc_info=True
+        )
+
+
+async def _proactive_turn_off(
+    interaction: discord.Interaction, channel_config: ChannelConfig, channel_id: int
+) -> None:
+    """チャンネル設定で自発会話を OFF にしてから、自分が担当なら登録簿から削除する
+
+    Args:
+        interaction: インタラクションオブジェクト
+        channel_config: ギルドのチャンネル設定
+        channel_id: 対象のチャンネルID
+    """
+    if not await asyncio.to_thread(channel_config.remove_proactive_channel, channel_id):
+        await _reply(interaction, _PROACTIVE_ERROR_MESSAGE)
+        return
+
+    registry = get_proactive_registry()
+    try:
+        await asyncio.to_thread(registry.release, channel_id, config.INSTANCE_NAME)
+    except Exception:
+        logger.error(f"自発会話の登録簿からの削除に失敗: チャンネルID={channel_id}", exc_info=True)
+        await _reply(
+            interaction,
+            "⚠️ 自発会話はOFFにしましたが、担当の解除に失敗しました。"
+            "もう一度OFFにしてください",
+        )
+        return
+    await _reply(interaction, "✅ このチャンネルの自発会話をOFFにしました")
+
+
+async def _proactive_show_status(
+    interaction: discord.Interaction, channel_config: ChannelConfig, channel_id: int
+) -> None:
+    """チャンネルの自発会話の状態（ON/OFF と担当インスタンス）を表示する
+
+    Args:
+        interaction: インタラクションオブジェクト
+        channel_config: ギルドのチャンネル設定
+        channel_id: 対象のチャンネルID
+    """
+    status = "ON" if channel_config.is_proactive_channel(channel_id) else "OFF"
+    try:
+        owner = await asyncio.to_thread(get_proactive_registry().get_owner, channel_id)
+    except Exception:
+        logger.error(f"自発会話の登録簿の読み込みに失敗: チャンネルID={channel_id}", exc_info=True)
+        owner_text = "（取得できませんでした）"
+    else:
+        owner_text = owner or "なし"
+    await _reply(
+        interaction,
+        f"💬 **自発会話**: 現在「{status}」です\n"
+        f"このチャンネルの担当: {owner_text}\n\n"
+        "👉 `enabled` に True / False を指定すると切り替えられます",
+    )
+
+
+async def cmd_proactive(
+    interaction: discord.Interaction, enabled: bool | None = None
+) -> None:
+    """実行したチャンネルの自発会話を ON/OFF するコマンドを処理する
+
+    Args:
+        interaction: インタラクションオブジェクト
+        enabled: True で ON、False で OFF、None なら現在の状態を表示する
+    """
+    if not interaction.guild:
+        await _reply(interaction, "❌ このコマンドはサーバー内でのみ使用できます")
+        return
+    channel = interaction.channel
+    if channel is None:
+        await _reply(interaction, "❌ チャンネル情報を取得できませんでした")
+        return
+
+    await _defer(interaction)
+    channel_config = await _get_config_or_notify(interaction, interaction.guild.id)
+    if channel_config is None:
+        return
+
+    if enabled is None:
+        await _proactive_show_status(interaction, channel_config, channel.id)
+    elif enabled:
+        await _proactive_turn_on(interaction, channel_config, channel.id)
+    else:
+        await _proactive_turn_off(interaction, channel_config, channel.id)
+
+
 async def handle_command_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
 ) -> None:
@@ -724,4 +871,24 @@ def setup_commands(bot: discord.Client) -> app_commands.Group:
     async def translation_command(interaction: discord.Interaction) -> None:
         await cmd_translation(interaction)
 
+    _register_proactive_command(command_group)
+
     return command_group
+
+
+def _register_proactive_command(command_group: app_commands.Group) -> None:
+    """自発会話の ON/OFF コマンドを登録する
+
+    Args:
+        command_group: 登録先のコマンドグループ
+    """
+    @command_group.command(
+        name="proactive",
+        description="このチャンネルの自発会話をON/OFFします（指定なしで現在の状態を表示）",
+    )
+    @app_commands.describe(enabled="True でON、False でOFF")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def proactive_command(
+        interaction: discord.Interaction, enabled: bool | None = None
+    ) -> None:
+        await cmd_proactive(interaction, enabled)
