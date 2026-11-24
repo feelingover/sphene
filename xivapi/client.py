@@ -7,6 +7,7 @@ XIVAPI v2 APIを使用してFF14のゲームデータ（アイテム、アクシ
 import json
 import re
 import threading
+from typing import Any
 
 import httpx
 
@@ -270,7 +271,7 @@ def _resolve_item_conditions(
     return None, job_abbreviation, ilvl_min, ilvl_max
 
 
-def _parse_item_results(search_results: list[dict]) -> list[dict]:
+def _parse_item_results(search_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """検索結果から有効なアイテムだけをパースする
 
     システム予約アイテム (IDが10未満) や名前の無いデータは除外し、
@@ -299,7 +300,7 @@ def _parse_item_results(search_results: list[dict]) -> list[dict]:
 
 def _build_item_filters(
     job_abbreviation: str, ilvl_min: int | None, ilvl_max: int | None
-) -> dict:
+) -> dict[str, Any]:
     """応答に含める適用済みフィルタ情報を構築する
 
     Args:
@@ -310,7 +311,7 @@ def _build_item_filters(
     Returns:
         指定されたフィルタだけを含む辞書
     """
-    filters: dict = {}
+    filters: dict[str, Any] = {}
     if job_abbreviation:
         filters["class_job"] = job_abbreviation
     if ilvl_min is not None:
@@ -321,7 +322,7 @@ def _build_item_filters(
 
 
 def _build_item_response(
-    query: str, items: list[dict], filters: dict | None
+    query: str, items: list[dict[str, Any]], filters: dict[str, Any] | None
 ) -> str:
     """アイテム検索の成功応答JSONを構築する
 
@@ -333,7 +334,7 @@ def _build_item_response(
     Returns:
         応答のJSON文字列
     """
-    response_data: dict = {"found": True, "query": query, "items": items}
+    response_data: dict[str, Any] = {"found": True, "query": query, "items": items}
     if filters is not None:
         response_data["filters"] = filters
     return json.dumps(response_data, ensure_ascii=False)
@@ -490,7 +491,7 @@ def _resolve_action_conditions(
     return None, job_abbreviation, level_min, level_max
 
 
-def _filter_valid_actions(search_results: list[dict]) -> list[dict]:
+def _filter_valid_actions(search_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """システム予約アクションや無効なデータを除外する
 
     名前があり、かつIDが10以上のものを有効とみなす。
@@ -511,7 +512,7 @@ def _filter_valid_actions(search_results: list[dict]) -> list[dict]:
     return filtered_results
 
 
-def _parse_actions_with_details(filtered_results: list[dict]) -> list[dict]:
+def _parse_actions_with_details(filtered_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """上位3件は詳細を取得して説明文を補完し、残りは検索結果のままパースする
 
     詳細取得に失敗した場合は検索結果のデータでパースする。

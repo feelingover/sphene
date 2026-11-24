@@ -4,6 +4,7 @@ import asyncio
 import json
 import threading
 import uuid
+from typing import Any
 from datetime import datetime, timezone
 from html import escape
 
@@ -383,7 +384,7 @@ class ReflectionEngine:
             get_channel_buffer().mark_reflected(channel_id, until=until)
         return True
 
-    async def _save_facts(self, channel_id: int, parsed: list[dict]) -> int:
+    async def _save_facts(self, channel_id: int, parsed: list[dict[str, Any]]) -> int:
         """検証済みファクトに埋め込みを付けて FactStore に保存する
 
         1件以上保存できた場合はチャンネル単位で永続化する。

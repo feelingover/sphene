@@ -1237,7 +1237,7 @@ async def translate_and_reply(
         return
 
     translate_func, language_flag = _select_translator(target_language)
-    translated_text = await _run_translation(message, translate_func, dedup_key)
+    translated_text = await _run_translation(message, content, translate_func, dedup_key)
 
     if translated_text:
         # 適切な方法で翻訳結果を送信
@@ -1273,6 +1273,7 @@ def _select_translator(
 
 async def _run_translation(
     message: discord.Message,
+    content: str,
     translate_func: Callable[[str], Awaitable[str | None]],
     dedup_key: tuple[int, str],
 ) -> str | None:
@@ -1281,7 +1282,8 @@ async def _run_translation(
     失敗・中断時は再リアクションで再試行できるよう重複抑止の記録を外す。
 
     Args:
-        message: 翻訳対象のDiscordメッセージ（内容は空でないこと）
+        message: 翻訳対象のDiscordメッセージ（入力中インジケーターの表示先）
+        content: 翻訳するテキスト
         translate_func: 翻訳関数
         dedup_key: 重複抑止キー (メッセージID, 翻訳先言語)
 
@@ -1290,7 +1292,7 @@ async def _run_translation(
     """
     try:
         async with _typing_indicator(message.channel):
-            translated_text = await translate_func(message.content)
+            translated_text = await translate_func(content)
     except BaseException:
         _translated_messages.pop(dedup_key, None)
         raise

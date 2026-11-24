@@ -165,8 +165,7 @@ def _request_judgement(client: Any, model_name: str, prompt: str) -> str | None:
         ),
         policy=light_retry_policy(),
     )
-    content: str | None = response.text
-    return content
+    return response.text
 
 
 def _parse_judge_result(content: str) -> tuple[bool, str, bool, list[str]]:
