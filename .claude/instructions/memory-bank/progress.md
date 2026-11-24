@@ -41,6 +41,7 @@ applyTo: "**"
 - 未解決の話題（open_topics）の抽出（2026/11、#104 PR1）: 要約LLMが `plan` / `question` / `pending` の話題を最大5件抽出し `ChannelContext.open_topics` に保持（local/Firestore 永続化、旧データ互換）。前回の話題と現在時刻（JST）をプロンプトに渡し、解決済みは削除・継続中は id 維持・新規はコード側で採番。`format_for_injection` には未注入（自発会話の作り直し PR3 で利用予定）
 - 自発会話のチャンネル opt-in と担当インスタンスの登録簿（2026/11、#104 PR2）: `ChannelConfig.proactive_channels`、`/<prefix> proactive`（管理者のみ、ON/OFF/状態表示）、`utils/proactive_registry.py`（firestore は namespace なしの共有コレクション＋transaction、local は flock 付き JSON ファイル）。別インスタンスが担当中なら拒否、ON は claim → 設定保存（失敗時は新規 claim のみ巻き戻し）、OFF は設定削除 → 自分が担当なら release。送信処理は PR3
 - 自発会話のスケジューラ・生成・送信（2026/11、#104 PR3）: `memory/proactive.py`（`PROACTIVE_CHECK_INTERVAL_MINUTES` ごとの `tasks.loop`、`PROACTIVE_ENABLED` default false・`LIVING_MEMORY_ENABLED` 依存を起動時に検証）。沈黙の判定はバッファ（TTL 30分）ではなく `ChannelContext.last_human_message_at` / `last_self_message_at` で行い、送る前に Discord の直近履歴でも確認。沈黙の上下限・最後の発言が自分・クールダウン・静音時間帯（`PROACTIVE_TIMEZONE`）を判定し、`follow_up_after` のウィンドウ内の話題は沈黙の上限を無視。生成は `generate_proactive_message`（`{speak, message}` 構造化出力）。送信後に言及済み id・`last_proactive_at` を保存し、会話履歴・バッファ・judge に記録。`tzdata` を依存に追加（alpine イメージ用）。facts ベースの話題振りは PR4
+- 自発会話の facts ベースの話題振り（2026/11、#104 PR4）: 今触れられる未解決の話題がないときだけ shareable な fact（`get_shareable_facts` の decay 降順、未使用の先頭1件）を話題にする。`PROACTIVE_FACT_COOLDOWN_HOURS`（default 72）と合算クールダウンの両方を適用、沈黙の上下限に従う。`plan_proactive` は `ProactiveTarget`（source / id / text / kind）を返す。`ChannelContext.used_fact_ids`（最大200件）・`last_fact_proactive_at` を追加（旧データ互換）。生成は `source="fact"` で `<shared_fact>` タグ＋エスケープ、「そういえば…」と切り出させ記憶の仕組みには触れさせない。LLM が断った話題・fact は言及済み・使用済みにする（`ProactiveReply.declined` で生成失敗と区別、送信時刻は更新しない）
 - Gen AI API のリトライ予算の制限（2026/11、#133）: `RetryPolicy` でメイン（会話応答・要約・反省会）と軽量（Router・Judge・相槌）のリトライ設定を分離、タイムアウト系の再試行回数を別枠で制限、ツールループ全体で上限時刻を共有しリクエスト単位のタイムアウトを残り時間で絞る
 
 ### リビングメモリー (Living Memory)
@@ -93,5 +94,4 @@ applyTo: "**"
 - 使用統計・モニタリング
 - CI/CD強化
 - フルasync化（google-genai `client.aio` 移行）
-- 自発会話機能 タイマーベースへの再設計（issue #104）
 - Firestore Native Vector Search（`find_nearest()`）

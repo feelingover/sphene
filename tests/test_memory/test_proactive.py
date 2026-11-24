@@ -10,14 +10,19 @@ from zoneinfo import ZoneInfo
 import discord
 import pytest
 
+from ai.conversation import ProactiveReply
 from memory import proactive
 from memory.channel_context import ChannelContext
+from memory.fact_store import Fact
 from memory.open_topics import OpenTopic
 from memory.proactive import (
+    ProactiveTarget,
     _history_allows,
     is_quiet_time,
+    load_shareable_facts,
     plan_proactive,
     run_proactive_check,
+    select_fact,
     select_topic,
 )
 
@@ -33,6 +38,7 @@ def proactive_config():
         "PROACTIVE_MIN_SILENCE_MINUTES": 120,
         "PROACTIVE_MAX_SILENCE_HOURS": 24,
         "PROACTIVE_COOLDOWN_HOURS": 24,
+        "PROACTIVE_FACT_COOLDOWN_HOURS": 72,
         "PROACTIVE_QUIET_HOURS": "0-8",
         "PROACTIVE_TIMEZONE": "Asia/Tokyo",
         "PROACTIVE_FOLLOW_UP_WINDOW_HOURS": 24,
@@ -44,6 +50,27 @@ def proactive_config():
     yield
     for p in patches:
         p.stop()
+
+
+@pytest.fixture(autouse=True)
+def fact_store():
+    """実際の FactStore に触れないよう、shareable な fact なしで固定する"""
+    store = MagicMock()
+    store.get_shareable_facts.return_value = []
+    with patch("memory.proactive.get_fact_store", return_value=store):
+        yield store
+
+
+def _fact(fact_id="f1", content="Aさんは猫を飼っている"):
+    return Fact(
+        fact_id=fact_id,
+        channel_id=100,
+        content=content,
+        keywords=[],
+        source_user_ids=[1],
+        created_at=NOW - timedelta(days=1),
+        shareable=True,
+    )
 
 
 def _topic(topic_id="t1", follow_up_after=None, kind="plan", text="週末に零式に挑戦する"):
@@ -292,7 +319,7 @@ def _async_history(messages):
 class _Env:
     """_maybe_speak 周りの依存をまとめてモックする"""
 
-    def __init__(self, ctx, owner="me", generated="こんにちは！"):
+    def __init__(self, ctx, owner="me", generated="こんにちは！", declined=False):
         self.ctx = ctx
         self.store = MagicMock()
         self.store.get_context.return_value = ctx
@@ -303,7 +330,7 @@ class _Env:
         self.judge = MagicMock()
         self.conversation = MagicMock()
         self.conversation.add_proactive_turn = AsyncMock()
-        self.generate = MagicMock(return_value=generated)
+        self.generate = MagicMock(return_value=ProactiveReply(message=generated, declined=declined))
         self._patches = [
             patch("memory.proactive.get_channel_context_store", return_value=self.store),
             patch("memory.proactive.get_proactive_registry", return_value=self.registry),
@@ -422,9 +449,9 @@ class TestMaybeSpeak:
         channel.history = _async_history([])
         with _Env(_ctx()) as env:
 
-            def generate(*args):
+            def generate(*args, **kwargs):
                 env.ctx.last_human_message_at = NOW
-                return "こんにちは！"
+                return ProactiveReply(message="こんにちは！")
 
             env.generate.side_effect = generate
             await proactive._maybe_speak(_bot(), channel)
@@ -551,3 +578,247 @@ class TestRunProactiveCheck:
             "memory.proactive._collect_target_channels", AsyncMock(side_effect=RuntimeError())
         ):
             await run_proactive_check(MagicMock())
+
+
+def _facts_loader(*facts):
+    return MagicMock(return_value=list(facts))
+
+
+class TestFactFallback:
+    """未解決の話題がないときの facts へのフォールバック（未解決の話題 > facts）"""
+
+    def test_open_topic_preferred_and_facts_not_loaded(self):
+        loader = _facts_loader(_fact())
+        target = plan_proactive(_ctx(), NOW, loader)
+        assert (target.source, target.id) == ("open_topic", "t1")
+        loader.assert_not_called()
+
+    def test_no_topics_falls_back_to_fact(self):
+        loader = _facts_loader(_fact())
+        target = plan_proactive(_ctx(topics=[]), NOW, loader)
+        assert target == ProactiveTarget(
+            source="fact", id="f1", text="Aさんは猫を飼っている", kind="fact"
+        )
+        loader.assert_called_once_with(100)
+
+    def test_all_topics_mentioned_falls_back_to_fact(self):
+        ctx = _ctx(mentioned_topic_ids=["t1"])
+        assert plan_proactive(ctx, NOW, _facts_loader(_fact())).source == "fact"
+
+    def test_follow_up_not_yet_due_falls_back_to_fact(self):
+        ctx = _ctx(topics=[_topic(follow_up_after=NOW + timedelta(hours=1))])
+        assert plan_proactive(ctx, NOW, _facts_loader(_fact())).source == "fact"
+
+    def test_follow_up_window_passed_falls_back_to_fact(self):
+        ctx = _ctx(topics=[_topic(follow_up_after=NOW - timedelta(hours=25))])
+        assert plan_proactive(ctx, NOW, _facts_loader(_fact())).source == "fact"
+
+    def test_fact_respects_max_silence(self):
+        loader = _facts_loader(_fact())
+        ctx = _ctx(silence=timedelta(hours=24, minutes=1), topics=[])
+        assert plan_proactive(ctx, NOW, loader) is None
+        loader.assert_not_called()
+
+    def test_fact_respects_min_silence(self):
+        ctx = _ctx(silence=timedelta(minutes=119), topics=[])
+        assert plan_proactive(ctx, NOW, _facts_loader(_fact())) is None
+
+    def test_fact_respects_quiet_hours(self):
+        quiet_now = datetime(2026, 11, 24, 3, 0, tzinfo=JST)
+        ctx = _ctx(topics=[])
+        ctx.last_human_message_at = quiet_now - timedelta(hours=3)
+        assert plan_proactive(ctx, quiet_now, _facts_loader(_fact())) is None
+
+    def test_fact_cooldown_active_skips_without_loading(self):
+        loader = _facts_loader(_fact())
+        ctx = _ctx(topics=[], last_fact_proactive_at=NOW - timedelta(hours=71, minutes=59))
+        assert plan_proactive(ctx, NOW, loader) is None
+        loader.assert_not_called()
+
+    def test_fact_cooldown_boundary_sends(self):
+        ctx = _ctx(topics=[], last_fact_proactive_at=NOW - timedelta(hours=72))
+        assert plan_proactive(ctx, NOW, _facts_loader(_fact())).source == "fact"
+
+    def test_combined_cooldown_also_applies_to_facts(self):
+        # facts のクールダウンは明けていても、合算の1日1回が優先される
+        ctx = _ctx(
+            topics=[],
+            last_proactive_at=NOW - timedelta(hours=23),
+            last_fact_proactive_at=NOW - timedelta(days=5),
+        )
+        assert plan_proactive(ctx, NOW, _facts_loader(_fact())) is None
+
+    def test_fact_cooldown_does_not_block_open_topics(self):
+        ctx = _ctx(last_fact_proactive_at=NOW - timedelta(hours=30))
+        assert plan_proactive(ctx, NOW, _facts_loader(_fact())).source == "open_topic"
+
+    def test_no_shareable_facts_skips(self):
+        assert plan_proactive(_ctx(topics=[]), NOW, _facts_loader()) is None
+
+    def test_all_facts_used_skips(self):
+        ctx = _ctx(topics=[], used_fact_ids=["f1", "f2"])
+        loader = _facts_loader(_fact("f1"), _fact("f2"))
+        assert plan_proactive(ctx, NOW, loader) is None
+
+    def test_default_loader_uses_fact_store(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact()]
+        assert plan_proactive(_ctx(topics=[]), NOW).id == "f1"
+        fact_store.get_shareable_facts.assert_called_once_with(100)
+
+
+class TestSelectFact:
+    """話題にする fact の選び方"""
+
+    def test_first_in_given_order(self):
+        assert select_fact(_ctx(), [_fact("f2"), _fact("f1")]).fact_id == "f2"
+
+    def test_excludes_used(self):
+        ctx = _ctx(used_fact_ids=["f1"])
+        assert select_fact(ctx, [_fact("f1"), _fact("f2")]).fact_id == "f2"
+
+    def test_skips_blank_content(self):
+        assert select_fact(_ctx(), [_fact("f1", " "), _fact("f2")]).fact_id == "f2"
+
+    def test_empty_returns_none(self):
+        assert select_fact(_ctx(), []) is None
+
+
+class TestLoadShareableFacts:
+    def test_store_failure_returns_empty(self, fact_store):
+        fact_store.get_shareable_facts.side_effect = RuntimeError("io")
+        assert load_shareable_facts(100) == []
+
+
+class TestMaybeSpeakFact:
+    """facts での生成・送信・記録"""
+
+    @pytest.mark.asyncio
+    async def test_sends_and_records_fact(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact()]
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(topics=[])) as env:
+            await proactive._maybe_speak(_bot(), channel)
+
+        channel.send.assert_awaited_once_with("こんにちは！")
+        args, kwargs = env.generate.call_args
+        assert args[2:4] == ("Aさんは猫を飼っている", "fact")
+        assert kwargs == {"source": "fact"}
+        assert env.ctx.used_fact_ids == ["f1"]
+        assert env.ctx.mentioned_topic_ids == []
+        assert env.ctx.last_fact_proactive_at is not None
+        assert env.ctx.last_proactive_at == env.ctx.last_fact_proactive_at
+        env.store.save_context.assert_called_once_with(env.ctx)
+        env.judge.record_response.assert_called_once_with(100)
+
+    @pytest.mark.asyncio
+    async def test_open_topic_send_does_not_touch_fact_state(self):
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx()) as env:
+            await proactive._maybe_speak(_bot(), channel)
+        assert env.generate.call_args.kwargs == {"source": "open_topic"}
+        assert env.ctx.used_fact_ids == []
+        assert env.ctx.last_fact_proactive_at is None
+
+    @pytest.mark.asyncio
+    async def test_declined_fact_is_consumed_without_cooldown(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact()]
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(topics=[]), generated=None, declined=True) as env:
+            await proactive._maybe_speak(_bot(), channel)
+        channel.send.assert_not_awaited()
+        # 断られた fact は使用済みにするが、送っていないので送信時刻は更新しない
+        assert env.ctx.used_fact_ids == ["f1"]
+        assert env.ctx.last_fact_proactive_at is None
+        assert env.ctx.last_proactive_at is None
+        assert env.ctx.last_self_message_at is None
+        env.store.save_context.assert_called_once_with(env.ctx)
+        env.judge.record_response.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_declined_fact_moves_to_next_fact(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact("f1"), _fact("f2", "Bさんは釣りが趣味")]
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(topics=[]), generated=None, declined=True) as env:
+            await proactive._maybe_speak(_bot(), channel)
+            env.generate.return_value = ProactiveReply(message="そういえば釣りどう？")
+            await proactive._maybe_speak(_bot(), channel)
+
+        texts = [c.args[2] for c in env.generate.call_args_list]
+        assert texts == ["Aさんは猫を飼っている", "Bさんは釣りが趣味"]
+        channel.send.assert_awaited_once_with("そういえば釣りどう？")
+        assert env.ctx.used_fact_ids == ["f1", "f2"]
+
+    @pytest.mark.asyncio
+    async def test_generation_failure_does_not_consume_fact(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact()]
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(topics=[]), generated=None, declined=False) as env:
+            await proactive._maybe_speak(_bot(), channel)
+        channel.send.assert_not_awaited()
+        assert env.ctx.used_fact_ids == []
+        assert env.ctx.last_fact_proactive_at is None
+        env.store.save_context.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_declined_open_topic_is_marked_mentioned(self):
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(), generated=None, declined=True) as env:
+            await proactive._maybe_speak(_bot(), channel)
+        channel.send.assert_not_awaited()
+        # 断られた話題は言及済みにするが、送っていないので送信時刻は更新しない
+        assert env.ctx.mentioned_topic_ids == ["t1"]
+        assert env.ctx.used_fact_ids == []
+        assert env.ctx.last_proactive_at is None
+        assert env.ctx.last_self_message_at is None
+        env.store.save_context.assert_called_once_with(env.ctx)
+        env.judge.record_response.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_declined_open_topic_switches_to_fact(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact()]
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(), generated=None, declined=True) as env:
+            await proactive._maybe_speak(_bot(), channel)
+            env.generate.return_value = ProactiveReply(message="そういえば猫元気？")
+            await proactive._maybe_speak(_bot(), channel)
+
+        sources = [c.kwargs["source"] for c in env.generate.call_args_list]
+        assert sources == ["open_topic", "fact"]
+        channel.send.assert_awaited_once_with("そういえば猫元気？")
+        assert env.ctx.mentioned_topic_ids == ["t1"]
+        assert env.ctx.used_fact_ids == ["f1"]
+
+    @pytest.mark.asyncio
+    async def test_generation_failure_does_not_consume_open_topic(self):
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(), generated=None, declined=False) as env:
+            await proactive._maybe_speak(_bot(), channel)
+            await proactive._maybe_speak(_bot(), channel)
+        # 失敗では消費しないので、次の判定でも同じ話題を試す
+        assert [c.kwargs["source"] for c in env.generate.call_args_list] == ["open_topic"] * 2
+        assert env.ctx.mentioned_topic_ids == []
+        env.store.save_context.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_used_fact_never_reused(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact()]
+        channel = _text_channel()
+        channel.history = _async_history([])
+        ctx = _ctx(topics=[])
+        with _Env(ctx) as env:
+            await proactive._maybe_speak(_bot(), channel)
+            # 両方のクールダウンが明けても、同じ fact は使わない
+            ctx.last_proactive_at = NOW - timedelta(days=10)
+            ctx.last_fact_proactive_at = NOW - timedelta(days=10)
+            ctx.last_self_message_at = None
+            env.generate.reset_mock()
+            await proactive._maybe_speak(_bot(), channel)
+        env.generate.assert_not_called()

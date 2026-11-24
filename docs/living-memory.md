@@ -192,7 +192,7 @@
   - `last_self_message_at`: 自分が発言したとき（メンション応答・自律応答・相槌・自発会話）に更新する
   - これらは要約時・終了時にだけ永続化されるので、クラッシュ後は古い値が残りうる。そのため生成の前に Discord の直近の履歴（10件）を取得し、最後の発言が自分、または最後の発言が `PROACTIVE_MIN_SILENCE_MINUTES` 以内なら送らない。履歴を取得できなければ送らない
 - **話題の選び方（1回に1件）:** 言及済みの `id`（`mentioned_topic_ids`）を除く → `follow_up_after` を過ぎて `PROACTIVE_FOLLOW_UP_WINDOW_HOURS` 以内の話題を優先する（時刻の早い順。沈黙の上限は無視するが、下限・静音時間帯・クールダウンは適用する）→ なければ沈黙が上限内のときだけ `follow_up_after` を持たない話題から選ぶ。`follow_up_after` が未来の話題・ウィンドウを過ぎた話題は選ばない
-- **生成:** `ai/conversation.py` の `generate_proactive_message`。`system.txt` ＋ チャンネル要約 ＋ 直近の履歴 ＋ 対象の話題（`<open_topic>` タグで囲みエスケープ）から、構造化出力 `{speak, message}`（`response_json_schema`）で返させる。`speak` が `true` でない・メッセージが空・JSON 不正・API 失敗なら送らない
+- **生成:** `ai/conversation.py` の `generate_proactive_message`。`system.txt` ＋ チャンネル要約 ＋ 直近の履歴 ＋ 対象の話題（`<open_topic>` タグで囲みエスケープ）から、構造化出力 `{speak, message}`（`response_json_schema`）で返させる。`speak` が `true` でない・メッセージが空・JSON 不正・API 失敗なら送らない（`speak=false` で断られた話題は言及済みにする。下記「断られた話題・fact」を参照）
 - **送信:** 返信先がないのでチャンネルに直接 `split_message` → `channel.send`。生成中に人間が発言した、または担当が変わった（送信直前に登録簿を再確認）場合は送らない
 - **送信後の記録:** 1チャンクでも送れたら、まず `ChannelContext` に言及済みの `id`（最大50件）・`last_proactive_at`・`last_self_message_at` を記録して保存する（同じ話題に二度と触れないため）。続けて会話履歴（`channel_conversations`）に「自分から話しかけた」記録＋モデルの発言を追加し（返信されたときに文脈を持つため）、チャンネルバッファに `is_bot=True` で追加し、`judge.record_response()` を呼ぶ
 - **永続化:** 新しいフィールドは local / Firestore の両方に保存する。フィールドの無い旧データは「不明（None）」・空リストとして読み込む
@@ -207,6 +207,20 @@
 - `PROACTIVE_QUIET_HOURS`: 静音時間帯（`開始-終了` の時、開始を含み終了を含まない。空文字で無効） (デフォルト: `0-8`)
 - `PROACTIVE_TIMEZONE`: 静音時間帯のタイムゾーン（IANA 名） (デフォルト: `Asia/Tokyo`)
 - `PROACTIVE_FOLLOW_UP_WINDOW_HOURS`: `follow_up_after` からこの時間内なら沈黙の上限を無視して触れる (デフォルト: 24)
+- `PROACTIVE_FACT_COOLDOWN_HOURS`: facts を話題にする自発会話の最短間隔（時間）。合算の `PROACTIVE_COOLDOWN_HOURS` も併せて適用する (デフォルト: 72)
+
+### 自発会話: facts ベースの話題振り (#104 PR4)
+今この時点で触れられる未解決の話題がないときだけ、反省会で抽出した shareable な fact（`memory/fact_store.py`）を話題にする。優先順位は **未解決の話題 > facts**。
+
+- **フォールバックする条件:** 上記の送信条件（沈黙の下限・最後の発言が自分でない・合算のクールダウン・静音時間帯）をすべて満たし、かつ次のすべてを満たすとき
+  - 触れられる未解決の話題がない（話題がない・全部言及済み・`follow_up_after` がまだ来ていない・ウィンドウを過ぎた）。`follow_up_after` 待ちの話題があっても facts は止めない
+  - 沈黙が `PROACTIVE_MAX_SILENCE_HOURS` 以内（facts は沈黙の上限・下限の両方に従う。`follow_up_after` の「上限を無視」は適用しない）
+  - 前回 facts で話しかけてから `PROACTIVE_FACT_COOLDOWN_HOURS` 以上経っている（合算の1日1回も適用されるので、両方を満たす必要がある）
+- **fact の選び方:** `get_shareable_facts` の順番（`decay_factor` の降順＝新しい順）で、使用済みの `fact_id`（`used_fact_ids`）を除いた最初の1件。本文が空の fact は使わない。shareable な fact がない・全部使用済みなら送らない（LIVING_MEMORY が有効でも facts が無ければフォールバックしないだけで、エラーにはしない）。fact の取得は条件をすべて満たしたときだけ行い、取得に失敗したら送らない
+- **生成:** `generate_proactive_message(..., source="fact")`。fact の本文も LLM が生成したデータなので、`<shared_fact>` タグで囲みエスケープする。「そういえば…」のようにふと思い出した風に切り出させ、「記録によると」のような記憶の仕組みには触れさせない。`speak=false` なら送らない
+- **断られた話題・fact:** LLM が `speak=false` を返したら、未解決の話題は言及済み（`mentioned_topic_ids`、`mark_topic_declined`）に、fact は使用済み（`used_fact_ids`、`mark_fact_declined`）にして保存し、二度と使わない。送っていないので `last_proactive_at`・`last_fact_proactive_at`・`last_self_message_at` は更新せず、次の判定で次の候補を選べる（断られた未解決の話題が残ると、沈黙のウィンドウの間ずっと同じ対象で生成を繰り返し、未解決の話題が優先されるため facts にも切り替わらないため）。生成失敗（API エラー・JSON 不正・speak が bool でない・メッセージが空など）では消費せず、次の判定で再試行する。`generate_proactive_message` は `ProactiveReply(message, declined)` を返し、断った（declined）と失敗を区別する
+- **送信後の記録:** `ChannelContext.record_fact_proactive` で使用済みの `fact_id`（新しい順に最大200件）・`last_fact_proactive_at`・合算の `last_proactive_at`・`last_self_message_at` を記録して保存する（同じ fact は二度と使わない）。会話履歴・バッファ・judge への記録は未解決の話題と同じ
+- **永続化:** `used_fact_ids` / `last_fact_proactive_at` は local / Firestore の両方に保存する。フィールドの無い旧データは空リスト・None として読み込む
 
 ---
 

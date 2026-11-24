@@ -17,6 +17,8 @@ from utils.file_utils import local_storage_path
 
 # 言及済みとして覚えておく話題 id の上限
 _MAX_MENTIONED_TOPIC_IDS = 50
+# 自発会話で使用済みとして覚えておく fact_id の上限（新しい順に残す）
+_MAX_USED_FACT_IDS = 200
 
 
 @dataclass
@@ -35,6 +37,9 @@ class ChannelContext:
     # 自発会話（issue #104）: 言及済みの話題 id（古い順）と最後の自発会話の時刻
     mentioned_topic_ids: list[str] = field(default_factory=list)
     last_proactive_at: datetime | None = None
+    # facts での自発会話: 使用済みの fact_id（古い順）と最後に facts で話しかけた時刻
+    used_fact_ids: list[str] = field(default_factory=list)
+    last_fact_proactive_at: datetime | None = None
     # 最後の人間の発言・自分の発言の時刻（沈黙と「最後の発言が自分か」の判定に使う）。
     # チャンネルバッファは TTL で消えるため、永続化されるここに持つ。None は「不明」
     last_human_message_at: datetime | None = None
@@ -79,10 +84,45 @@ class ChannelContext:
             topic_id: 言及した話題の id
             at: 送信時刻
         """
-        if topic_id not in self.mentioned_topic_ids:
-            self.mentioned_topic_ids.append(topic_id)
-        # 古い id から捨てる（要約の open_topics は最大5件なので十分に残る）
-        del self.mentioned_topic_ids[:-_MAX_MENTIONED_TOPIC_IDS]
+        _append_capped(self.mentioned_topic_ids, topic_id, _MAX_MENTIONED_TOPIC_IDS)
+        self._mark_proactive(at)
+
+    def record_fact_proactive(self, fact_id: str, at: datetime) -> None:
+        """facts での自発会話の送信を記録する（使用済みの fact・facts と合算の最終送信時刻）
+
+        Args:
+            fact_id: 話題にした fact の id
+            at: 送信時刻
+        """
+        _append_capped(self.used_fact_ids, fact_id, _MAX_USED_FACT_IDS)
+        self.last_fact_proactive_at = _to_utc(at)
+        self._mark_proactive(at)
+
+    def mark_topic_declined(self, topic_id: str) -> None:
+        """LLM が触れないと判断した未解決の話題を言及済みにする（送信時刻は更新しない）
+
+        断られた話題が残り続けて、同じ話題で生成を繰り返したり facts に切り替わらなかったり
+        しないようにする。
+
+        Args:
+            topic_id: 断られた話題の id
+        """
+        _append_capped(self.mentioned_topic_ids, topic_id, _MAX_MENTIONED_TOPIC_IDS)
+        self.dirty = True
+
+    def mark_fact_declined(self, fact_id: str) -> None:
+        """LLM が話題にしないと判断した fact を使用済みにする（送信時刻は更新しない）
+
+        断られた fact が先頭に残り続けて、同じ fact で生成を繰り返さないようにする。
+
+        Args:
+            fact_id: 断られた fact の id
+        """
+        _append_capped(self.used_fact_ids, fact_id, _MAX_USED_FACT_IDS)
+        self.dirty = True
+
+    def _mark_proactive(self, at: datetime) -> None:
+        """合算の最終送信時刻と自分の発言時刻を記録する"""
         self.last_proactive_at = _to_utc(at)
         self.record_self_message(at)
         self.dirty = True
@@ -129,6 +169,8 @@ class ChannelContext:
             "open_topics": [t.to_dict() for t in self.open_topics],
             "mentioned_topic_ids": list(self.mentioned_topic_ids),
             "last_proactive_at": _iso_or_none(self.last_proactive_at),
+            "used_fact_ids": list(self.used_fact_ids),
+            "last_fact_proactive_at": _iso_or_none(self.last_fact_proactive_at),
             "last_human_message_at": _iso_or_none(self.last_human_message_at),
             "last_self_message_at": _iso_or_none(self.last_self_message_at),
         }
@@ -152,8 +194,10 @@ class ChannelContext:
             message_count_since_update=data.get("message_count_since_update", 0),
             # 旧データ（キーなし）や不正な要素は空リスト・除外で読み込む
             open_topics=load_open_topics(data.get("open_topics")),
-            mentioned_topic_ids=_load_topic_ids(data.get("mentioned_topic_ids")),
+            mentioned_topic_ids=_load_ids(data.get("mentioned_topic_ids"), _MAX_MENTIONED_TOPIC_IDS),
             last_proactive_at=_parse_datetime(data.get("last_proactive_at")),
+            used_fact_ids=_load_ids(data.get("used_fact_ids"), _MAX_USED_FACT_IDS),
+            last_fact_proactive_at=_parse_datetime(data.get("last_fact_proactive_at")),
             last_human_message_at=_parse_datetime(data.get("last_human_message_at")),
             last_self_message_at=_parse_datetime(data.get("last_self_message_at")),
         )
@@ -186,11 +230,18 @@ def _parse_datetime(value: Any) -> datetime | None:
     return None
 
 
-def _load_topic_ids(raw: Any) -> list[str]:
-    """言及済みの話題 id を復元する（旧データ・不正な要素に寛容）"""
+def _append_capped(ids: list[str], new_id: str, limit: int) -> None:
+    """id を末尾に追加し（重複は追加しない）、上限を超えた古い id から捨てる"""
+    if new_id not in ids:
+        ids.append(new_id)
+    del ids[:-limit]
+
+
+def _load_ids(raw: Any, limit: int) -> list[str]:
+    """言及済みの話題 id・使用済みの fact_id を復元する（旧データ・不正な要素に寛容）"""
     if not isinstance(raw, list):
         return []
-    return [i for i in raw if isinstance(i, str) and i][-_MAX_MENTIONED_TOPIC_IDS:]
+    return [i for i in raw if isinstance(i, str) and i][-limit:]
 
 
 class ChannelContextStore:

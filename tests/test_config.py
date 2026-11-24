@@ -157,6 +157,7 @@ class TestValidateProactiveConfig:
         "PROACTIVE_MIN_SILENCE_MINUTES": 120,
         "PROACTIVE_MAX_SILENCE_HOURS": 24,
         "PROACTIVE_COOLDOWN_HOURS": 24,
+        "PROACTIVE_FACT_COOLDOWN_HOURS": 72,
         "PROACTIVE_QUIET_HOURS": "0-8",
         "PROACTIVE_TIMEZONE": "Asia/Tokyo",
         "PROACTIVE_FOLLOW_UP_WINDOW_HOURS": 24,
@@ -201,6 +202,29 @@ class TestValidateProactiveConfig:
     def test_negative_cooldown_rejected(self):
         with pytest.raises(ValueError, match="PROACTIVE_COOLDOWN_HOURS"):
             self._validate(PROACTIVE_COOLDOWN_HOURS=-1)
+
+    def test_fact_cooldown_zero_allowed(self):
+        self._validate(PROACTIVE_FACT_COOLDOWN_HOURS=0)
+
+    def test_negative_fact_cooldown_rejected(self):
+        with pytest.raises(ValueError, match="PROACTIVE_FACT_COOLDOWN_HOURS"):
+            self._validate(PROACTIVE_FACT_COOLDOWN_HOURS=-1)
+
+    def test_fact_cooldown_default_and_env(self):
+        import importlib
+
+        import config as cfg
+
+        try:
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("PROACTIVE_FACT_COOLDOWN_HOURS", None)
+                importlib.reload(cfg)
+                assert cfg.PROACTIVE_FACT_COOLDOWN_HOURS == 72
+            with patch.dict(os.environ, {"PROACTIVE_FACT_COOLDOWN_HOURS": "48"}, clear=False):
+                importlib.reload(cfg)
+                assert cfg.PROACTIVE_FACT_COOLDOWN_HOURS == 48
+        finally:
+            importlib.reload(cfg)
 
     def test_min_silence_over_max_rejected(self):
         with pytest.raises(ValueError, match="PROACTIVE_MIN_SILENCE_MINUTES"):
