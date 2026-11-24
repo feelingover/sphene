@@ -732,6 +732,12 @@ async def cmd_proactive(
     if channel is None:
         await _reply(interaction, "❌ チャンネル情報を取得できませんでした")
         return
+    if isinstance(channel, discord.Thread):
+        # 自発会話の対象はチャンネルのみ。スレッドでは設定も状態表示もしない
+        await _reply(
+            interaction, "❌ 自発会話はスレッドでは使えません。チャンネルで実行してください"
+        )
+        return
 
     await _defer(interaction)
     channel_config = await _get_config_or_notify(interaction, interaction.guild.id)

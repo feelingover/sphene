@@ -163,7 +163,7 @@
 自発会話はタイマーベースで作り直し中（送信処理は PR3）。PR2 では「どのチャンネルで、どのインスタンスが話しかけるか」を決める仕組みだけを入れている。
 
 - **運用ルール: 1チャンネルの担当は1インスタンス。** 同じサーバーで複数のインスタンス（別キャラ）が動いていても、1つのチャンネルで自発会話をするのは担当の1インスタンスだけ。複数のインスタンスが同時に話しかける問題（旧実装）を防ぐため
-- **opt-in:** 管理者が対象チャンネルで `/<prefix> proactive enabled:True` を実行する。`ChannelConfig` の `proactive_channels`（チャンネルIDの文字列のリスト）に追加される。フィールドの無い旧データは空リストとして読み込む
+- **opt-in:** 管理者が対象チャンネルで `/<prefix> proactive enabled:True` を実行する。`ChannelConfig` の `proactive_channels`（チャンネルIDの文字列のリスト）に追加される。対象はチャンネルのみで、スレッドで実行した場合は案内だけ返して何もしない。フィールドの無い旧データは空リストとして読み込む
 - **登録簿:** 「チャンネル → 担当インスタンス（`INSTANCE_NAME`）」をインスタンス間で共有する登録簿（`utils/proactive_registry.py`）で管理する
   - firestore: `PROACTIVE_REGISTRY_COLLECTION` の共有コレクション（ドキュメントID = チャンネルID、`{instance, claimed_at}`）。インスタンス間で共有するのが目的なので `FIRESTORE_NAMESPACE` は付けない。登録・削除は transaction で行い、同時に opt-in しても担当は1つに決まる
   - local: `PROACTIVE_REGISTRY_FILE` の JSON ファイル。ロックファイルに flock をかけて読み書きするため、同じホストのプロセス間では排他される。別ホストのインスタンスとは共有できない。形式が壊れたファイルは上書きせずエラーにする

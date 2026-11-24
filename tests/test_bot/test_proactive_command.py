@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
+import discord
 import pytest
 from discord import app_commands
 
@@ -225,6 +226,25 @@ class TestProactiveStatusAndGuards:
         interaction.channel = None
         await cmd_proactive(interaction, True)
         registry.claim.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("enabled", [True, False, None])
+    async def test_rejected_in_thread(
+        self, channel_config: MagicMock, registry: MagicMock, enabled: bool | None
+    ) -> None:
+        """スレッドでは ON・OFF・状態表示のどれも行わない"""
+        interaction = _interaction()
+        interaction.channel = MagicMock(spec=discord.Thread, id=CHANNEL_ID)
+        with patch("bot.commands.config_manager") as manager:
+            await cmd_proactive(interaction, enabled)
+        manager.get_config.assert_not_called()
+        registry.claim.assert_not_called()
+        registry.release.assert_not_called()
+        registry.get_owner.assert_not_called()
+        channel_config.add_proactive_channel.assert_not_called()
+        channel_config.remove_proactive_channel.assert_not_called()
+        text = interaction.response.send_message.call_args.args[0]
+        assert "スレッドでは使えません" in text
 
     @pytest.mark.asyncio
     async def test_load_failed_config(
