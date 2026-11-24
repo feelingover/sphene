@@ -596,6 +596,16 @@ class TestProactiveFields:
         assert ctx.used_fact_ids == []
         assert ctx.last_fact_proactive_at is None
 
+    def test_mark_topic_declined(self):
+        ctx = ChannelContext(channel_id=1)
+        ctx.mark_topic_declined("t1")
+        ctx.mark_topic_declined("t1")
+        assert ctx.mentioned_topic_ids == ["t1"]
+        assert ctx.used_fact_ids == []
+        assert ctx.last_proactive_at is None
+        assert ctx.last_self_message_at is None
+        assert ctx.dirty is True
+
     def test_mark_fact_declined(self):
         ctx = ChannelContext(channel_id=1)
         ctx.mark_fact_declined("f1")

@@ -98,6 +98,18 @@ class ChannelContext:
         self.last_fact_proactive_at = _to_utc(at)
         self._mark_proactive(at)
 
+    def mark_topic_declined(self, topic_id: str) -> None:
+        """LLM が触れないと判断した未解決の話題を言及済みにする（送信時刻は更新しない）
+
+        断られた話題が残り続けて、同じ話題で生成を繰り返したり facts に切り替わらなかったり
+        しないようにする。
+
+        Args:
+            topic_id: 断られた話題の id
+        """
+        _append_capped(self.mentioned_topic_ids, topic_id, _MAX_MENTIONED_TOPIC_IDS)
+        self.dirty = True
+
     def mark_fact_declined(self, fact_id: str) -> None:
         """LLM が話題にしないと判断した fact を使用済みにする（送信時刻は更新しない）
 

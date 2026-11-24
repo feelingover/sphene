@@ -300,8 +300,8 @@ async def _maybe_speak(bot: commands.Bot, channel: discord.TextChannel) -> None:
     )
     message = reply.message
     if not message:
-        if reply.declined and target.source == "fact":
-            await _record_declined_fact(ctx, target)
+        if reply.declined:
+            await _record_declined(ctx, target)
         return
     # 生成中に人間が発言した・担当が変わった場合は送らない
     if ctx.last_human_message_at != human_at or not await _is_owner(channel.id):
@@ -386,17 +386,21 @@ async def _send(channel: discord.TextChannel, message: str) -> bool:
     return sent > 0
 
 
-async def _record_declined_fact(ctx: ChannelContext, target: ProactiveTarget) -> None:
-    """LLM が断った fact を使用済みにして保存する（次の判定で次の fact を選べるように）
+async def _record_declined(ctx: ChannelContext, target: ProactiveTarget) -> None:
+    """LLM が断った話題・fact を言及済み・使用済みにして保存する
 
-    送っていないので、クールダウン用の送信時刻は更新しない。生成失敗では呼ばない
-    （一時的な失敗で fact を消費しないため）。
+    断られた対象が残り続けると、沈黙のウィンドウの間ずっと同じ対象で生成を繰り返し、
+    未解決の話題が優先されるため facts にも切り替わらない。送っていないので送信時刻は
+    更新しない。生成失敗では呼ばない（一時的な失敗で対象を消費しないため）。
     """
-    ctx.mark_fact_declined(target.id)
+    if target.source == "fact":
+        ctx.mark_fact_declined(target.id)
+    else:
+        ctx.mark_topic_declined(target.id)
     await asyncio.to_thread(get_channel_context_store().save_context, ctx)
     logger.info(
-        f"LLM が話題にしないと判断した fact を使用済みにしました: "
-        f"channel_id={ctx.channel_id}, fact_id={target.id}"
+        f"LLM が触れないと判断した対象を使用済みにしました: channel_id={ctx.channel_id}, "
+        f"source={target.source}, id={target.id}"
     )
 
 

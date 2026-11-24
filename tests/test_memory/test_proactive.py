@@ -765,14 +765,46 @@ class TestMaybeSpeakFact:
         env.store.save_context.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_declined_open_topic_is_not_recorded(self):
-        # 未解決の話題が断られた場合の扱いは PR3 のまま（記録しない）
+    async def test_declined_open_topic_is_marked_mentioned(self):
         channel = _text_channel()
         channel.history = _async_history([])
         with _Env(_ctx(), generated=None, declined=True) as env:
             await proactive._maybe_speak(_bot(), channel)
-        assert env.ctx.mentioned_topic_ids == []
+        channel.send.assert_not_awaited()
+        # 断られた話題は言及済みにするが、送っていないので送信時刻は更新しない
+        assert env.ctx.mentioned_topic_ids == ["t1"]
         assert env.ctx.used_fact_ids == []
+        assert env.ctx.last_proactive_at is None
+        assert env.ctx.last_self_message_at is None
+        env.store.save_context.assert_called_once_with(env.ctx)
+        env.judge.record_response.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_declined_open_topic_switches_to_fact(self, fact_store):
+        fact_store.get_shareable_facts.return_value = [_fact()]
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(), generated=None, declined=True) as env:
+            await proactive._maybe_speak(_bot(), channel)
+            env.generate.return_value = ProactiveReply(message="そういえば猫元気？")
+            await proactive._maybe_speak(_bot(), channel)
+
+        sources = [c.kwargs["source"] for c in env.generate.call_args_list]
+        assert sources == ["open_topic", "fact"]
+        channel.send.assert_awaited_once_with("そういえば猫元気？")
+        assert env.ctx.mentioned_topic_ids == ["t1"]
+        assert env.ctx.used_fact_ids == ["f1"]
+
+    @pytest.mark.asyncio
+    async def test_generation_failure_does_not_consume_open_topic(self):
+        channel = _text_channel()
+        channel.history = _async_history([])
+        with _Env(_ctx(), generated=None, declined=False) as env:
+            await proactive._maybe_speak(_bot(), channel)
+            await proactive._maybe_speak(_bot(), channel)
+        # 失敗では消費しないので、次の判定でも同じ話題を試す
+        assert [c.kwargs["source"] for c in env.generate.call_args_list] == ["open_topic"] * 2
+        assert env.ctx.mentioned_topic_ids == []
         env.store.save_context.assert_not_called()
 
     @pytest.mark.asyncio

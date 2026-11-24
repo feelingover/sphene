@@ -6,7 +6,7 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 1545件全パス
+- テスト: 1548件全パス
 - カバレッジ: 96%
 - mypy: 124ファイル no issues
 
@@ -93,7 +93,7 @@ applyTo: "**"
 | 自発会話機能削除（issue #104） | マルチテナント競合・トリガー設計の根本見直し、タイマーベースへ再設計を継続検討 |
 | 自発会話の担当は1チャンネル1インスタンス（#104 PR2、`utils/proactive_registry.py`） | 複数インスタンスが同じチャンネルで同時に話しかける問題を防ぐ。登録簿はインスタンス間で共有するため Firestore では `FIRESTORE_NAMESPACE` を付けない（`get_collection_name` を通さない）。登録・削除は transaction（local は flock）。ON は claim → 設定保存で、保存失敗時は今回新規に claim した場合だけ release（元から担当だった登録は消さない）。OFF は設定削除 → release |
 | 自発会話の沈黙判定は `ChannelContext` の時刻で行う（#104 PR3） | チャンネルバッファは TTL（30分）で消えるため、2時間の沈黙を判定する時点では空になっている。`last_human_message_at` / `last_self_message_at` を永続化して再起動後も判定し、None（不明）なら送らない。永続化は要約時・終了時だけなので、送る前に Discord の直近履歴でも「最後が自分でない・沈黙している」を確認する |
-| 自発会話の facts は「今触れられる未解決の話題がない」ときだけ使う（#104 PR4） | 優先順位は未解決の話題 > facts。`follow_up_after` 待ちの話題があっても facts は止めない。facts は沈黙の上下限に従い（上限無視は適用しない）、`PROACTIVE_FACT_COOLDOWN_HOURS`（default 72）と合算の `PROACTIVE_COOLDOWN_HOURS` の両方を適用。使用済み `fact_id` は `ChannelContext.used_fact_ids`（新しい順に200件）に記録して再利用しない。fact 本文も `<shared_fact>` でエスケープして囲み、記憶の仕組みには触れさせない。LLM が断った fact（speak=false）も使用済みにする（送信時刻は更新しない、生成失敗では消費しない）。断られた fact が先頭に残り、判定のたびに同じ fact で生成を繰り返すのを防ぐため |
+| 自発会話の facts は「今触れられる未解決の話題がない」ときだけ使う（#104 PR4） | 優先順位は未解決の話題 > facts。`follow_up_after` 待ちの話題があっても facts は止めない。facts は沈黙の上下限に従い（上限無視は適用しない）、`PROACTIVE_FACT_COOLDOWN_HOURS`（default 72）と合算の `PROACTIVE_COOLDOWN_HOURS` の両方を適用。使用済み `fact_id` は `ChannelContext.used_fact_ids`（新しい順に200件）に記録して再利用しない。fact 本文も `<shared_fact>` でエスケープして囲み、記憶の仕組みには触れさせない。LLM が断った（speak=false）未解決の話題・fact も言及済み・使用済みにする（送信時刻は更新しない、生成失敗では消費しない）。断られた対象が残り、判定のたびに同じ対象で生成を繰り返したり、未解決の話題が居座って facts に切り替わらなかったりするのを防ぐため |
 | 旧 8 フラグ → 2 グループフラグ（issue #108） | 設定の複雑さを削減、デフォルト有効化 |
 | Gen AI タイムアウトは長め（300秒） | 混雑時は長時間待つと正確な応答が返ることが多い。早期打ち切りより正確さを優先 |
 | チャンネル設定の読み込み失敗時は保存拒否＋非キャッシュ＋発言不可（fail-closed） | 一時障害でデフォルト設定が本番データを上書きするのを防ぐ。デフォルトは全体モードのため、判定に使うと限定モードのギルドで全チャンネルに発言してしまう（#130） |
