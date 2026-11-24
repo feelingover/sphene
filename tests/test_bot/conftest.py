@@ -25,6 +25,7 @@ def _reset_event_guards() -> Iterator[None]:
         events._user_translation_limiter._events,
         events._channel_translation_limiter._events,
         events._reaction_error_notify_limiter._events,
+        events._rate_limited_reaction_limiter._events,
         events._translated_messages,
     ):
         state.clear()
@@ -35,6 +36,7 @@ def _reset_event_guards() -> Iterator[None]:
         events._user_translation_limiter._events,
         events._channel_translation_limiter._events,
         events._reaction_error_notify_limiter._events,
+        events._rate_limited_reaction_limiter._events,
         events._translated_messages,
     ):
         state.clear()

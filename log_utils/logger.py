@@ -31,7 +31,7 @@ def _create_formatter() -> logging.Formatter:
     Returns:
         logging.Formatter: 設定されたフォーマッターインスタンス
     """
-    if config.LOG_FORMAT == "json":
+    if config.LOG_FORMAT.strip().lower() == "json":
         from datetime import datetime, timezone
 
         from pythonjsonlogger.json import JsonFormatter

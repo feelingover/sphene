@@ -6,9 +6,9 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 1152件全パス
+- テスト: 1240件全パス
 - カバレッジ: 95%
-- mypy: 107ファイル no issues
+- mypy: 113ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -113,6 +113,9 @@ applyTo: "**"
 | ファクトアーカイブに embedding を保存しない | アーカイブは読み戻されず、embedding は `EMBEDDING_MODEL` 依存で移行時には再生成が必要。容量の大半を占めていた |
 | スラッシュコマンド・ビューのコールバックは I/O 前に defer | 設定の読み書き（Firestore 最大3往復）で Discord の3秒応答期限を超えると 10062 Unknown interaction になるため。権限エラー・サーバー外実行など I/O なしで即答できるものは defer しない。返信は `_reply()` で defer 済みなら followup に切り替える |
 | Docker イメージは `/app/storage` を実行ユーザー所有で作成し VOLUME 宣言 | `STORAGE_TYPE=local` の書き込み先が存在せず root 所有の `/app` 配下で PermissionError になり、コンテナ再作成でデータも消えていたため |
+| 記憶ストアのキャッシュは LRU で上限管理（`memory/cache_eviction.LruTracker`） | `_profiles` / `_facts` / `_contexts` が削除されずプロセス終了まで増え続けていたため（#140）。定期タスクの `_prune_memory_caches` で上限超過分を古い順に追い出す。dirty・保存中・未マージのファクトあり・要約カウント待ち・`MEMORY_CACHE_MIN_IDLE_SECONDS` 以内にアクセスされたものは追い出さない（上限は目安）。追い出したものは次回アクセスで永続化先から読み直す。保存ロックも一緒に破棄（`KeyedLock.discard`）。Judge の応答時刻・バックオフ状態は TTL で掃除 |
+| 環境変数の数値・真偽値は `config._env_int` / `_env_float` / `_env_bool` で読む | 解釈できない値で変数名の分からない ValueError になっていたため。真偽値は true/1/yes/on（大文字小文字無視）。不正値は変数名入りのエラーで起動を止める |
+| 管理コマンドの応答は ephemeral | チャンネル一覧などが全員に見えていた。`_defer` / `_reply` が常に ephemeral。確認ボタンは押した時点で無効化して `stop()` |
 | エラー通知はボットが話しかけられた場合のみ | 無関係なメッセージへのエラー投稿の連発を防ぐ。記憶の記録失敗は応答を止めない（`_record_memory` で隔離） |
 
 ## Open Issues
@@ -122,6 +125,6 @@ applyTo: "**"
 3. **フル async 化**: google-genai `client.aio` への移行（中期候補）
 4. **Firestore Native Vector Search**: `find_nearest()` を使ったベクトル検索（現状は in-memory コサイン類似度）
 5. **自発会話機能**: タイマーベースへの再設計（issue #104 OPEN）
-6. **2026/11 全体レビュー（2回目）**: issue #130〜#141 に登録。#130・#131 対応済み、残りは未着手
+6. **2026/11 全体レビュー（2回目）**: issue #130〜#141 に登録。#130・#131・#140 ほか対応済み
 7. ~~**2026/11 コードレビュー残課題**~~: 全件対応済み（PR #124〜#129）。Router プリフィルタは対応前から実装済みだった。残る検討事項: 7文字以下の短文（例: 「ガンブレイカー」）もプリフィルタで none になり、ツールが使われない
 8. **EMBEDDING_MODEL**: `text-embedding-004` の提供状況を要確認。移行すると次元が変わり既存ベクトルと非互換になるため要マイグレーション検討。高次元モデル（例: 3072次元）に移行すると1チャンネル1ドキュメントのファクトが1MiB上限に当たるため、移行時にサブコレクション（`facts/{channel_id}/items/{fact_id}`）化もあわせて検討する（現状は上限超過分を関連度の低い順に保存対象外にするガードのみ）

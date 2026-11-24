@@ -189,6 +189,7 @@ class TestConversationExtensive:
         mock_text_part = MagicMock()
         mock_text_part.function_call = None
         mock_text_part.text = "調べた結果をまとめるね！"
+        mock_text_part.thought = None
 
         mock_text_content = MagicMock()
         mock_text_content.parts = [mock_text_part]

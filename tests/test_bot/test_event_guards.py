@@ -201,6 +201,17 @@ class TestMentionQuota:
         assert not await _acquire_mention_quota(message, 1)
 
 
+    @pytest.mark.asyncio
+    async def test_hourglass_sent_once_per_message(self, monkeypatch):
+        monkeypatch.setattr(events._user_mention_limiter, "max_events", 1)
+        message = _mention_message()
+        message.id = 99
+
+        results = [await _acquire_mention_quota(message, 1) for _ in range(4)]
+
+        assert results == [True, False, False, False]
+        message.add_reaction.assert_awaited_once_with("⏳")
+
 class TestHandleMessageRateLimit:
     @pytest.mark.asyncio
     @patch("bot.events._record_memory", new_callable=AsyncMock)

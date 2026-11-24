@@ -30,6 +30,43 @@ emojis は文脈に合う Unicode 絵文字を 0〜2 個のリストで返して
 """
 
 
+_TRUE_STRINGS = frozenset({"true", "yes", "1"})
+
+
+def _to_bool(value: object) -> bool:
+    """LLM が返した真偽値を解釈する（文字列 "false" を True と誤判定しない）
+
+    Args:
+        value: JSON から取り出した値
+
+    Returns:
+        bool の True、または "true"/"yes"/"1" の文字列なら True
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in _TRUE_STRINGS
+    return False
+
+
+def _to_emoji_list(value: object, limit: int = 2) -> list[str]:
+    """LLM が返した絵文字指定をリストに正規化する
+
+    文字列1つで返った場合は1文字ずつに分解せず、そのまま1件として扱う（ZWJ 絵文字を壊さない）。
+
+    Args:
+        value: JSON から取り出した値
+        limit: 最大件数
+
+    Returns:
+        空でない文字列の絵文字リスト
+    """
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    return [e.strip() for e in value if isinstance(e, str) and e.strip()][:limit]
+
 class LLMJudge:
     """曖昧なケースのみLLMで二次判定する"""
 
@@ -92,7 +129,9 @@ class LLMJudge:
             result = json.loads(content)
             if isinstance(result, list):
                 result = result[0] if result else {}
-            should_respond = bool(result.get("respond", False))
+            if not isinstance(result, dict):
+                return False, "none", False, []
+            should_respond = _to_bool(result.get("respond", False))
             llm_type = result.get("response_type", "none")
 
             # 内部形式に変換
@@ -107,9 +146,8 @@ class LLMJudge:
             if not should_respond:
                 final_type = "none"
 
-            should_react = bool(result.get("react", False))
-            raw_emojis = result.get("emojis", [])
-            emojis: list[str] = [e for e in raw_emojis if isinstance(e, str)][:2]
+            should_react = _to_bool(result.get("react", False))
+            emojis = _to_emoji_list(result.get("emojis", []))
 
             logger.info(
                 f"LLM Judge判定: respond={should_respond}, type={final_type}, "

@@ -3,6 +3,11 @@
 反省会・要約などのバックグラウンドLLM処理が失敗し続けたときに、
 メッセージ受信のたびに再実行されてAPIを叩き続けるのを防ぐ。
 イベントループ (単一スレッド) から呼び出す前提のため、ロックは持たない。
+
+再試行可能になってから max_seconds 以上経っても再試行されなかったキーの記録は
+``record_failure`` のついでに捨てる（キーが増え続けてメモリを使い続けないようにするため）。
+捨てたキーの次の失敗は1回目として数え直す。長い間再試行されなかった失敗は
+一時的な障害だった可能性が高いため、待機時間を base_seconds からやり直してよい。
 """
 
 import time
@@ -39,6 +44,7 @@ class FailureBackoff:
         self.max_seconds = max_seconds
         self._clock = clock
         self._states: dict[Hashable, _FailureState] = {}
+        self._last_prune = clock()
 
     def is_blocked(self, key: Hashable) -> bool:
         """バックオフ期間中で、まだ再試行すべきでないかを判定する"""
@@ -51,11 +57,35 @@ class FailureBackoff:
         Returns:
             連続失敗回数
         """
+        self._maybe_prune()
         state = self._states.get(key)
         count = state.count + 1 if state else 1
         delay = min(self.base_seconds * 2 ** (count - 1), self.max_seconds)
         self._states[key] = _FailureState(count=count, retry_at=self._clock() + delay)
         return count
+
+    def prune(self) -> int:
+        """再試行可能になってから max_seconds 以上経ったキーの記録を捨てる
+
+        捨てたキーは失敗記録なし（failure_count == 0）として扱われる。
+
+        Returns:
+            捨てたキー数
+        """
+        now = self._clock()
+        self._last_prune = now
+        stale = [
+            key for key, state in self._states.items()
+            if now >= state.retry_at + self.max_seconds
+        ]
+        for key in stale:
+            del self._states[key]
+        return len(stale)
+
+    def _maybe_prune(self) -> None:
+        """前回の掃除から max_seconds 以上経っていれば prune する（全件走査の頻度を抑える）"""
+        if self._clock() - self._last_prune >= self.max_seconds:
+            self.prune()
 
     def reset(self, key: Hashable) -> None:
         """成功時に失敗記録を消す"""

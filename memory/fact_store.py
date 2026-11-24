@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import config
 from log_utils.logger import logger
 from memory.backoff import new_storage_load_backoff
+from memory.cache_eviction import LruTracker
 from memory.errors import StorageLoadError, log_storage_load_failure
 from utils.file_utils import local_storage_path
 from utils.keyed_lock import KeyedLock
@@ -209,7 +210,10 @@ class FactStore:
         # チャンネル単位の保存ロック（スナップショット取得から書き込み完了まで保持する）。
         # 古いスナップショットの書き込みが新しいものより後に完了して上書きするのを防ぐ。
         # 取得順は必ず保存ロック → self._lock とする。
+        # ロックはチャンネル数だけ増えるため、prune で追い出すときに一緒に破棄する。
         self._save_locks: KeyedLock[int] = KeyedLock()
+        # ロード済みチャンネルの追い出し順（ロック内で操作する）
+        self._lru: LruTracker[int] = LruTracker()
 
     def add_fact(self, fact: Fact) -> bool:
         """ファクトを追加する。上限超過時はdecay_factor最小のものを削除
@@ -409,6 +413,7 @@ class FactStore:
         """
         with self._lock:
             if channel_id in self._loaded_channels:
+                self._lru.touch(channel_id)
                 return
             if self._load_backoff.is_blocked(channel_id):
                 # 失敗直後は I/O を繰り返さず、未ロードのまま扱う
@@ -435,6 +440,63 @@ class FactStore:
                         facts, self._facts.get(channel_id, [])
                     )
                 self._loaded_channels.add(channel_id)
+            self._lru.touch(channel_id)
+
+    def prune(self) -> int:
+        """キャッシュ上限を超えたチャンネルを、最終アクセスの古い順に追い出す（定期タスクから呼ぶ）
+
+        未保存の変更（dirty）があるもの、未ロード中に追加された保留ファクトがあるもの、
+        保存中のもの、最近アクセスされたものは追い出さない。追い出したチャンネルは
+        ロード済みでなくなり、次回アクセス時に永続化先から読み直される。
+
+        Returns:
+            追い出したチャンネル数
+        """
+        max_channels = config.FACT_STORE_CACHE_MAX_CHANNELS
+        with self._lock:
+            self._load_backoff.prune()
+            candidates = self._lru.eviction_candidates(
+                max_channels, config.MEMORY_CACHE_MIN_IDLE_SECONDS, self._is_pinned
+            )
+        evicted = sum(1 for cid in candidates if self._evict_if_idle(cid))
+        if evicted:
+            logger.debug(
+                f"ファクトをキャッシュから追い出しました: {evicted}チャンネル (上限={max_channels})"
+            )
+        return evicted
+
+    def _is_pinned(self, channel_id: int) -> bool:
+        """追い出してはいけないチャンネルか（self._lock 内で呼ぶ）"""
+        if channel_id in self._dirty:
+            return True
+        # 未ロードのまま保持している保留ファクトは、ロード成功時のマージまで捨てない
+        return channel_id in self._facts and channel_id not in self._loaded_channels
+
+    def _evict_if_idle(self, channel_id: int) -> bool:
+        """保存ロックを取れたら、条件を再確認してファクトと保存ロックを破棄する
+
+        保存中（ロック保持中）のチャンネルは、書き込み完了前に読み直すと古い内容に
+        なるため追い出さない。保存ロックは保持したまま破棄し、使用中のロックを消さない。
+
+        Returns:
+            追い出した場合 True
+        """
+        save_lock = self._save_locks.get(channel_id)
+        if not save_lock.acquire(blocking=False):
+            return False
+        try:
+            with self._lock:
+                if self._is_pinned(channel_id) or not self._lru.is_idle(
+                    channel_id, config.MEMORY_CACHE_MIN_IDLE_SECONDS
+                ):
+                    return False
+                self._facts.pop(channel_id, None)
+                self._loaded_channels.discard(channel_id)
+                self._lru.forget(channel_id)
+            self._save_locks.discard(channel_id)
+            return True
+        finally:
+            save_lock.release()
 
     def _read_channel(self, channel_id: int) -> list[Fact] | None:
         """永続化先からチャンネルのファクトを読み込む

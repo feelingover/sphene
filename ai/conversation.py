@@ -34,6 +34,115 @@ IMAGE_REQUEST_TIMEOUT = (3, 5)  # (connect, read)
 ALLOWED_IMAGE_DOMAINS = {"cdn.discordapp.com", "media.discordapp.net"}
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
+
+def _redact_url(url: str) -> str:
+    """ログ出力用に URL からクエリとフラグメントを除く
+
+    Discord CDN の URL は署名付きクエリ（ex/is/hm）を含むため、そのままログに残さない。
+
+    Args:
+        url: 元の URL
+
+    Returns:
+        スキーム・ホスト・パスだけの URL
+    """
+    parsed = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+
+
+def _is_allowed_image_url(url: str) -> bool:
+    """画像 URL が https かつ許可ドメインかを判定する
+
+    Args:
+        url: 画像 URL
+
+    Returns:
+        取得してよい URL なら True
+    """
+    parsed = urllib.parse.urlparse(url)
+    return parsed.scheme == "https" and parsed.hostname in ALLOWED_IMAGE_DOMAINS
+
+
+def _read_limited(resp: requests.Response, safe_url: str) -> bytes:
+    """レスポンス本文を MAX_IMAGE_BYTES まで読み込む
+
+    Args:
+        resp: ストリーミング中のレスポンス
+        safe_url: ログ出力用の URL
+
+    Returns:
+        本文。上限を超えた場合は空
+    """
+    data = bytearray()
+    for chunk in resp.iter_content(chunk_size=64 * 1024):
+        if not chunk:
+            continue
+        data.extend(chunk)
+        if len(data) > MAX_IMAGE_BYTES:
+            logger.warning(f"画像サイズ上限超過で中断: {safe_url} ({len(data)} bytes)")
+            return b""
+    return bytes(data)
+
+
+def _exceeds_content_length(resp: requests.Response, safe_url: str) -> bool:
+    """Content-Length ヘッダーが上限を超えているかを判定する
+
+    Args:
+        resp: レスポンス
+        safe_url: ログ出力用の URL
+
+    Returns:
+        上限を超えていれば True（ヘッダーが不正・未設定なら False）
+    """
+    content_length = resp.headers.get("Content-Length")
+    try:
+        if content_length and int(content_length) > MAX_IMAGE_BYTES:
+            logger.warning(f"画像サイズ超過でスキップ: {safe_url} ({content_length} bytes)")
+            return True
+    except (ValueError, TypeError):
+        logger.warning(f"不正なContent-Length: {safe_url} ({content_length})")
+    return False
+
+
+def _fetch_image_part(url: str) -> types.Part | None:
+    """許可された画像 URL を取得して Gen AI の Part にする
+
+    https の許可ドメインに限り、リダイレクトは追わない（許可リストがリダイレクト先に効かないため）。
+
+    Args:
+        url: 画像 URL
+
+    Returns:
+        画像の Part。取得できない・許可されない場合は None
+    """
+    safe_url = _redact_url(url)
+    if not _is_allowed_image_url(url):
+        logger.warning(f"許可されていないURLの画像をスキップ: {safe_url}")
+        return None
+    try:
+        with requests.get(
+            url, timeout=IMAGE_REQUEST_TIMEOUT, stream=True, allow_redirects=False
+        ) as resp:
+            if resp.is_redirect is True:
+                logger.warning(f"リダイレクトする画像URLをスキップ: {safe_url} ({resp.status_code})")
+                return None
+            resp.raise_for_status()
+
+            content_type = resp.headers.get("Content-Type", "")
+            mime_type = content_type.split(";")[0].strip().lower()
+            if mime_type not in ALLOWED_IMAGE_TYPES:
+                logger.warning(f"許可されていないContent-Typeを検出: {safe_url} ({content_type})")
+                return None
+            if _exceeds_content_length(resp, safe_url):
+                return None
+            data = _read_limited(resp, safe_url)
+            if not data:
+                return None
+            return types.Part.from_bytes(data=data, mime_type=mime_type)
+    except Exception as e:
+        logger.error(f"画像読み込み失敗: {safe_url} - {type(e).__name__}", exc_info=True)
+        return None
+
 TOOL_USAGE_INSTRUCTION = (
     "FF14のゲームデータ（アイテム、製作レシピ、スキル・アクション、クエスト、マウント、ミニオン等）に関する質問は、"
     "自分の学習データに頼らず必ずツールを使って最新データを取得すること。"
@@ -230,49 +339,9 @@ class Sphene:
             
             if image_urls:
                 for url in image_urls:
-                    try:
-                        parsed = urllib.parse.urlparse(url)
-                        if parsed.hostname not in ALLOWED_IMAGE_DOMAINS:
-                            logger.warning(f"許可されていないドメインの画像をスキップ: {url}")
-                            continue
-
-                        with requests.get(url, timeout=IMAGE_REQUEST_TIMEOUT, stream=True) as resp:
-                            resp.raise_for_status()
-
-                            content_type = resp.headers.get("Content-Type", "")
-                            if content_type.split(";")[0].strip() not in ALLOWED_IMAGE_TYPES:
-                                logger.warning(f"許可されていないContent-Typeを検出: {url} ({content_type})")
-                                continue
-
-                            content_length = resp.headers.get("Content-Length")
-                            try:
-                                if content_length and int(content_length) > MAX_IMAGE_BYTES:
-                                    logger.warning(f"画像サイズ超過でスキップ: {url} ({content_length} bytes)")
-                                    continue
-                            except (ValueError, TypeError):
-                                logger.warning(f"不正なContent-Length: {url} ({content_length})")
-
-                            data = bytearray()
-                            for chunk in resp.iter_content(chunk_size=64 * 1024):
-                                if not chunk:
-                                    continue
-                                data.extend(chunk)
-                                if len(data) > MAX_IMAGE_BYTES:
-                                    logger.warning(f"画像サイズ上限超過で中断: {url} ({len(data)} bytes)")
-                                    data = bytearray()
-                                    break
-
-                            if not data:
-                                continue
-
-                            parts.append(
-                                types.Part.from_bytes(
-                                    data=bytes(data),
-                                    mime_type=content_type,
-                                )
-                            )
-                    except Exception as e:
-                        logger.error(f"画像読み込み失敗: {url} - {e}")
+                    image_part = _fetch_image_part(url)
+                    if image_part is not None:
+                        parts.append(image_part)
 
             self.history.append(types.Content(role="user", parts=parts))
 

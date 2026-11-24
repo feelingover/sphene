@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import config
 from log_utils.logger import logger
 from memory.backoff import new_storage_load_backoff
+from memory.cache_eviction import LruTracker
 from memory.errors import StorageLoadError, log_storage_load_failure
 from utils.file_utils import local_storage_path
 
@@ -105,6 +106,10 @@ class ChannelContextStore:
         self._load_backoff = new_storage_load_backoff()
         # イベントループとワーカースレッドから並行アクセスされる
         self._lock = threading.Lock()
+        # キャッシュ上限を超えたときの追い出し順（ロック内で操作する）
+        self._lru: LruTracker[int] = LruTracker()
+        # 保存処理中のチャンネルと並行数（書き込み完了前に追い出して古い内容を読み直さないため）
+        self._saving: dict[int, int] = {}
 
     def get_all_contexts(self) -> dict[int, ChannelContext]:
         """全コンテキストのコピーを返す（スレッドセーフ）"""
@@ -125,6 +130,8 @@ class ChannelContextStore:
         """
         with self._lock:
             cached = self._contexts.get(channel_id)
+            if cached is not None:
+                self._lru.touch(channel_id)
             blocked = cached is None and self._load_backoff.is_blocked(channel_id)
         if cached is not None:
             return cached
@@ -149,6 +156,7 @@ class ChannelContextStore:
             ctx = ChannelContext(channel_id=channel_id)
         with self._lock:
             self._load_backoff.reset(channel_id)
+            self._lru.touch(channel_id)
             return self._contexts.setdefault(channel_id, ctx)
 
     def save_context(self, context: ChannelContext) -> bool:
@@ -165,8 +173,19 @@ class ChannelContextStore:
                 f"channel_id={context.channel_id}"
             )
             return False
+        channel_id = context.channel_id
         with self._lock:
-            self._contexts[context.channel_id] = context
+            self._contexts[channel_id] = context
+            self._lru.touch(channel_id)
+            self._saving[channel_id] = self._saving.get(channel_id, 0) + 1
+        try:
+            return self._write_context(context)
+        finally:
+            with self._lock:
+                self._finish_saving(channel_id)
+
+    def _write_context(self, context: ChannelContext) -> bool:
+        """dirty を落としてから永続化先へ書き込む（失敗時は dirty に戻す）"""
         # 書き込み前に落とすことで、書き込み中の更新を取りこぼさない（失敗時は戻す）
         context.dirty = False
         storage_type = config.STORAGE_TYPE
@@ -179,6 +198,49 @@ class ChannelContextStore:
         if not saved:
             context.dirty = True
         return saved
+
+    def _finish_saving(self, channel_id: int) -> None:
+        """保存中カウントを減らす（self._lock 内で呼ぶ）"""
+        remaining = self._saving.get(channel_id, 0) - 1
+        if remaining > 0:
+            self._saving[channel_id] = remaining
+        else:
+            self._saving.pop(channel_id, None)
+        self._lru.touch(channel_id)
+
+    def prune(self) -> int:
+        """キャッシュ上限を超えた分を、最終アクセスの古い順に追い出す（定期タスクから呼ぶ）
+
+        未保存の変更（dirty）や要約待ちのメッセージカウントがあるもの、保存中のもの、
+        最近アクセスされたものは追い出さない。追い出したコンテキストは次回の
+        ``get_context`` で永続化先から読み直される。
+
+        Returns:
+            追い出したコンテキスト数
+        """
+        max_entries = config.CHANNEL_CONTEXT_CACHE_MAX_ENTRIES
+        with self._lock:
+            self._load_backoff.prune()
+            candidates = self._lru.eviction_candidates(
+                max_entries, config.MEMORY_CACHE_MIN_IDLE_SECONDS, self._is_pinned
+            )
+            for channel_id in candidates:
+                self._contexts.pop(channel_id, None)
+                self._lru.forget(channel_id)
+        if candidates:
+            logger.debug(
+                f"チャンネルコンテキストをキャッシュから追い出しました: {len(candidates)}件 "
+                f"(上限={max_entries})"
+            )
+        return len(candidates)
+
+    def _is_pinned(self, channel_id: int) -> bool:
+        """追い出してはいけないコンテキストか（self._lock 内で呼ぶ）"""
+        if channel_id in self._saving:
+            return True
+        ctx = self._contexts.get(channel_id)
+        # 要約待ちのカウントは時間ベース要約（get_all_contexts の走査）で消化させる
+        return ctx is not None and (ctx.dirty or ctx.message_count_since_update > 0)
 
     def persist_all(self) -> int:
         """未保存の変更があるコンテキストだけを永続化する（終了時用）

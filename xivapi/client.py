@@ -246,6 +246,9 @@ def search_item(
             )
         job_abbreviation = resolved
 
+    # _build_search_query と同じく、0や解釈できない値は「指定なし」に揃える（空クエリの送信を防ぐ）
+    ilvl_min = _dql_int(ilvl_min) or None
+    ilvl_max = _dql_int(ilvl_max) or None
     has_filters = bool(job_abbreviation) or ilvl_min is not None or ilvl_max is not None
     if not query and not has_filters:
         return json.dumps(
@@ -382,6 +385,9 @@ def search_action(
             return json.dumps({"found": False, "error": f"不明なジョブ名です: {class_job}"}, ensure_ascii=False)
         job_abbreviation = resolved
 
+    # _build_action_query と同じく、0や解釈できない値は「指定なし」に揃える（空クエリの送信を防ぐ）
+    level_min = _dql_int(level_min) or None
+    level_max = _dql_int(level_max) or None
     has_filters = bool(job_abbreviation) or level_min is not None or level_max is not None
     if not query and not has_filters:
         return json.dumps({"found": False, "error": "検索条件を1つ以上指定してください"}, ensure_ascii=False)
@@ -468,6 +474,18 @@ def _build_recipe_query(query: str = "", craft_type: str = "", level_min: int | 
     return " ".join(parts)
 
 
+def _is_positive_number(value: object) -> bool:
+    """正の数値か（bool・None・文字列などは False）
+
+    Args:
+        value: 判定する値
+
+    Returns:
+        int/float で 0 より大きければ True
+    """
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
 def _parse_recipe_result(result: dict) -> dict:
     fields = result.get("fields", {})
     item_result_obj = fields.get("ItemResult", {})
@@ -483,14 +501,14 @@ def _parse_recipe_result(result: dict) -> dict:
     ingredient_amounts = fields.get("AmountIngredient", [])
 
     if isinstance(ingredient_items, list) and isinstance(ingredient_amounts, list):
-        for i, item in enumerate(ingredient_items):
-            if i < len(ingredient_amounts):
-                amount = ingredient_amounts[i]
-                if amount > 0 and isinstance(item, dict):
-                    item_id = item.get("value", 0)
-                    if item_id > 0:
-                        name = item.get("fields", {}).get("Name", f"Unknown(ID:{item_id})")
-                        ingredients.append({"name": name, "amount": amount})
+        for item, amount in zip(ingredient_items, ingredient_amounts):
+            # 素材の空き枠は amount=0 / None で返るため、数値以外も含めて読み飛ばす
+            if not _is_positive_number(amount) or not isinstance(item, dict):
+                continue
+            item_id = item.get("value", 0)
+            if _is_positive_number(item_id):
+                name = item.get("fields", {}).get("Name", f"Unknown(ID:{item_id})")
+                ingredients.append({"name": name, "amount": amount})
 
     return {"item_name": item_name, "craft_type": craft_type, "recipe_level": recipe_level, "amount_result": amount_result, "ingredients": ingredients}
 
@@ -503,6 +521,9 @@ def search_recipe(query: str = "", craft_type: str = "", level_min: int | None =
             return json.dumps({"found": False, "error": f"不明なクラフタージョブです: {craft_type}"}, ensure_ascii=False)
         resolved_craft_type = resolved
 
+    # _build_recipe_query と同じく、解釈できない値は「指定なし」に揃える（空クエリの送信を防ぐ）
+    level_min = _dql_int(level_min)
+    level_max = _dql_int(level_max)
     has_filters = bool(resolved_craft_type) or level_min is not None or level_max is not None
     if not query and not has_filters:
         return json.dumps({"found": False, "error": "検索条件を1つ以上指定してください"}, ensure_ascii=False)
@@ -516,10 +537,11 @@ def search_recipe(query: str = "", craft_type: str = "", level_min: int | None =
         if not results:
             return _build_not_found_response(query, "レシピが見つかりませんでした")
         recipes = []
-        for i, r in enumerate(results):
+        for r in results:
             try:
                 recipes.append(_parse_recipe_result(r))
             except Exception:
+                logger.warning(f"レシピ結果のパースに失敗したためスキップ: row_id={r.get('row_id') if isinstance(r, dict) else None}", exc_info=True)
                 continue
         return json.dumps({"found": True, "query": query, "recipes": recipes}, ensure_ascii=False)
     except Exception as e:

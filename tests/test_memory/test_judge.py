@@ -276,6 +276,7 @@ class TestRuleBasedJudge:
         mock_config.VANGUARD_ENABLED = False
         mock_config.BOT_NAME = "テストボット"
         mock_config.JUDGE_REACT_THRESHOLD = 5
+        mock_config.ENGAGEMENT_DURATION_SECONDS = 300
 
         judge = RuleBasedJudge()
         assert 100 not in judge._last_response_times

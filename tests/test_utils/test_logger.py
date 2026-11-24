@@ -127,3 +127,11 @@ def test_third_party_loggers_follow_stricter_app_level() -> None:
 
     assert logging.getLogger("discord").level == logging.ERROR
     assert logging.getLogger("httpx").level == logging.ERROR
+
+
+def test_create_formatter_json_is_case_insensitive() -> None:
+    """LOG_FORMAT は大文字小文字・前後の空白を区別しない"""
+    from pythonjsonlogger.json import JsonFormatter
+
+    with patch("config.LOG_FORMAT", " JSON "):
+        assert isinstance(_create_formatter(), JsonFormatter)

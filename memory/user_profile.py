@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import config
 from log_utils.logger import logger
 from memory.backoff import new_storage_load_backoff
+from memory.cache_eviction import LruTracker
 from memory.errors import StorageLoadError, log_storage_load_failure
 from memory.sanitize import sanitize_llm_text, sanitize_llm_text_list
 from utils.file_utils import local_storage_path
@@ -181,8 +182,10 @@ class UserProfileStore:
         # プロファイル単位の保存ロック（スナップショット取得から書き込み完了まで保持する）。
         # 並行した persist_all で古い内容の書き込みが後勝ちするのを防ぐ。
         # 取得順は必ず保存ロック → self._lock とする。
-        # ロックは _profiles と同じだけ増える。_profiles に追い出し処理を入れるときは一緒に掃除する。
+        # ロックは _profiles と同じだけ増えるため、prune で追い出すときに一緒に破棄する。
         self._save_locks: KeyedLock[ProfileKey] = KeyedLock()
+        # キャッシュ上限を超えたときの追い出し順（ロック内で操作する）
+        self._lru: LruTracker[ProfileKey] = LruTracker()
 
     def get_profile(
         self, guild_id: int, user_id: int, display_name: str = ""
@@ -210,9 +213,13 @@ class UserProfileStore:
 
     def get_cached_profile(self, guild_id: int, user_id: int) -> UserProfile | None:
         """キャッシュ済みプロファイルのスナップショットを返す（I/O は行わない）"""
+        key = (guild_id, user_id)
         with self._lock:
-            profile = self._profiles.get((guild_id, user_id))
-            return profile.snapshot() if profile is not None else None
+            profile = self._profiles.get(key)
+            if profile is None:
+                return None
+            self._lru.touch(key)
+            return profile.snapshot()
 
     def _get_or_load_profile(
         self, guild_id: int, user_id: int, display_name: str
@@ -232,6 +239,8 @@ class UserProfileStore:
         key = (guild_id, user_id)
         with self._lock:
             cached = self._profiles.get(key)
+            if cached is not None:
+                self._lru.touch(key)
             blocked = cached is None and self._load_backoff.is_blocked(key)
         if cached is not None:
             return cached
@@ -257,6 +266,7 @@ class UserProfileStore:
             return UserProfile(user_id=user_id, display_name=display_name, guild_id=guild_id)
         with self._lock:
             self._load_backoff.reset(key)
+            self._lru.touch(key)
             return self._profiles.setdefault(key, profile)
 
     def record_message(
@@ -279,7 +289,7 @@ class UserProfileStore:
             channels = [c for c in profile.channels_active if c != channel_id]
             channels.append(channel_id)
             profile.channels_active = channels[-config.CHANNELS_ACTIVE_LIMIT:]
-            self._dirty.add((guild_id, user_id))
+            self._mark_dirty((guild_id, user_id))
 
     def record_bot_mention(self, guild_id: int, user_id: int) -> None:
         """ボットへのメンション時にカウンタを更新する
@@ -293,7 +303,7 @@ class UserProfileStore:
             profile = self._profiles.get(key)
             if profile:
                 profile.mentioned_bot_count += 1
-                self._dirty.add(key)
+                self._mark_dirty(key)
 
     def update_last_topic(
         self, guild_id: int, user_id: int, topic_keywords: list[str]
@@ -312,7 +322,7 @@ class UserProfileStore:
             profile = self._profiles.get(key)
             if profile:
                 profile.last_topic = list(topic_keywords)
-                self._dirty.add(key)
+                self._mark_dirty(key)
 
     def update_from_reflection(
         self, guild_id: int, user_id: int, extracted: dict
@@ -347,7 +357,7 @@ class UserProfileStore:
             )
             for name, value in scalars.items():
                 setattr(profile, name, value)
-            self._dirty.add(key)
+            self._mark_dirty(key)
         if "nickname" in scalars:
             _log_nickname_update(guild_id, user_id, scalars["nickname"])
 
@@ -365,8 +375,60 @@ class UserProfileStore:
             if not profile:
                 return
             profile.nickname = nickname
-            self._dirty.add(key)
+            self._mark_dirty(key)
         _log_nickname_update(guild_id, user_id, nickname)
+
+    def _mark_dirty(self, key: ProfileKey) -> None:
+        """未保存の変更ありとして記録し、アクセスとしても扱う（self._lock 内で呼ぶ）"""
+        self._dirty.add(key)
+        self._lru.touch(key)
+
+    def prune(self) -> int:
+        """キャッシュ上限を超えた分を、最終アクセスの古い順に追い出す（定期タスクから呼ぶ）
+
+        未保存の変更（dirty）があるもの、保存中のもの、最近アクセスされたものは
+        追い出さない。追い出したプロファイルは次回アクセス時に永続化先から読み直される。
+
+        Returns:
+            追い出したプロファイル数
+        """
+        max_entries = config.USER_PROFILE_CACHE_MAX_ENTRIES
+        with self._lock:
+            self._load_backoff.prune()
+            candidates = self._lru.eviction_candidates(
+                max_entries, config.MEMORY_CACHE_MIN_IDLE_SECONDS, self._dirty.__contains__
+            )
+        evicted = sum(1 for key in candidates if self._evict_if_idle(key))
+        if evicted:
+            logger.debug(
+                f"ユーザープロファイルをキャッシュから追い出しました: {evicted}件 (上限={max_entries})"
+            )
+        return evicted
+
+    def _evict_if_idle(self, key: ProfileKey) -> bool:
+        """保存ロックを取れたら、条件を再確認してプロファイルと保存ロックを破棄する
+
+        保存中（ロック保持中）のプロファイルは、書き込み完了前に読み直すと古い内容に
+        なるため追い出さない。保存ロックは保持したまま破棄し、使用中のロックを消さない。
+
+        Returns:
+            追い出した場合 True
+        """
+        save_lock = self._save_locks.get(key)
+        if not save_lock.acquire(blocking=False):
+            return False
+        try:
+            with self._lock:
+                if key in self._dirty or not self._lru.is_idle(
+                    key, config.MEMORY_CACHE_MIN_IDLE_SECONDS
+                ):
+                    return False
+                self._profiles.pop(key, None)
+                self._lru.forget(key)
+            self._save_locks.discard(key)
+            return True
+        finally:
+            save_lock.release()
 
     def persist_all(self) -> None:
         """変更のあったプロファイルだけを永続化する（定期タスク・反省会からワーカースレッドで呼ばれる）

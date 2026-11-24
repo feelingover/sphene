@@ -15,7 +15,7 @@ class KeyedLock(Generic[K]):
     """キーごとに ``threading.Lock`` を払い出す
 
     ロックはキーごとに一度だけ生成し、以後は同じオブジェクトを返す。
-    ロックの寿命はこのオブジェクトと同じ（キー数はチャンネル・ユーザー数程度を想定）。
+    ロックは ``discard`` で明示的に消すまで保持する（キャッシュの追い出しと一緒に消す）。
     """
 
     def __init__(self) -> None:
@@ -37,3 +37,19 @@ class KeyedLock(Generic[K]):
                 lock = threading.Lock()
                 self._locks[key] = lock
             return lock
+
+    def discard(self, key: K) -> None:
+        """キーのロックを破棄する（次回の ``get`` で新しいロックが生成される）
+
+        使用中のロックを消すと同じキーに別のロックが払い出されて直列化が崩れるため、
+        呼び出し側がそのキーのロックを保持している間に呼ぶこと。
+
+        Args:
+            key: 破棄するロックのキー
+        """
+        with self._guard:
+            self._locks.pop(key, None)
+
+    def __len__(self) -> int:
+        with self._guard:
+            return len(self._locks)

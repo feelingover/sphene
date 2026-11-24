@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import config
 from log_utils.logger import logger
-from memory.short_term import ChannelMessage
+from memory.short_term import ChannelMessage, _to_utc
 
 
 @dataclass
@@ -25,6 +25,8 @@ class RuleBasedJudge:
 
     def __init__(self) -> None:
         self._last_response_times: dict[int, datetime] = {}
+        # 期限切れの応答時刻を最後に掃除した時刻（record_response のついでに掃除する）
+        self._last_prune = datetime.now(timezone.utc)
         self._keywords: list[str] = [
             kw.strip()
             for kw in config.JUDGE_KEYWORDS.split(",")
@@ -138,8 +140,32 @@ class RuleBasedJudge:
 
     def record_response(self, channel_id: int) -> None:
         """応答した時刻を記録してクールダウンを開始する"""
-        self._last_response_times[channel_id] = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        self._last_response_times[channel_id] = now
         logger.debug(f"クールダウン記録: チャンネル={channel_id}")
+        if (now - self._last_prune).total_seconds() >= _response_time_ttl_seconds():
+            self.prune(now)
+
+    def prune(self, now: datetime | None = None) -> int:
+        """クールダウン・エンゲージメントのどちらの判定にも使わなくなった応答時刻を捨てる
+
+        Args:
+            now: 基準時刻（省略時は現在時刻）
+
+        Returns:
+            捨てたチャンネル数
+        """
+        now = now or datetime.now(timezone.utc)
+        self._last_prune = now
+        ttl = _response_time_ttl_seconds()
+        expired = [
+            channel_id
+            for channel_id, last_time in self._last_response_times.items()
+            if (now - last_time).total_seconds() >= ttl
+        ]
+        for channel_id in expired:
+            del self._last_response_times[channel_id]
+        return len(expired)
 
     def _is_engaged(self, channel_id: int) -> bool:
         """チャンネルがエンゲージメント期間中かどうかを判定する"""
@@ -187,6 +213,11 @@ class RuleBasedJudge:
         return "full_response"
 
 
+def _response_time_ttl_seconds() -> int:
+    """応答時刻を保持する必要がある秒数（これを過ぎるとクールダウンにもエンゲージメントにも効かない）"""
+    return max(config.COOLDOWN_SECONDS, config.ENGAGEMENT_DURATION_SECONDS)
+
+
 def _count_unique_authors(messages: list[ChannelMessage]) -> int:
     """メッセージリスト内のユニーク非bot著者数を返す"""
     return len({msg.author_id for msg in messages if not msg.is_bot})
@@ -210,8 +241,8 @@ def _is_high_frequency(
     if len(non_bot) < threshold:
         return False
     recent = non_bot[-threshold:]
-    first_ts = recent[0].timestamp.replace(tzinfo=timezone.utc)
-    last_ts = recent[-1].timestamp.replace(tzinfo=timezone.utc)
+    first_ts = _to_utc(recent[0].timestamp)
+    last_ts = _to_utc(recent[-1].timestamp)
     return (last_ts - first_ts).total_seconds() <= window_seconds
 
 
@@ -225,8 +256,8 @@ def _is_first_after_silence(
         return False
     prev = non_bot[-2]
     curr = non_bot[-1]
-    prev_ts = prev.timestamp.replace(tzinfo=timezone.utc)
-    curr_ts = curr.timestamp.replace(tzinfo=timezone.utc)
+    prev_ts = _to_utc(prev.timestamp)
+    curr_ts = _to_utc(curr.timestamp)
     return (curr_ts - prev_ts).total_seconds() >= silence_minutes * 60
 
 

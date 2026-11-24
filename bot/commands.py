@@ -15,17 +15,21 @@ config_manager = ChannelConfigManager.get_instance()
 async def _defer(interaction: discord.Interaction) -> None:
     """設定の読み書き (Firestore 等) の前に応答を保留し、3秒の応答期限切れを防ぐ
 
+    管理コマンドの応答は実行者だけに見せるため ephemeral で保留する。
+
     Args:
         interaction: インタラクションオブジェクト
     """
     if not interaction.response.is_done():
-        await interaction.response.defer(thinking=True)
+        await interaction.response.defer(thinking=True, ephemeral=True)
 
 
 async def _reply(
     interaction: discord.Interaction, content: str, view: ui.View | None = None
 ) -> None:
     """インタラクションに返信する（defer 済みなら followup で送る）
+
+    管理コマンドの応答（チャンネル一覧など）は実行者だけに見えるよう ephemeral で送る。
 
     Args:
         interaction: インタラクションオブジェクト
@@ -34,13 +38,13 @@ async def _reply(
     """
     if interaction.response.is_done():
         if view is None:
-            await interaction.followup.send(content)
+            await interaction.followup.send(content, ephemeral=True)
         else:
-            await interaction.followup.send(content, view=view)
+            await interaction.followup.send(content, view=view, ephemeral=True)
     elif view is None:
-        await interaction.response.send_message(content)
+        await interaction.response.send_message(content, ephemeral=True)
     else:
-        await interaction.response.send_message(content, view=view)
+        await interaction.response.send_message(content, view=view, ephemeral=True)
 
 
 _LOAD_FAILED_MESSAGE = (
@@ -200,6 +204,20 @@ class ClearConfirmView(ui.View):
         super().__init__(timeout=60)  # 60秒でタイムアウト
         self.guild_id = guild_id
 
+    async def _close(self, interaction: discord.Interaction) -> None:
+        """ボタンを無効化してビューを止め、二重に押されないようにする
+
+        確認メッセージの編集がインタラクションへの応答を兼ねるため、以降の返信は followup になる。
+
+        Args:
+            interaction: ボタンのインタラクション
+        """
+        for item in self.children:
+            if isinstance(item, ui.Button):
+                item.disabled = True
+        self.stop()
+        await interaction.response.edit_message(view=self)
+
     @discord.ui.button(label="はい", style=discord.ButtonStyle.danger)
     async def confirm(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -208,7 +226,7 @@ class ClearConfirmView(ui.View):
         if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("👮 このコマンドは管理者権限が必要だよ！", ephemeral=True)
             return
-        await _defer(interaction)
+        await self._close(interaction)
         # 保存済みのguild_idを使用
         channel_config = await _get_config_or_notify(interaction, self.guild_id)
         if channel_config is None:
@@ -231,6 +249,7 @@ class ClearConfirmView(ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         """キャンセルボタンのコールバック"""
+        await self._close(interaction)
         await _reply(interaction, "✅ キャンセルしました")
 
 
