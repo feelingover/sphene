@@ -11,7 +11,6 @@
 
 import json
 import os
-import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -28,7 +27,7 @@ from utils.firestore_client import get_firestore_client
 
 try:
     import fcntl
-except ImportError:  # pragma: no cover - Windows では同一プロセス内の排他のみ
+except ImportError:  # pragma: no cover - Windows では排他しない（本番は Linux 想定）
     fcntl = None  # type: ignore[assignment]
 
 _DEFAULT_REGISTRY_FILENAME = "proactive_channel_registry.json"
@@ -112,8 +111,9 @@ def _decide_claim(current_owner: str | None, instance: str) -> ClaimResult:
 class LocalProactiveRegistry:
     """ローカルの JSON ファイルで管理する登録簿（同じホストの中でだけ有効）
 
-    同じホストで動く複数プロセスの間でも読み書きが交錯しないよう、
-    ロックファイルに flock をかけてから読み込み・更新・保存を行う。
+    ロックファイルに flock をかけてから読み込み・更新・保存を行う。flock はオープンした
+    ファイル記述ごとにかかるため、同じホストのプロセス間・同じプロセスのスレッド間の
+    どちらでも排他される（インスタンスを使い回す必要はない）。
     """
 
     def __init__(self, file_path: str) -> None:
@@ -123,23 +123,24 @@ class LocalProactiveRegistry:
             file_path: 登録簿の JSON ファイルのパス
         """
         self.file_path = file_path
-        self._thread_lock = threading.Lock()
 
     @contextmanager
     def _locked(self) -> Iterator[None]:
-        """スレッド間・プロセス間で登録簿の操作を排他する"""
-        with self._thread_lock:
-            if fcntl is None:  # pragma: no cover
+        """スレッド間・プロセス間で登録簿の操作を flock で排他する
+
+        os.replace で登録簿の inode が入れ替わってもロックが外れないよう、別ファイルにかける。
+        """
+        if fcntl is None:  # pragma: no cover
+            yield
+            return
+        parent = os.path.dirname(self.file_path) or "."
+        os.makedirs(parent, exist_ok=True)
+        with open(f"{self.file_path}.lock", "a", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
                 yield
-                return
-            parent = os.path.dirname(self.file_path) or "."
-            os.makedirs(parent, exist_ok=True)
-            with open(f"{self.file_path}.lock", "a", encoding="utf-8") as lock_file:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-                try:
-                    yield
-                finally:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _read(self) -> dict[str, Any]:
         """登録簿を読み込む。ファイルがなければ空の登録簿を返す
