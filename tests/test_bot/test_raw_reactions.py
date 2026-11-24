@@ -262,6 +262,18 @@ class TestTranslationRateLimit:
         assert any(c.kwargs.get("exc_info") for c in mock_logger.warning.call_args_list)
 
 
+    @pytest.mark.asyncio
+    async def test_hourglass_sent_once_per_message(self, channel_config, mock_translate, monkeypatch):
+        monkeypatch.setattr(events._user_translation_limiter, "max_events", 1)
+        bot = _bot(cached=[_message(1), _message(2)])
+
+        await _handle_raw_reaction(bot, _payload(message_id=1))
+        for _ in range(3):
+            await _handle_raw_reaction(bot, _payload(message_id=2))
+
+        partial = bot.get_partial_messageable.return_value
+        partial.get_partial_message.return_value.add_reaction.assert_awaited_once_with("⏳")
+
 class TestReactionErrorNotice:
     @pytest.mark.asyncio
     async def test_error_notice_is_throttled_per_channel(self, channel_config, mock_translate):

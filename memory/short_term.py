@@ -12,7 +12,7 @@ from memory.sanitize import safe_author_name, sanitize_llm_text
 _MAX_CONTEXT_CONTENT_LENGTH = 4000
 
 
-def _to_utc(ts: datetime) -> datetime:
+def to_utc(ts: datetime) -> datetime:
     """aware/naive datetime を UTC aware に変換する"""
     if ts.tzinfo is None:
         return ts.replace(tzinfo=timezone.utc)
@@ -73,7 +73,7 @@ class ChannelMessageBuffer:
         messages = [
             msg
             for msg in self._buffers[channel_id]
-            if _to_utc(msg.timestamp) > cutoff
+            if to_utc(msg.timestamp) > cutoff
         ]
         return messages[-limit:]
 
@@ -99,7 +99,7 @@ class ChannelMessageBuffer:
         for channel_id, buf in self._buffers.items():
             before = len(buf)
             # dequeなので左側（古い方）から期限切れを削除
-            while buf and _to_utc(buf[0].timestamp) <= cutoff:
+            while buf and to_utc(buf[0].timestamp) <= cutoff:
                 buf.popleft()
                 total_removed += 1
             if not buf:
@@ -120,7 +120,7 @@ class ChannelMessageBuffer:
         buf = self._buffers.get(channel_id)
         if not buf:
             return None
-        return _to_utc(buf[-1].timestamp)
+        return to_utc(buf[-1].timestamp)
 
     def count_messages_since_reflection(self, channel_id: int) -> int:
         """最後の反省会以降のメッセージ数を返す"""
@@ -132,7 +132,7 @@ class ChannelMessageBuffer:
             return len(buf)
         count = 0
         for msg in buf:
-            if _to_utc(msg.timestamp) > last_reflected:
+            if to_utc(msg.timestamp) > last_reflected:
                 count += 1
         return count
 
@@ -153,7 +153,7 @@ class ChannelMessageBuffer:
         messages = self.get_recent_messages(channel_id, limit=self._max_size)
         last_reflected = self._last_reflected.get(channel_id)
         if last_reflected is not None:
-            messages = [m for m in messages if _to_utc(m.timestamp) > last_reflected]
+            messages = [m for m in messages if to_utc(m.timestamp) > last_reflected]
         return messages[-limit:]
 
     def mark_reflected(
@@ -167,7 +167,7 @@ class ChannelMessageBuffer:
                 LLM呼び出し中に届いたメッセージを次回の対象として取りこぼさない。
                 省略時は現在時刻。
         """
-        checkpoint = _to_utc(until) if until is not None else datetime.now(timezone.utc)
+        checkpoint = to_utc(until) if until is not None else datetime.now(timezone.utc)
         previous = self._last_reflected.get(channel_id)
         if previous is not None and checkpoint <= previous:
             return

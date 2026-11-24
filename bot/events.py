@@ -57,6 +57,12 @@ _reaction_error_notify_limiter = SlidingWindowRateLimiter(
     1, config.REACTION_ERROR_NOTIFY_COOLDOWN_SECONDS
 )
 
+# レート制限超過の ⏳ リアクションは、同じメッセージにはウィンドウ内で1回だけ送る（API の連打を防ぐ）
+_rate_limited_reaction_limiter = SlidingWindowRateLimiter(
+    1,
+    max(config.MENTION_RATE_LIMIT_WINDOW_SECONDS, config.TRANSLATION_RATE_LIMIT_WINDOW_SECONDS),
+)
+
 # 翻訳済み・翻訳中の (メッセージID, 翻訳先言語) → 記録時刻 (monotonic)
 _translated_messages: dict[tuple[int, str], float] = {}
 
@@ -812,11 +818,30 @@ async def _acquire_mention_quota(message: discord.Message, guild_id: int) -> boo
         f"メンションのレート制限超過のため応答をスキップ: ギルドID={guild_id}, "
         f"チャンネルID={channel_key}, ユーザーID={message.author.id}"
     )
-    try:
-        await message.add_reaction(_RATE_LIMITED_EMOJI)
-    except discord.HTTPException:
-        logger.warning("レート制限リアクションの追加に失敗しました", exc_info=True)
+    if _claim_rate_limited_reaction(message.id):
+        try:
+            await message.add_reaction(_RATE_LIMITED_EMOJI)
+        except discord.HTTPException:
+            logger.warning("レート制限リアクションの追加に失敗しました", exc_info=True)
     return False
+
+
+def _claim_rate_limited_reaction(message_id: int) -> bool:
+    """メッセージに ⏳ リアクションを送ってよいかを判定し、送る場合は記録する
+
+    同じメッセージへの送信はウィンドウ内で1回にまとめる（2回目以降は API を呼ばない）。
+
+    Args:
+        message_id: ⏳ を付けるメッセージのID
+
+    Returns:
+        まだ送っていない場合True
+    """
+    if not _rate_limited_reaction_limiter.is_allowed(message_id):
+        logger.debug(f"⏳ リアクション送信済みのためスキップ: メッセージID={message_id}")
+        return False
+    _rate_limited_reaction_limiter.record(message_id)
+    return True
 
 
 async def _notify_processing_error(message: discord.Message) -> None:
@@ -1154,7 +1179,15 @@ def _acquire_translation_quota(guild_id: int, user_id: int, channel_id: int) -> 
 def _resolve_channel(
     bot: commands.Bot, payload: discord.RawReactionActionEvent
 ) -> discord.abc.Messageable:
-    """リアクションが付いたチャンネルを返す（キャッシュに無ければ PartialMessageable）"""
+    """リアクションが付いたチャンネルを返す（キャッシュに無ければ PartialMessageable）
+
+    Args:
+        bot: Discordクライアント
+        payload: リアクション追加イベント
+
+    Returns:
+        送信・メッセージ取得に使えるチャンネル
+    """
     channel = bot.get_channel(payload.channel_id)
     if isinstance(channel, discord.abc.Messageable):
         return channel
@@ -1192,7 +1225,16 @@ async def _fetch_reacted_message(
 async def _add_rate_limited_reaction(
     bot: commands.Bot, payload: discord.RawReactionActionEvent
 ) -> None:
-    """レート制限超過を ⏳ リアクションで伝える（失敗はログのみ）"""
+    """レート制限超過を ⏳ リアクションで伝える（失敗はログのみ）
+
+    同じメッセージへの ⏳ はウィンドウ内で1回だけ送る。
+
+    Args:
+        bot: Discordクライアント
+        payload: レート制限を超えたリアクション追加イベント
+    """
+    if not _claim_rate_limited_reaction(payload.message_id):
+        return
     channel = bot.get_partial_messageable(payload.channel_id, guild_id=payload.guild_id)
     try:
         await channel.get_partial_message(payload.message_id).add_reaction(_RATE_LIMITED_EMOJI)
@@ -1223,7 +1265,15 @@ async def _notify_reaction_error(
 
 
 async def _translation_allowed_in_channel(guild_id: int, channel_id: int) -> bool:
-    """チャンネルで発言可能かつ翻訳機能が有効かを判定する"""
+    """チャンネルで発言可能かつ翻訳機能が有効かを判定する
+
+    Args:
+        guild_id: ギルドID
+        channel_id: リアクションが付いたチャンネルのID
+
+    Returns:
+        翻訳してよい場合True
+    """
     channel_config = await asyncio.to_thread(config_manager.get_config, guild_id)
     if not channel_config.can_bot_speak(channel_id):
         logger.debug(
@@ -1257,6 +1307,8 @@ async def _process_translation_reaction(
             f"翻訳済み・翻訳中のためスキップ: メッセージID={payload.message_id}, 言語={target_language}"
         )
         return
+    # 枠はメッセージ取得や translate_and_reply の空チェックより前に消費する（意図した挙動）。
+    # 削除済み・画像だけのメッセージでも枠が減るが、その代わり fetch_message の連打も枠で抑えられる。
     if not _acquire_translation_quota(guild_id, payload.user_id, payload.channel_id):
         await _add_rate_limited_reaction(bot, payload)
         return

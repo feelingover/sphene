@@ -315,10 +315,10 @@ def _handle_api_error(error: Exception) -> str:
 
 
 def _extract_text(content: types.Content | None) -> str | None:
-    """Contentからテキスト部分のみを連結して返す (function_call等は無視)"""
+    """Contentからテキスト部分のみを連結して返す (function_call・thought パートは無視)"""
     if content is None or not content.parts:
         return None
-    text_parts = [p.text for p in content.parts if p.text]
+    text_parts = [p.text for p in content.parts if p.text and not getattr(p, "thought", False)]
     return "".join(text_parts) if text_parts else None
 
 

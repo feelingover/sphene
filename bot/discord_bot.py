@@ -167,6 +167,10 @@ class SpheneBot:
                     f"反省会チェック/ファクトストア永続化でエラー: {str(e)}", exc_info=True
                 )
 
+        # 記憶ストアのキャッシュ上限超過分を追い出す（永続化・クリーンアップの後に行う）
+        if config.LIVING_MEMORY_ENABLED:
+            await _prune_memory_caches()
+
     async def _setup_hook(self) -> None:
         """discord.py の setup_hook: SIGTERM ハンドラを登録し、元のフックを実行する
 
@@ -231,6 +235,30 @@ class SpheneBot:
             # SIGTERM 以外の終了経路（SIGINT・例外など）向けのフォールバック
             self._persist_memory_once()
             close_http_client()
+
+
+async def _prune_memory_caches() -> None:
+    """記憶ストアのメモリキャッシュから、上限を超えた古いエントリを追い出す
+
+    未保存・保存中のエントリは各ストアが追い出し対象から外す。
+    1つのストアの失敗で他のストアの追い出しを止めない。
+    """
+    from memory.channel_context import get_channel_context_store
+    from memory.fact_store import get_fact_store
+    from memory.user_profile import get_user_profile_store
+
+    targets = [
+        ("ユーザープロファイル", lambda: get_user_profile_store().prune()),
+        ("ファクトストア", lambda: get_fact_store().prune()),
+        ("チャンネルコンテキスト", lambda: get_channel_context_store().prune()),
+    ]
+    for label, prune in targets:
+        try:
+            evicted = await asyncio.to_thread(prune)
+            if evicted:
+                logger.info(f"キャッシュ追い出し: {label} {evicted}件")
+        except Exception as e:
+            logger.error(f"キャッシュ追い出しでエラー: {label}, error={str(e)}", exc_info=True)
 
 
 def _ignore_sigterm() -> None:

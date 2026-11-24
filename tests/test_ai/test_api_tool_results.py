@@ -95,3 +95,20 @@ class TestRebuildContents:
         assert [p.text for p in rebuilt[1].parts] == ["a1", "a2"]
         # 元の履歴は変更しない
         assert len(contents) == 4
+
+
+def test_extract_text_skips_thought_parts() -> None:
+    """_extract_text は thought パートを応答テキストに含めない"""
+    from google.genai import types as genai_types
+
+    from ai.api import _extract_text
+
+    content = genai_types.Content(
+        role="model",
+        parts=[
+            genai_types.Part(text="考え中…", thought=True),
+            genai_types.Part(text="答えだよ"),
+        ],
+    )
+    assert _extract_text(content) == "答えだよ"
+    assert _extract_text(genai_types.Content(role="model", parts=[genai_types.Part(text="x", thought=True)])) is None

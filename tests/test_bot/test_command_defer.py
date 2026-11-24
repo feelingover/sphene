@@ -68,7 +68,7 @@ class TestCommandsDeferBeforeIo:
             await command(interaction)
 
         assert calls == ["deferred"]
-        interaction.response.defer.assert_awaited_once_with(thinking=True)
+        interaction.response.defer.assert_awaited_once_with(thinking=True, ephemeral=True)
         interaction.response.send_message.assert_not_called()
         interaction.followup.send.assert_awaited_once()
 
@@ -92,7 +92,6 @@ class TestViewCallbacksDefer:
         [
             lambda: _select_callback(ModeSelect(1), "allow"),
             lambda: _select_callback(TranslationSelect(1), "true"),
-            lambda: ClearConfirmView(1).confirm.callback,
         ],
     )
     async def test_defer_before_get_config(self, make_callback):
@@ -102,7 +101,7 @@ class TestViewCallbacksDefer:
             await make_callback()(interaction)
 
         assert calls == ["deferred"]
-        interaction.response.defer.assert_awaited_once_with(thinking=True)
+        interaction.response.defer.assert_awaited_once_with(thinking=True, ephemeral=True)
         interaction.followup.send.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -129,7 +128,46 @@ class TestViewCallbacksDefer:
         interaction = _interaction()
         await ClearConfirmView(1).cancel.callback(interaction)
         interaction.response.defer.assert_not_called()
-        interaction.response.send_message.assert_awaited_once()
+        interaction.response.edit_message.assert_awaited_once()
+        interaction.followup.send.assert_awaited_once_with("✅ キャンセルしました", ephemeral=True)
+
+
+class TestClearConfirmViewClose:
+    """確認ボタンは押した時点でビューを止め、ボタンを無効化すること"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("button", ["confirm", "cancel"])
+    async def test_buttons_disabled_and_view_stopped(self, button):
+        view = ClearConfirmView(1)
+        interaction = _interaction()
+        with patch("bot.commands.config_manager", _config_manager(interaction, [])):
+            await getattr(view, button).callback(interaction)
+
+        assert view.is_finished()
+        assert all(item.disabled for item in view.children)
+        interaction.response.edit_message.assert_awaited_once_with(view=view)
+        interaction.followup.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_confirm_closes_before_get_config(self):
+        """応答（メッセージ編集）を返してから設定 I/O を行う"""
+        interaction = _interaction()
+        calls: list[str] = []
+        with patch("bot.commands.config_manager", _config_manager(interaction, calls)):
+            await ClearConfirmView(1).confirm.callback(interaction)
+
+        assert calls == ["deferred"]
+        interaction.response.defer.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_admin_does_not_close(self):
+        view = ClearConfirmView(1)
+        interaction = _interaction(admin=False)
+        with patch("bot.commands.config_manager", MagicMock()):
+            await view.confirm.callback(interaction)
+
+        assert not view.is_finished()
+        assert not any(item.disabled for item in view.children)
 
 
 def _select_callback(select, value: str):
@@ -147,7 +185,7 @@ class TestReply:
     async def test_before_response_uses_send_message(self):
         interaction = attach_response_state(MagicMock())
         await _reply(interaction, "hi")
-        interaction.response.send_message.assert_awaited_once_with("hi")
+        interaction.response.send_message.assert_awaited_once_with("hi", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_after_defer_uses_followup_without_view_kwarg(self):
@@ -155,14 +193,14 @@ class TestReply:
         interaction = attach_response_state(MagicMock())
         await interaction.response.defer()
         await _reply(interaction, "hi")
-        interaction.followup.send.assert_awaited_once_with("hi")
+        interaction.followup.send.assert_awaited_once_with("hi", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_view_is_passed(self):
         interaction = attach_response_state(MagicMock())
         view = MagicMock()
         await _reply(interaction, "hi", view=view)
-        interaction.response.send_message.assert_awaited_once_with("hi", view=view)
+        interaction.response.send_message.assert_awaited_once_with("hi", view=view, ephemeral=True)
 
 
 class TestLoadFailedConfig:
@@ -176,7 +214,7 @@ class TestLoadFailedConfig:
         return manager, channel_config
 
     def _assert_notified(self, interaction: MagicMock, channel_config: MagicMock) -> None:
-        interaction.followup.send.assert_awaited_once_with(_LOAD_FAILED_MESSAGE)
+        interaction.followup.send.assert_awaited_once_with(_LOAD_FAILED_MESSAGE, ephemeral=True)
         channel_config.get_mode_display_name.assert_not_called()
         channel_config.get_channels.assert_not_called()
         channel_config.set_behavior.assert_not_called()

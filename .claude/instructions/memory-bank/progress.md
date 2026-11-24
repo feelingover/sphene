@@ -76,6 +76,7 @@ applyTo: "**"
 - LLMコンテキストのプロンプトインジェクション対策（2026/11, #136）: 直近会話は1発言1行に正規化し名前からロール表記・区切り記号を除去（`memory/sanitize.py` の `safe_author_name`）、翻訳は指示を `system_instruction` に分離し本文をエスケープした `<text>` タグで渡す、反省会の `source_user_ids` を会話参加者に限定
 - 国旗リアクション翻訳の堅牢化（2026/11, #138）: `on_raw_reaction_add` に切り替えキャッシュ外メッセージは `fetch_message` で取得、翻訳にユーザー（リアクションした人）単位・チャンネル単位のレート制限（超過時 ⏳、翻訳済みメッセージは枠を消費しない）、リアクション処理エラーのチャンネル通知をクールダウン付きにし送信失敗をログに記録
 - チャンネル設定保存の堅牢化（2026/11, #139）: 設定変更メソッドは保存失敗時に変更前の `config_data` へロールバック（`ChannelConfig._update_and_save`、インスタンス単位の RLock で変更〜保存〜ロールバックおよび再読み込みを直列化）、`atomic_write_json` は fsync・失敗時の一時ファイル削除・既存権限維持に対応（umask はプロセス全体を触らず os.open の mode で適用）、ローカル保存先を `LOCAL_STORAGE_DIR`（default: `storage`、`utils/file_utils.local_storage_path`）で指定可能に（チャンネル設定・記憶系すべて）
+- Low優先度の修正まとめ（2026/11, #140）: 環境変数ヘルパー（`_env_bool`/`_env_int`/`_env_float`）、`LOG_FORMAT` の大文字小文字無視、管理コマンド応答の ephemeral 化と確認ボタンの無効化、画像取得の https 限定・リダイレクト禁止・ログURLの署名除去・mime 整形、XIVAPI の 0 フィルタで空クエリ送信を防止・レシピパース失敗のログ、LLM Judge の真偽値・絵文字パース修正、`_extract_text` の thought 除外、記憶ストアのキャッシュ LRU/TTL 追い出し、⏳ リアクションをメッセージごとに1回に
 - ログ・設定の整理（2026/11）: discord.py 独自ログハンドラを無効化して二重出力を解消、サードパーティロガー（discord/httpx/google 等）の最低レベルを設定、廃止済み環境変数の起動時警告を追加
 
 ## TODO
