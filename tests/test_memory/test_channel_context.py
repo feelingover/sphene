@@ -287,6 +287,7 @@ class TestToDictFromDict:
             "active_users",
             "last_updated",
             "message_count_since_update",
+            "open_topics",
         }
         assert set(data.keys()) == expected_keys
 

@@ -11,6 +11,7 @@ from log_utils.logger import logger
 from memory.backoff import new_storage_load_backoff
 from memory.cache_eviction import LruTracker
 from memory.errors import StorageLoadError, log_storage_load_failure
+from memory.open_topics import OpenTopic, load_open_topics
 from utils.file_utils import local_storage_path
 
 
@@ -25,6 +26,8 @@ class ChannelContext:
     active_users: list[str] = field(default_factory=list)
     last_updated: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     message_count_since_update: int = 0
+    # 未解決の話題（要約LLMが抽出。format_for_injection には含めない）
+    open_topics: list[OpenTopic] = field(default_factory=list)
     # 永続化先の読み込みに失敗した一時コンテキストなら True（シリアライズしない）。
     # 保存すると既存の要約を上書きしてしまうため、save_context はこれを拒否する
     load_failed: bool = field(default=False, compare=False, repr=False)
@@ -75,6 +78,7 @@ class ChannelContext:
             "active_users": self.active_users,
             "last_updated": self.last_updated.isoformat(),
             "message_count_since_update": self.message_count_since_update,
+            "open_topics": [t.to_dict() for t in self.open_topics],
         }
 
     @classmethod
@@ -94,6 +98,8 @@ class ChannelContext:
             active_users=data.get("active_users", []),
             last_updated=last_updated,
             message_count_since_update=data.get("message_count_since_update", 0),
+            # 旧データ（キーなし）や不正な要素は空リスト・除外で読み込む
+            open_topics=load_open_topics(data.get("open_topics")),
         )
 
 
