@@ -104,7 +104,7 @@ async def translate_text(text: str, target_language: str = "english") -> str | N
         return None
 
     try:
-        def _sync_translate():
+        def _sync_translate() -> types.GenerateContentResponse:
             client = _get_genai_client()
             model_id = get_model_name()
             return client.models.generate_content(

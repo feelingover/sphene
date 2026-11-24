@@ -490,39 +490,49 @@ def _request_final_answer(
     return True, final_text, local_history
 
 
-def call_genai_with_tools(
-    contents: list[types.Content],
-    system_instruction: str,
-    tool_mode: "ToolMode" = "function_calling",
-) -> tuple[bool, str, list[types.Content]]:
-    """ツール呼び出しループを含むGenAI呼び出し (共通ロジック)
+def _select_tools(tool_mode: "ToolMode") -> list[types.Tool]:
+    """tool_modeに応じて使用するツールを選択する
+
+    Vertex AIの制約により、google_search(grounding)とfunction_declarationsは
+    同一リクエストに混在できない。
 
     Args:
-        contents: 会話履歴
-        system_instruction: システムプロンプト
-        tool_mode: Router LLMが判定したツールモード。
-            "grounding" → Google Search grounding、
-            "function_calling" → XIVAPI等のFunction Calling、
-            "none" → ツールなし
+        tool_mode: Router LLMが判定したツールモード
+
+    Returns:
+        リクエストに含めるツールのリスト
     """
-    client = _get_genai_client()
-    model_id = get_model_name()
-
-    # tool_modeに応じてツールを動的選択
-    # Vertex AIの制約: google_search(grounding)とfunction_declarationsは同一リクエストに混在不可
-    tools: list[types.Tool]
     if tool_mode == "grounding":
-        tools = [types.Tool(google_search=types.GoogleSearch())]
         logger.debug("グラウンディングモード: function callingは無効 (Vertex AI制約)")
-    elif tool_mode == "function_calling":
-        tools = get_tools()
-    else:
-        tools = []
-        logger.debug("ツールなしモード")
+        return [types.Tool(google_search=types.GoogleSearch())]
+    if tool_mode == "function_calling":
+        return get_tools()
+    logger.debug("ツールなしモード")
+    return []
 
-    # ツールループ全体で所要時間の予算を共有し、チャンネルロックの保持時間に上限を設ける
+
+def _build_tool_request(
+    client: Any,
+    model_id: str,
+    system_instruction: str,
+    tools: list[types.Tool],
+) -> dict[str, Any]:
+    """ツールループで共有するリクエスト引数を構築する
+
+    ツールループ全体で所要時間の予算 (deadline) を共有し、
+    チャンネルロックの保持時間に上限を設ける。
+
+    Args:
+        client: GenAIクライアント
+        model_id: 使用するモデルID
+        system_instruction: システムプロンプト
+        tools: リクエストに含めるツール
+
+    Returns:
+        generate_content_with_retry に渡すキーワード引数 (contents以外)
+    """
     policy = main_retry_policy()
-    request: dict[str, Any] = {
+    return {
         "client": client,
         "model": model_id,
         "policy": policy,
@@ -537,60 +547,126 @@ def call_genai_with_tools(
         ),
     }
 
+
+def _run_tool_round(
+    local_history: list[types.Content],
+    tool_mode: "ToolMode",
+    request: dict[str, Any],
+) -> tuple[bool, str, list[types.Content]] | None:
+    """ツール呼び出しループの1ラウンドを実行する
+
+    Args:
+        local_history: 会話履歴 (応答・ツール結果がin-placeで追記される)
+        tool_mode: Router LLMが判定したツールモード
+        request: generate_content_with_retry に渡す共通引数
+
+    Returns:
+        ループを終了する場合は (成功フラグ, 応答テキスト, 履歴)。
+        ツールを実行して次のラウンドへ進む場合はNone。
+    """
+    # ツール未宣言のモードでは、履歴のfunction_callを模倣されないよう最初からテキスト化して送る
+    send_contents = (
+        local_history
+        if tool_mode == "function_calling"
+        else _flatten_function_parts(local_history)
+    )
+    try:
+        response = generate_content_with_retry(contents=send_contents, **request)
+    except Exception as e:
+        return False, _handle_api_error(e), local_history
+
+    if not response.candidates:
+        return False, "AIからの応答が空だったよ…🤔", local_history
+
+    candidate = response.candidates[0]
+    resp_content = candidate.content
+
+    # Grounding情報のログ出力
+    if hasattr(candidate, "grounding_metadata") and candidate.grounding_metadata:
+        logger.info(f"Groundingメタデータを検出: {candidate.grounding_metadata}")
+
+    if resp_content is None or resp_content.parts is None:
+        return False, "応答を読み取れなかったよ…😢", local_history
+
+    return _process_response_content(resp_content, tool_mode, local_history, request)
+
+
+def _process_response_content(
+    resp_content: types.Content,
+    tool_mode: "ToolMode",
+    local_history: list[types.Content],
+    request: dict[str, Any],
+) -> tuple[bool, str, list[types.Content]] | None:
+    """モデル応答のContentを処理し、ツール実行またはテキスト抽出を行う
+
+    Args:
+        resp_content: モデル応答のContent (partsはNoneでないこと)
+        tool_mode: Router LLMが判定したツールモード
+        local_history: 会話履歴 (応答・ツール結果がin-placeで追記される)
+        request: generate_content_with_retry に渡す共通引数
+
+    Returns:
+        ループを終了する場合は (成功フラグ, 応答テキスト, 履歴)。
+        ツールを実行して次のラウンドへ進む場合はNone。
+    """
+    parts = resp_content.parts or []
+    function_calls = [p.function_call for p in parts if p.function_call]
+
+    if function_calls and tool_mode != "function_calling":
+        # ツール未宣言なのにモデルがfunction_callを返した (履歴の模倣など)。実行せず無視する
+        return _handle_undeclared_function_calls(
+            resp_content, tool_mode, local_history, request
+        )
+
+    local_history.append(resp_content)
+
+    if function_calls:
+        logger.info(f"ツール呼び出し検出: {len(function_calls)}件")
+        tool_results = _execute_tool_calls(function_calls)
+        local_history.append(types.Content(role="user", parts=tool_results))
+        return None
+
+    # テキスト応答を抽出
+    text_parts = [p.text for p in parts if p.text]
+    if text_parts:
+        final_text = "".join(text_parts)
+        logger.debug(f"GenAI応答受信: {truncate_text(final_text)}")
+        return True, final_text, local_history
+
+    return False, "応答を読み取れなかったよ…😢", local_history
+
+
+def call_genai_with_tools(
+    contents: list[types.Content],
+    system_instruction: str,
+    tool_mode: "ToolMode" = "function_calling",
+) -> tuple[bool, str, list[types.Content]]:
+    """ツール呼び出しループを含むGenAI呼び出し (共通ロジック)
+
+    Args:
+        contents: 会話履歴
+        system_instruction: システムプロンプト
+        tool_mode: Router LLMが判定したツールモード。
+            "grounding" → Google Search grounding、
+            "function_calling" → XIVAPI等のFunction Calling、
+            "none" → ツールなし
+
+    Returns:
+        (成功フラグ, 応答テキストまたはエラーメッセージ, 更新後の履歴)
+    """
+    client = _get_genai_client()
+    model_id = get_model_name()
+    tools = _select_tools(tool_mode)
+    request = _build_tool_request(client, model_id, system_instruction, tools)
+
     # contentsリストをコピーして操作する
     local_history = list(contents)
 
     for round_num in range(MAX_TOOL_CALL_ROUNDS + 1):
         logger.info(f"GenAIリクエスト送信 (ラウンド {round_num + 1}, モデル: {model_id})")
-
-        # ツール未宣言のモードでは、履歴のfunction_callを模倣されないよう最初からテキスト化して送る
-        send_contents = (
-            local_history
-            if tool_mode == "function_calling"
-            else _flatten_function_parts(local_history)
-        )
-        try:
-            response = generate_content_with_retry(contents=send_contents, **request)
-        except Exception as e:
-            return False, _handle_api_error(e), local_history
-
-        if not response.candidates:
-            return False, "AIからの応答が空だったよ…🤔", local_history
-
-        candidate = response.candidates[0]
-        resp_content = candidate.content
-
-        # Grounding情報のログ出力
-        if hasattr(candidate, "grounding_metadata") and candidate.grounding_metadata:
-            logger.info(f"Groundingメタデータを検出: {candidate.grounding_metadata}")
-
-        if resp_content is None or resp_content.parts is None:
-            return False, "応答を読み取れなかったよ…😢", local_history
-
-        function_calls = [p.function_call for p in resp_content.parts if p.function_call]
-
-        if function_calls and tool_mode != "function_calling":
-            # ツール未宣言なのにモデルがfunction_callを返した (履歴の模倣など)。実行せず無視する
-            return _handle_undeclared_function_calls(
-                resp_content, tool_mode, local_history, request
-            )
-
-        local_history.append(resp_content)
-
-        if function_calls:
-            logger.info(f"ツール呼び出し検出: {len(function_calls)}件")
-            tool_results = _execute_tool_calls(function_calls)
-            local_history.append(types.Content(role="user", parts=tool_results))
-            continue
-
-        # テキスト応答を抽出
-        text_parts = [p.text for p in resp_content.parts if p.text]
-        if text_parts:
-            final_text = "".join(text_parts)
-            logger.debug(f"GenAI応答受信: {truncate_text(final_text)}")
-            return True, final_text, local_history
-
-        return False, "応答を読み取れなかったよ…😢", local_history
+        result = _run_tool_round(local_history, tool_mode, request)
+        if result is not None:
+            return result
 
     # ループ上限到達: ツールなしで最終応答を取得（集めた情報を活かす）
     final_request: dict[str, Any] = {

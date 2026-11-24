@@ -217,7 +217,7 @@ class Summarizer:
 
             return _parse_summary_result(json.loads(content))
         except Exception as e:
-            logger.warning(f"要約LLM呼び出し失敗: {e}")
+            logger.warning(f"要約LLM呼び出し失敗: {e}", exc_info=True)
             return None
 
     def _apply_result(

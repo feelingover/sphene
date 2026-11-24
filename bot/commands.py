@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 
 import discord
 from discord import app_commands, ui
@@ -304,7 +305,7 @@ def _build_channel_list_header(behavior: str, mode_name: str, list_name: str) ->
     )
 
 
-def _format_channel_info(channel_data: dict, bot: discord.Client) -> str:
+def _format_channel_info(channel_data: dict[str, Any], bot: discord.Client) -> str:
     """チャンネル情報を整形する
 
     Args:
@@ -330,30 +331,19 @@ def _format_channel_info(channel_data: dict, bot: discord.Client) -> str:
     return f"• {channel_name} (ID: {channel_id})\n"
 
 
-async def cmd_list_channels(
-    bot: discord.Client, interaction: discord.Interaction, page: int = 1
-) -> None:
-    """チャンネル一覧コマンドを処理する
+def _build_channel_list_message(
+    bot: discord.Client, channel_config: ChannelConfig, page: int
+) -> str:
+    """チャンネル一覧コマンドの応答メッセージを組み立てる
 
     Args:
         bot: Discordクライアント
-        interaction: インタラクションオブジェクト
-        page: 表示するページ番号（1始まり）
+        channel_config: ギルドのチャンネル設定
+        page: 表示するページ番号（1始まり、範囲外は丸める）
+
+    Returns:
+        str: ヘッダー・チャンネル一覧・ページ情報を含むメッセージ
     """
-    if not interaction.guild:
-        await _reply(
-            interaction,
-            "❌ このコマンドはサーバー内でのみ使用できます"
-        )
-        return
-
-    # ギルド固有の設定を取得（I/O の前に応答を保留する）
-    guild_id = interaction.guild.id
-    await _defer(interaction)
-    channel_config = await _get_config_or_notify(interaction, guild_id)
-    if channel_config is None:
-        return
-
     # 現在のモードを取得
     behavior = channel_config.get_behavior()
     mode_name = channel_config.get_mode_display_name()
@@ -392,6 +382,35 @@ async def cmd_list_channels(
     # ページ情報
     if total_pages > 1:
         channel_info += f"\nページ: {page}/{total_pages}"
+
+    return channel_info
+
+
+async def cmd_list_channels(
+    bot: discord.Client, interaction: discord.Interaction, page: int = 1
+) -> None:
+    """チャンネル一覧コマンドを処理する
+
+    Args:
+        bot: Discordクライアント
+        interaction: インタラクションオブジェクト
+        page: 表示するページ番号（1始まり）
+    """
+    if not interaction.guild:
+        await _reply(
+            interaction,
+            "❌ このコマンドはサーバー内でのみ使用できます"
+        )
+        return
+
+    # ギルド固有の設定を取得（I/O の前に応答を保留する）
+    guild_id = interaction.guild.id
+    await _defer(interaction)
+    channel_config = await _get_config_or_notify(interaction, guild_id)
+    if channel_config is None:
+        return
+
+    channel_info = _build_channel_list_message(bot, channel_config, page)
 
     # メッセージ送信
     await _reply(interaction, channel_info)
@@ -622,30 +641,15 @@ async def _send_ephemeral(interaction: discord.Interaction, content: str) -> Non
         logger.warning("コマンドエラー通知の送信に失敗しました", exc_info=True)
 
 
-def setup_commands(bot: discord.Client) -> app_commands.Group:
-    """スラッシュコマンドのセットアップ
+def _register_channel_list_commands(
+    command_group: app_commands.Group, bot: discord.Client
+) -> None:
+    """チャンネルリスト関連のコマンド（一覧・追加・削除・クリア）を登録する
 
     Args:
+        command_group: 登録先のコマンドグループ
         bot: Discordクライアント
-
-    Returns:
-        app_commands.Group: コマンドグループ
     """
-    # コマンドグループ
-    command_group = app_commands.Group(
-        name=config.COMMAND_GROUP_NAME,
-        description=f"{config.BOT_NAME}ボットのコマンド",
-    )
-
-    # 評価モード切替コマンド
-    @command_group.command(
-        name="mode",
-        description=f"{config.BOT_NAME}の評価モード（限定/全体）を切り替えます",
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def mode_command(interaction: discord.Interaction) -> None:
-        await cmd_mode(interaction)
-
     # チャンネル一覧コマンド
     @command_group.command(
         name="channels",
@@ -683,6 +687,34 @@ def setup_commands(bot: discord.Client) -> app_commands.Group:
     @app_commands.checks.has_permissions(administrator=True)
     async def clear_channels_command(interaction: discord.Interaction) -> None:
         await cmd_clear_channels(interaction)
+
+
+def setup_commands(bot: discord.Client) -> app_commands.Group:
+    """スラッシュコマンドのセットアップ
+
+    Args:
+        bot: Discordクライアント
+
+    Returns:
+        app_commands.Group: コマンドグループ
+    """
+    # コマンドグループ
+    command_group = app_commands.Group(
+        name=config.COMMAND_GROUP_NAME,
+        description=f"{config.BOT_NAME}ボットのコマンド",
+    )
+
+    # 評価モード切替コマンド
+    @command_group.command(
+        name="mode",
+        description=f"{config.BOT_NAME}の評価モード（限定/全体）を切り替えます",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def mode_command(interaction: discord.Interaction) -> None:
+        await cmd_mode(interaction)
+
+    # チャンネルリスト関連コマンド（一覧・追加・削除・クリア）
+    _register_channel_list_commands(command_group, bot)
 
     # 翻訳機能設定コマンド
     @command_group.command(

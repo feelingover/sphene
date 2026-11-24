@@ -3,6 +3,7 @@
 import json
 import asyncio
 from html import escape
+from typing import Any
 
 import config
 from ai.client import _get_genai_client, get_light_thinking_config, get_lite_model_name
@@ -99,66 +100,116 @@ class LLMJudge:
         recent_context: str,
         bot_name: str,
     ) -> tuple[bool, str, bool, list[str]]:
-        """Google Gen AI SDKを同期的に呼び出す"""
+        """Google Gen AI SDKを同期的に呼び出す
+
+        Args:
+            message_content: 判定対象の最新メッセージ
+            recent_context: 直近の会話コンテキスト
+            bot_name: ボット名
+
+        Returns:
+            tuple[bool, str, bool, list[str]]:
+                (should_respond, response_type, should_react, reaction_emojis)
+        """
         client = _get_genai_client()
         model_name = get_lite_model_name()
-        
-        safe_message = f"<message>{escape(message_content)}</message>"
-        safe_context = f"<context>{escape(recent_context)}</context>"
-        prompt = f"{LLM_JUDGE_PROMPT.format(bot_name=bot_name)}\n\n直近の会話:\n{safe_context}\n\n最新メッセージ:\n{safe_message}"
+        prompt = _build_judge_prompt(message_content, recent_context, bot_name)
 
         logger.debug(f"LLM Judge呼び出し: model={model_name}")
 
         try:
-            response = _generate_content_with_retry(
-                client=client,
-                model=model_name,
-                contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
-                config=types.GenerateContentConfig(
-                    temperature=0.1,
-                    thinking_config=get_light_thinking_config(),
-                    response_mime_type="application/json", # JSONモードを有効化！
-                ),
-                policy=light_retry_policy(),
-            )
-
-            content = response.text
+            content = _request_judgement(client, model_name, prompt)
             if not content:
                 return False, "none", False, []
-
-            result = json.loads(content)
-            if isinstance(result, list):
-                result = result[0] if result else {}
-            if not isinstance(result, dict):
-                return False, "none", False, []
-            should_respond = _to_bool(result.get("respond", False))
-            llm_type = result.get("response_type", "none")
-
-            # 内部形式に変換
-            type_map = {
-                "full": "full_response",
-                "short": "short_ack",
-                "react": "react_only",
-                "none": "none"
-            }
-            final_type = type_map.get(llm_type, "react_only")
-
-            if not should_respond:
-                final_type = "none"
-
-            should_react = _to_bool(result.get("react", False))
-            emojis = _to_emoji_list(result.get("emojis", []))
-
-            logger.info(
-                f"LLM Judge判定: respond={should_respond}, type={final_type}, "
-                f"react={should_react}, emojis={emojis}, "
-                f"reason={result.get('reason', '')}"
-            )
-            return should_respond, final_type, should_react, emojis
-
+            return _parse_judge_result(content)
         except Exception as e:
-            logger.warning(f"LLM Judge処理失敗: {str(e)}")
+            logger.warning(f"LLM Judge処理失敗: {str(e)}", exc_info=True)
             return False, "none", False, []
+
+
+def _build_judge_prompt(message_content: str, recent_context: str, bot_name: str) -> str:
+    """判定用プロンプトを組み立てる（ユーザー入力はエスケープしてタグで囲む）
+
+    Args:
+        message_content: 判定対象の最新メッセージ
+        recent_context: 直近の会話コンテキスト
+        bot_name: ボット名
+
+    Returns:
+        LLMに渡すプロンプト文字列
+    """
+    safe_message = f"<message>{escape(message_content)}</message>"
+    safe_context = f"<context>{escape(recent_context)}</context>"
+    return f"{LLM_JUDGE_PROMPT.format(bot_name=bot_name)}\n\n直近の会話:\n{safe_context}\n\n最新メッセージ:\n{safe_message}"
+
+
+def _request_judgement(client: Any, model_name: str, prompt: str) -> str | None:
+    """判定LLMを呼び出してレスポンステキストを返す
+
+    Args:
+        client: Gen AI クライアント
+        model_name: 使用モデル名
+        prompt: 判定用プロンプト
+
+    Returns:
+        レスポンスのテキスト（空の場合は None または空文字）
+    """
+    response = _generate_content_with_retry(
+        client=client,
+        model=model_name,
+        contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
+        config=types.GenerateContentConfig(
+            temperature=0.1,
+            thinking_config=get_light_thinking_config(),
+            response_mime_type="application/json", # JSONモードを有効化！
+        ),
+        policy=light_retry_policy(),
+    )
+    return response.text
+
+
+def _parse_judge_result(content: str) -> tuple[bool, str, bool, list[str]]:
+    """判定LLMのJSONレスポンスを解釈する
+
+    Args:
+        content: LLMが返したJSON文字列
+
+    Returns:
+        tuple[bool, str, bool, list[str]]:
+            (should_respond, response_type, should_react, reaction_emojis)
+
+    Raises:
+        json.JSONDecodeError: JSONとして解釈できない場合
+    """
+    result = json.loads(content)
+    if isinstance(result, list):
+        result = result[0] if result else {}
+    if not isinstance(result, dict):
+        return False, "none", False, []
+    should_respond = _to_bool(result.get("respond", False))
+    llm_type = result.get("response_type", "none")
+
+    # 内部形式に変換
+    type_map = {
+        "full": "full_response",
+        "short": "short_ack",
+        "react": "react_only",
+        "none": "none"
+    }
+    final_type = type_map.get(llm_type, "react_only")
+
+    if not should_respond:
+        final_type = "none"
+
+    should_react = _to_bool(result.get("react", False))
+    emojis = _to_emoji_list(result.get("emojis", []))
+
+    logger.info(
+        f"LLM Judge判定: respond={should_respond}, type={final_type}, "
+        f"react={should_react}, emojis={emojis}, "
+        f"reason={result.get('reason', '')}"
+    )
+    return should_respond, final_type, should_react, emojis
 
 
 _llm_judge: LLMJudge | None = None

@@ -273,6 +273,28 @@ def _compact_past_turns(history: list[types.Content]) -> list[types.Content]:
     return [*past, *history[latest_turn_start:]]
 
 
+def _build_user_content(
+    input_text: str, author_name: str, image_urls: list[str] | None
+) -> types.Content:
+    """発言者名付きテキストと添付画像からユーザー発言のContentを作る
+
+    Args:
+        input_text: ユーザーの発言テキスト
+        author_name: 発言者名
+        image_urls: 添付画像のURLリスト (取得できなかった画像はスキップ)
+
+    Returns:
+        role="user" のContent
+    """
+    text_with_author = f"{_safe_author_name(author_name)}: {input_text}"
+    parts = [types.Part.from_text(text=text_with_author)]
+    for url in image_urls or []:
+        image_part = _fetch_image_part(url)
+        if image_part is not None:
+            parts.append(image_part)
+    return types.Content(role="user", parts=parts)
+
+
 class Sphene:
     """AIチャットボットの会話管理クラス (google-genai版)"""
 
@@ -315,6 +337,54 @@ class Sphene:
             start_idx = window_start
         self.history = self.history[start_idx:]
 
+    def _build_instruction(
+        self,
+        channel_context: str | None,
+        channel_summary: str | None,
+        user_profile: str,
+        relevant_facts: str,
+    ) -> str:
+        """システムプロンプト・コンテキスト・ツール使用指示を統合した指示文を作る
+
+        Args:
+            channel_context: チャンネルの直近会話
+            channel_summary: チャンネルの要約
+            user_profile: ユーザープロファイル
+            relevant_facts: 関連する過去の記憶
+
+        Returns:
+            system_instruction に渡す指示文
+        """
+        # チャンネルのコンテキスト情報を構築（タグで囲みエスケープ）
+        context_section = build_context_section(
+            channel_context, channel_summary, user_profile, relevant_facts
+        )
+        # ツール使用を促す指示とコンテキストを統合
+        return f"{self.system_prompt}{context_section}\n\n{TOOL_USAGE_INSTRUCTION}"
+
+    def _apply_result(
+        self,
+        success: bool,
+        response: str,
+        updated_history: list[types.Content],
+        history_before: list[types.Content],
+    ) -> None:
+        """応答生成の結果に応じて履歴を確定またはロールバックする
+
+        Args:
+            success: 応答生成に成功したか
+            response: 応答テキストまたはエラーメッセージ
+            updated_history: ツールループ後の履歴
+            history_before: ユーザー発言追加前の履歴スナップショット
+        """
+        if success:
+            self.history = _compact_past_turns(updated_history)
+            self.trim_conversation_history()
+            return
+        # 失敗時はユーザー発言ごとロールバックし、壊れた履歴を次の会話に持ち越さない
+        logger.warning(f"応答生成に失敗したため履歴をロールバック: {truncate_text(response)}")
+        self.history = history_before
+
     def input_message(
         self,
         input_text: str | None,
@@ -325,6 +395,20 @@ class Sphene:
         user_profile: str = "",
         relevant_facts: str = "",
     ) -> str | None:
+        """ユーザー発言を履歴に追加し、AIの応答を生成する
+
+        Args:
+            input_text: ユーザーの発言テキスト
+            author_name: 発言者名
+            image_urls: 添付画像のURLリスト
+            channel_context: チャンネルの直近会話
+            channel_summary: チャンネルの要約
+            user_profile: ユーザープロファイル
+            relevant_facts: 関連する過去の記憶
+
+        Returns:
+            応答テキスト (失敗時はユーザー向けエラーメッセージ)。入力が空ならNone。
+        """
         if not isinstance(input_text, str) or not input_text.strip():
             return None
 
@@ -332,26 +416,12 @@ class Sphene:
         history_before = list(self.history)
         try:
             self.update_interaction_time()
-            
             # 発言者を明示して履歴に追加
-            text_with_author = f"{_safe_author_name(author_name)}: {input_text}"
-            parts = [types.Part.from_text(text=text_with_author)]
-            
-            if image_urls:
-                for url in image_urls:
-                    image_part = _fetch_image_part(url)
-                    if image_part is not None:
-                        parts.append(image_part)
+            self.history.append(_build_user_content(input_text, author_name, image_urls))
 
-            self.history.append(types.Content(role="user", parts=parts))
-
-            # チャンネルのコンテキスト情報を構築（タグで囲みエスケープ）
-            context_section = build_context_section(
+            instruction = self._build_instruction(
                 channel_context, channel_summary, user_profile, relevant_facts
             )
-
-            # ツール使用を促す指示とコンテキストを統合
-            instruction = f"{self.system_prompt}{context_section}\n\n{TOOL_USAGE_INSTRUCTION}"
 
             # Router LLMで使用ツールを判定
             tool_mode = detect_tool_mode(input_text, context=channel_context)
@@ -363,19 +433,13 @@ class Sphene:
                 system_instruction=instruction,
                 tool_mode=tool_mode,
             )
-            
-            if success:
-                self.history = _compact_past_turns(updated_history)
-                self.trim_conversation_history()
-            else:
-                # 失敗時はユーザー発言ごとロールバックし、壊れた履歴を次の会話に持ち越さない
-                logger.warning(f"応答生成に失敗したため履歴をロールバック: {truncate_text(response)}")
-                self.history = history_before
+            self._apply_result(success, response, updated_history, history_before)
             return response
         except Exception as e:
             logger.critical(f"input_messageエラー: {e}", exc_info=True)
             self.history = history_before
             return "予期せぬエラーが発生しちゃった...😢"
+
     async def async_input_message(
         self,
         input_text: str | None,
@@ -402,6 +466,34 @@ class Sphene:
                 user_profile=user_profile,
                 relevant_facts=relevant_facts,
             )
+
+
+def _extract_ack_text(response: types.GenerateContentResponse) -> str | None:
+    """相槌生成の応答からthought以外のテキストを取り出す
+
+    Args:
+        response: generate_content の応答
+
+    Returns:
+        相槌テキスト。有効なテキストパーツが無ければNone。
+    """
+    candidate = response.candidates[0] if response.candidates else None
+    if candidate and candidate.content and candidate.content.parts:
+        text_parts = [
+            p.text
+            for p in candidate.content.parts
+            if p.text and not getattr(p, "thought", False)
+        ]
+        if text_parts:
+            result = "".join(text_parts)
+            logger.debug(f"相槌生成: {result}")
+            return result
+    finish_reason = candidate.finish_reason if candidate else "no_candidate"
+    logger.warning(
+        "相槌生成: 有効なテキストパーツが得られませんでした (finish_reason=%s)",
+        finish_reason,
+    )
+    return None
 
 
 def generate_short_ack(channel_context: str, trigger_message: str) -> str | None:
@@ -445,23 +537,7 @@ def generate_short_ack(channel_context: str, trigger_message: str) -> str | None
             policy=light_retry_policy(),
         )
 
-        candidate = response.candidates[0] if response.candidates else None
-        if candidate and candidate.content and candidate.content.parts:
-            text_parts = [
-                p.text
-                for p in candidate.content.parts
-                if p.text and not getattr(p, "thought", False)
-            ]
-            if text_parts:
-                result = "".join(text_parts)
-                logger.debug(f"相槌生成: {result}")
-                return result
-        finish_reason = candidate.finish_reason if candidate else "no_candidate"
-        logger.warning(
-            "相槌生成: 有効なテキストパーツが得られませんでした (finish_reason=%s)",
-            finish_reason,
-        )
-        return None
+        return _extract_ack_text(response)
     except Exception as e:
         logger.error(f"相槌生成エラー: {e}", exc_info=True)
         return None

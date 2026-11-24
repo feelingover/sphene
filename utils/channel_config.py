@@ -51,7 +51,7 @@ class ChannelConfigManager:
 
         return _channel_config_manager_instance
 
-    def __init__(self, debug_mode: bool = False):
+    def __init__(self, debug_mode: bool = False) -> None:
         """初期化"""
         self.debug_mode = debug_mode
         self.guild_configs: dict[str, "ChannelConfig"] = {}  # {guild_id: ChannelConfig}
@@ -183,6 +183,39 @@ class ChannelConfigManager:
             return False
 
 
+def _log_channel_ids(channels: list[dict[str, Any]]) -> None:
+    """チャンネルリスト内のすべてのIDを型付きでデバッグログに出力する
+
+    Args:
+        channels: チャンネル情報のリスト
+    """
+    channels_str = ", ".join(
+        [f"{str(c.get('id'))}({type(c.get('id')).__name__})" for c in channels]
+    )
+    logger.debug(f"チャンネルリスト内のID: [{channels_str}]")
+
+
+def _judge_by_behavior(behavior: str, in_list: bool) -> bool:
+    """評価モードとリスト一致の有無から発言可否を判定する
+
+    Args:
+        behavior: 評価モード（"allow" は限定モード、それ以外は全体モード）
+        in_list: 対象チャンネルがリストに含まれるか
+
+    Returns:
+        bool: 発言可能な場合True
+    """
+    match_label = "" if in_list else "不"
+    # 限定モード: リストにあるチャンネルのみ許可
+    if behavior == "allow":
+        logger.debug(f"限定モード判定: {in_list} (リストに{match_label}一致)")
+        return in_list
+    # 全体モード: リストにないチャンネルのみ許可
+    result = not in_list
+    logger.debug(f"全体モード判定: {result} (リストに{match_label}一致)")
+    return result
+
+
 class ChannelConfig:
     """
     特定ギルドのチャンネルリストと評価モードの設定を管理するクラス
@@ -194,7 +227,7 @@ class ChannelConfig:
         guild_id: Any,
         storage_type: Optional[str] = None,
         debug_mode: bool = False,
-    ):
+    ) -> None:
         """
         初期化
 
@@ -203,14 +236,7 @@ class ChannelConfig:
             storage_type: 'local' or 'firestore' or None (Noneの場合はconfig設定を使用)
             debug_mode: テスト時などにTrue、実際のファイル/Firestore操作をスキップ
         """
-        self.guild_id = str(guild_id)  # 文字列に変換して保存
-
-        # ギルドIDのバリデーション（英数字、アンダースコア、ハイフンを許可）
-        # パストラバーサル対策として、安全な文字のみに制限
-        if not re.match(r"^[a-zA-Z0-9_\-]+$", self.guild_id):
-            logger.error(f"無効なギルドID形式です: {self.guild_id}")
-            raise ValueError(f"Invalid guild_id format: {self.guild_id}")
-
+        self.guild_id = self._validate_guild_id(guild_id)
         self.debug_mode = debug_mode
         self.storage_type = storage_type or config.STORAGE_TYPE
         self.config_data: dict[str, Any] = {
@@ -232,7 +258,35 @@ class ChannelConfig:
         # 共有インスタンスへの並行コマンドで変更・保存・ロールバックが交錯しないよう直列化する
         self._lock = threading.RLock()
 
-        # 設定を読み込み
+        self._load_initial_config()
+
+    @staticmethod
+    def _validate_guild_id(guild_id: Any) -> str:
+        """ギルドIDを文字列化し、安全な文字のみで構成されているか検証する
+
+        パストラバーサル対策として、英数字・アンダースコア・ハイフンのみを許可する。
+
+        Args:
+            guild_id: ギルドID
+
+        Returns:
+            str: 文字列化したギルドID
+
+        Raises:
+            ValueError: 許可されない文字が含まれる場合
+        """
+        str_guild_id = str(guild_id)
+        if not re.match(r"^[a-zA-Z0-9_\-]+$", str_guild_id):
+            logger.error(f"無効なギルドID形式です: {str_guild_id}")
+            raise ValueError(f"Invalid guild_id format: {str_guild_id}")
+        return str_guild_id
+
+    def _load_initial_config(self) -> None:
+        """初期化時に設定を読み込む
+
+        未作成（FileNotFoundError）はデフォルト設定のまま使う。それ以外の失敗時は
+        ``load_failed`` を立てて保存を拒否し、既存データの上書きを防ぐ。
+        """
         try:
             self.load_config()
             logger.info(
@@ -467,38 +521,14 @@ class ChannelConfig:
         behavior = self.get_behavior()
         str_channel_id = str(channel_id)
         in_list = any(str(c.get("id")) == str_channel_id for c in channels)
-        result = False
 
-        # 詳細なログ記録
         logger.debug(
             f"can_bot_speak: ギルドID={self.guild_id}, チャンネルID={channel_id}, "
             f"behavior={behavior}, in_list={in_list}, "
             f"チャンネル数={len(channels)}"
         )
-
-        # リスト内のすべてのチャンネルIDをログ出力
-        channels_str = ", ".join(
-            [
-                f"{str(c.get('id'))}({type(c.get('id')).__name__})"
-                for c in channels
-            ]
-        )
-        logger.debug(f"チャンネルリスト内のID: [{channels_str}]")
-
-        # 限定モード: リストにあるチャンネルのみ許可
-        if behavior == "allow":
-            result = in_list
-            logger.debug(
-                f"限定モード判定: {result} (リストに{'' if in_list else '不'}一致)"
-            )
-        # 全体モード: リストにないチャンネルのみ許可
-        else:
-            result = not in_list
-            logger.debug(
-                f"全体モード判定: {result} (リストに{'' if in_list else '不'}一致)"
-            )
-
-        return result
+        _log_channel_ids(channels)
+        return _judge_by_behavior(behavior, in_list)
 
     def add_channel(self, channel_id: int, channel_name: str) -> bool:
         """

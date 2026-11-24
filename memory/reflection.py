@@ -4,6 +4,7 @@ import asyncio
 import json
 import threading
 import uuid
+from typing import Any
 from datetime import datetime, timezone
 from html import escape
 
@@ -331,10 +332,10 @@ class ReflectionEngine:
                 return None
             return result
         except json.JSONDecodeError as e:
-            logger.warning(f"反省会LLM JSONパースエラー: {e}")
+            logger.warning(f"反省会LLM JSONパースエラー: {e}", exc_info=True)
             return None
         except Exception as e:
-            logger.warning(f"反省会LLM呼び出し失敗: {e}")
+            logger.warning(f"反省会LLM呼び出し失敗: {e}", exc_info=True)
             return None
 
     async def _apply_facts(
@@ -358,12 +359,8 @@ class ReflectionEngine:
             チェックポイントを進めた（反省会として成功した）場合True。
             LLMが不正な要素しか返さなかった場合はFalse
         """
-        from ai.client import generate_embedding
-        from memory.fact_store import get_fact_store
         from memory.short_term import get_channel_buffer
 
-        store = get_fact_store()
-        now = datetime.now(timezone.utc)
         allowed_ids = _participant_ids(messages)
         parsed = [
             item
@@ -371,6 +368,39 @@ class ReflectionEngine:
             if item
         ]
 
+        saved_count = await self._save_facts(channel_id, parsed)
+
+        logger.debug(
+            f"ファクト反映: channel_id={channel_id}, valid={len(parsed)}, saved={saved_count}"
+        )
+        if not parsed and raw_facts:
+            logger.warning(
+                f"反省会LLMが有効なファクトを返さなかった: channel_id={channel_id}, "
+                f"items={len(raw_facts)}"
+            )
+            return False
+        if messages:
+            until = max(msg.timestamp for msg in messages)
+            get_channel_buffer().mark_reflected(channel_id, until=until)
+        return True
+
+    async def _save_facts(self, channel_id: int, parsed: list[dict[str, Any]]) -> int:
+        """検証済みファクトに埋め込みを付けて FactStore に保存する
+
+        1件以上保存できた場合はチャンネル単位で永続化する。
+
+        Args:
+            channel_id: チャンネルID
+            parsed: _parse_fact_item で検証済みのファクト辞書リスト
+
+        Returns:
+            新規に保存できたファクト数（重複でスキップしたものは含まない）
+        """
+        from ai.client import generate_embedding
+        from memory.fact_store import get_fact_store
+
+        store = get_fact_store()
+        now = datetime.now(timezone.utc)
         embeddings = await asyncio.gather(
             *[asyncio.to_thread(generate_embedding, item["content"]) for item in parsed]
         )
@@ -393,20 +423,7 @@ class ReflectionEngine:
 
         if saved_count > 0:
             await asyncio.to_thread(store.persist_channel, channel_id)
-
-        logger.debug(
-            f"ファクト反映: channel_id={channel_id}, valid={len(parsed)}, saved={saved_count}"
-        )
-        if not parsed and raw_facts:
-            logger.warning(
-                f"反省会LLMが有効なファクトを返さなかった: channel_id={channel_id}, "
-                f"items={len(raw_facts)}"
-            )
-            return False
-        if messages:
-            until = max(msg.timestamp for msg in messages)
-            get_channel_buffer().mark_reflected(channel_id, until=until)
-        return True
+        return saved_count
 
     def _call_user_profile_llm(self, messages: list[ChannelMessage]) -> None:
         """ユーザープロファイル専用LLMコール。会話からユーザー特性を抽出してストアに反映
@@ -455,7 +472,7 @@ class ReflectionEngine:
                 get_user_profile_store().persist_all()
             logger.info(f"ユーザープロファイル反省会完了: {updated_count}件処理")
         except json.JSONDecodeError as e:
-            logger.warning(f"ユーザープロファイルLLM JSONパースエラー: {e}")
+            logger.warning(f"ユーザープロファイルLLM JSONパースエラー: {e}", exc_info=True)
         except Exception as e:
             logger.warning(f"ユーザープロファイルLLM呼び出し失敗: {e}", exc_info=True)
 

@@ -49,61 +49,14 @@ class RuleBasedJudge:
         Returns:
             JudgeResult: スコアと応答可否
         """
-        score = 0
-        reasons: list[str] = []
-
-        # エンゲージメント中（クールダウンとは独立に加算）
         is_engaged = self._is_engaged(message.channel_id)
-        if is_engaged:
-            score += config.ENGAGEMENT_BOOST
-            reasons.append(f"エンゲージメント(+{config.ENGAGEMENT_BOOST})")
-
-        # 疑問符で終わる
-        content = message.content.strip()
-        if content.endswith("?") or content.endswith("？"):
-            score += 20
-            reasons.append("疑問文(+20)")
-
-        # キーワードマッチ
-        if self._keywords:
-            for keyword in self._keywords:
-                if keyword in message.content:
-                    score += 15
-                    reasons.append(f"キーワード'{keyword}'(+15)")
-                    break  # 1キーワードにつき1回のみ
+        score, reasons = self._score_message(message, is_engaged)
 
         # === Phase 2A 新ルール（recent_messagesがある場合のみ適用） ===
         if recent_messages:
-            # 2人会話: ユニーク非bot著者が2人のみ
-            if _count_unique_authors(recent_messages) == 2:
-                score -= 20
-                reasons.append("2人会話(-20)")
-
-            # ボット言及なし: 直近メッセージにBOT_NAMEを含む非botメッセージがない
-            if not _has_bot_mention_in_recent(recent_messages):
-                score -= 10
-                reasons.append("ボット言及なし(-10)")
-
-            # 高頻度メッセージ: 直近10件が60秒以内
-            if _is_high_frequency(recent_messages):
-                score -= 10
-                reasons.append("高頻度(-10)")
-
-            # 得意話題: キーワードマッチ（recent_messagesに対して）
-            if self._is_expert_topic(recent_messages):
-                score += 15
-                reasons.append("得意話題(+15)")
-
-            # 沈黙後の最初のメッセージ
-            if _is_first_after_silence(recent_messages):
-                score += 10
-                reasons.append("沈黙後(+10)")
-
-            # 会話減衰: 直近メッセージの平均文字数が減少
-            decay = _detect_conversation_decay(recent_messages)
-            if decay != 0:
-                score += decay
-                reasons.append(f"会話減衰({decay:+d})")
+            context_score, context_reasons = self._score_recent_context(recent_messages)
+            score += context_score
+            reasons.extend(context_reasons)
 
         # クールダウンチェック
         if self._is_in_cooldown(message.channel_id):
@@ -137,6 +90,89 @@ class RuleBasedJudge:
             should_react=should_react,
             reaction_emojis=[],  # ルールベースはランダム絵文字を使用 (_send_reaction がフォールバック)
         )
+
+    def _score_message(
+        self, message: ChannelMessage, is_engaged: bool
+    ) -> tuple[int, list[str]]:
+        """対象メッセージ単体とエンゲージメント状態からスコアを算出する
+
+        Args:
+            message: 評価対象メッセージ
+            is_engaged: チャンネルがエンゲージメント期間中か
+
+        Returns:
+            tuple[int, list[str]]: (加算スコア, 判定理由リスト)
+        """
+        score = 0
+        reasons: list[str] = []
+
+        # エンゲージメント中（クールダウンとは独立に加算）
+        if is_engaged:
+            score += config.ENGAGEMENT_BOOST
+            reasons.append(f"エンゲージメント(+{config.ENGAGEMENT_BOOST})")
+
+        # 疑問符で終わる
+        content = message.content.strip()
+        if content.endswith("?") or content.endswith("？"):
+            score += 20
+            reasons.append("疑問文(+20)")
+
+        # キーワードマッチ
+        if self._keywords:
+            for keyword in self._keywords:
+                if keyword in message.content:
+                    score += 15
+                    reasons.append(f"キーワード'{keyword}'(+15)")
+                    break  # 1キーワードにつき1回のみ
+
+        return score, reasons
+
+    def _score_recent_context(
+        self, recent_messages: list[ChannelMessage]
+    ) -> tuple[int, list[str]]:
+        """直近メッセージの流れからスコアを算出する（Phase 2A ルール）
+
+        Args:
+            recent_messages: 直近のメッセージリスト（空でないこと）
+
+        Returns:
+            tuple[int, list[str]]: (加減算スコア, 判定理由リスト)
+        """
+        score = 0
+        reasons: list[str] = []
+
+        # 2人会話: ユニーク非bot著者が2人のみ
+        if _count_unique_authors(recent_messages) == 2:
+            score -= 20
+            reasons.append("2人会話(-20)")
+
+        # ボット言及なし: 直近メッセージにBOT_NAMEを含む非botメッセージがない
+        if not _has_bot_mention_in_recent(recent_messages):
+            score -= 10
+            reasons.append("ボット言及なし(-10)")
+
+        # 高頻度メッセージ: 直近10件が60秒以内
+        if _is_high_frequency(recent_messages):
+            score -= 10
+            reasons.append("高頻度(-10)")
+
+        # 得意話題: キーワードマッチ（recent_messagesに対して）
+        if self._is_expert_topic(recent_messages):
+            score += 15
+            reasons.append("得意話題(+15)")
+
+        # 沈黙後の最初のメッセージ
+        if _is_first_after_silence(recent_messages):
+            score += 10
+            reasons.append("沈黙後(+10)")
+
+        # 会話減衰: 直近メッセージの平均文字数が減少
+        decay = _detect_conversation_decay(recent_messages)
+        if decay != 0:
+            score += decay
+            reasons.append(f"会話減衰({decay:+d})")
+
+        return score, reasons
 
     def record_response(self, channel_id: int) -> None:
         """応答した時刻を記録してクールダウンを開始する"""

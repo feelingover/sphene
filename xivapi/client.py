@@ -7,6 +7,7 @@ XIVAPI v2 APIを使用してFF14のゲームデータ（アイテム、アクシ
 import json
 import re
 import threading
+from typing import Any
 
 import httpx
 
@@ -229,21 +230,32 @@ def _parse_item_result(result: dict) -> dict:
     }
 
 
-def search_item(
-    query: str = "",
-    class_job: str = "",
-    ilvl_min: int | None = None,
-    ilvl_max: int | None = None,
-) -> str:
-    """FF14のアイテムをXIVAPI v2で検索する"""
+def _resolve_item_conditions(
+    query: str,
+    class_job: str,
+    ilvl_min: int | None,
+    ilvl_max: int | None,
+) -> tuple[str | None, str, int | None, int | None]:
+    """アイテム検索の条件を検証・正規化する
+
+    Args:
+        query: 検索キーワード
+        class_job: ジョブ名 (略称・日本語名など)
+        ilvl_min: アイテムレベル下限
+        ilvl_max: アイテムレベル上限
+
+    Returns:
+        (エラー応答JSON または None, ジョブ略称, 正規化済みilvl_min, 正規化済みilvl_max)
+    """
     job_abbreviation = ""
     if class_job:
         resolved = _resolve_job_abbreviation(class_job)
         if resolved is None:
-            return json.dumps(
+            error = json.dumps(
                 {"found": False, "error": f"不明なジョブ名です: {class_job}"},
                 ensure_ascii=False,
             )
+            return error, "", ilvl_min, ilvl_max
         job_abbreviation = resolved
 
     # _build_search_query と同じく、0や解釈できない値は「指定なし」に揃える（空クエリの送信を防ぐ）
@@ -251,11 +263,107 @@ def search_item(
     ilvl_max = _dql_int(ilvl_max) or None
     has_filters = bool(job_abbreviation) or ilvl_min is not None or ilvl_max is not None
     if not query and not has_filters:
-        return json.dumps(
+        error = json.dumps(
             {"found": False, "error": "検索条件を1つ以上指定してください"},
             ensure_ascii=False,
         )
+        return error, job_abbreviation, ilvl_min, ilvl_max
+    return None, job_abbreviation, ilvl_min, ilvl_max
 
+
+def _parse_item_results(search_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """検索結果から有効なアイテムだけをパースする
+
+    システム予約アイテム (IDが10未満) や名前の無いデータは除外し、
+    パースに失敗した行はログを出してスキップする。
+
+    Args:
+        search_results: XIVAPI v2 の results 配列
+
+    Returns:
+        パース済みアイテムのリスト
+    """
+    items = []
+    for r in search_results:
+        f = r.get("fields", {})
+        name = f.get("Name@ja") or f.get("Name", "")
+        row_id = r.get("row_id", 0)
+        # 名前があり、かつIDが10以上のものを有効とみなす
+        if name and row_id >= 10:
+            try:
+                items.append(_parse_item_result(r))
+            except Exception as pe:
+                logger.error(f"Itemパースエラー (ID:{row_id}): {str(pe)}", exc_info=True)
+                continue
+    return items
+
+
+def _build_item_filters(
+    job_abbreviation: str, ilvl_min: int | None, ilvl_max: int | None
+) -> dict[str, Any]:
+    """応答に含める適用済みフィルタ情報を構築する
+
+    Args:
+        job_abbreviation: ジョブ略称 (空文字なら未指定)
+        ilvl_min: アイテムレベル下限
+        ilvl_max: アイテムレベル上限
+
+    Returns:
+        指定されたフィルタだけを含む辞書
+    """
+    filters: dict[str, Any] = {}
+    if job_abbreviation:
+        filters["class_job"] = job_abbreviation
+    if ilvl_min is not None:
+        filters["ilvl_min"] = ilvl_min
+    if ilvl_max is not None:
+        filters["ilvl_max"] = ilvl_max
+    return filters
+
+
+def _build_item_response(
+    query: str, items: list[dict[str, Any]], filters: dict[str, Any] | None
+) -> str:
+    """アイテム検索の成功応答JSONを構築する
+
+    Args:
+        query: 検索キーワード
+        items: パース済みアイテムのリスト
+        filters: 適用したフィルタ情報 (フィルタ未指定ならNone)
+
+    Returns:
+        応答のJSON文字列
+    """
+    response_data: dict[str, Any] = {"found": True, "query": query, "items": items}
+    if filters is not None:
+        response_data["filters"] = filters
+    return json.dumps(response_data, ensure_ascii=False)
+
+
+def search_item(
+    query: str = "",
+    class_job: str = "",
+    ilvl_min: int | None = None,
+    ilvl_max: int | None = None,
+) -> str:
+    """FF14のアイテムをXIVAPI v2で検索する
+
+    Args:
+        query: 検索キーワード
+        class_job: 装備可能ジョブ名
+        ilvl_min: アイテムレベル下限
+        ilvl_max: アイテムレベル上限
+
+    Returns:
+        検索結果のJSON文字列
+    """
+    error, job_abbreviation, ilvl_min, ilvl_max = _resolve_item_conditions(
+        query, class_job, ilvl_min, ilvl_max
+    )
+    if error is not None:
+        return error
+
+    has_filters = bool(job_abbreviation) or ilvl_min is not None or ilvl_max is not None
     search_query = _build_search_query(query, job_abbreviation, ilvl_min, ilvl_max)
     limit = XIVAPI_FILTERED_LIMIT if has_filters else XIVAPI_DEFAULT_LIMIT
 
@@ -274,36 +382,13 @@ def search_item(
             return _build_not_found_response(query, "アイテムが見つかりませんでした")
 
         # システム予約アイテムや無効なデータをフィルタリング
-        items = []
-        for r in search_results:
-            f = r.get("fields", {})
-            name = f.get("Name@ja") or f.get("Name", "")
-            row_id = r.get("row_id", 0)
-            # 名前があり、かつIDが10以上のものを有効とみなす
-            if name and row_id >= 10:
-                try:
-                    items.append(_parse_item_result(r))
-                except Exception as pe:
-                    logger.error(f"Itemパースエラー (ID:{row_id}): {str(pe)}", exc_info=True)
-                    continue
-
+        items = _parse_item_results(search_results)
         if not items:
             return _build_not_found_response(query, "有効なアイテムが見つかりませんでした")
 
         logger.info(f"XIVAPI v2 検索結果: {len(items)}件")
-        response_data: dict = {"found": True, "query": query, "items": items}
-
-        if has_filters:
-            filters: dict = {}
-            if job_abbreviation:
-                filters["class_job"] = job_abbreviation
-            if ilvl_min is not None:
-                filters["ilvl_min"] = ilvl_min
-            if ilvl_max is not None:
-                filters["ilvl_max"] = ilvl_max
-            response_data["filters"] = filters
-
-        return json.dumps(response_data, ensure_ascii=False)
+        filters = _build_item_filters(job_abbreviation, ilvl_min, ilvl_max)
+        return _build_item_response(query, items, filters if has_filters else None)
 
     except httpx.TimeoutException:
         logger.warning(f"XIVAPI v2 タイムアウト: {search_query}")
@@ -371,18 +456,29 @@ def _parse_action_result(result: dict) -> dict:
     }
 
 
-def search_action(
-    query: str = "",
-    class_job: str = "",
-    level_min: int | None = None,
-    level_max: int | None = None,
-) -> str:
-    """FF14のアクションをXIVAPI v2で検索する（2段階取得で説明文を補完）"""
+def _resolve_action_conditions(
+    query: str,
+    class_job: str,
+    level_min: int | None,
+    level_max: int | None,
+) -> tuple[str | None, str, int | None, int | None]:
+    """アクション検索の条件（ジョブ名・レベル範囲）を検証・正規化する
+
+    Args:
+        query: 検索キーワード
+        class_job: ジョブ名
+        level_min: 習得レベル下限
+        level_max: 習得レベル上限
+
+    Returns:
+        (エラーJSON or None, ジョブ略称, 正規化したレベル下限, 正規化したレベル上限)
+    """
     job_abbreviation = ""
     if class_job:
         resolved = _resolve_job_abbreviation(class_job)
         if resolved is None:
-            return json.dumps({"found": False, "error": f"不明なジョブ名です: {class_job}"}, ensure_ascii=False)
+            error = json.dumps({"found": False, "error": f"不明なジョブ名です: {class_job}"}, ensure_ascii=False)
+            return error, "", level_min, level_max
         job_abbreviation = resolved
 
     # _build_action_query と同じく、0や解釈できない値は「指定なし」に揃える（空クエリの送信を防ぐ）
@@ -390,8 +486,84 @@ def search_action(
     level_max = _dql_int(level_max) or None
     has_filters = bool(job_abbreviation) or level_min is not None or level_max is not None
     if not query and not has_filters:
-        return json.dumps({"found": False, "error": "検索条件を1つ以上指定してください"}, ensure_ascii=False)
+        error = json.dumps({"found": False, "error": "検索条件を1つ以上指定してください"}, ensure_ascii=False)
+        return error, job_abbreviation, level_min, level_max
+    return None, job_abbreviation, level_min, level_max
 
+
+def _filter_valid_actions(search_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """システム予約アクションや無効なデータを除外する
+
+    名前があり、かつIDが10以上のものを有効とみなす。
+
+    Args:
+        search_results: XIVAPIの検索結果
+
+    Returns:
+        有効なアクションの検索結果
+    """
+    filtered_results = []
+    for res in search_results:
+        f = res.get("fields", {})
+        name = f.get("Name@ja") or f.get("Name", "")
+        row_id = res.get("row_id", 0)
+        if name and row_id >= 10:
+            filtered_results.append(res)
+    return filtered_results
+
+
+def _parse_actions_with_details(filtered_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """上位3件は詳細を取得して説明文を補完し、残りは検索結果のままパースする
+
+    詳細取得に失敗した場合は検索結果のデータでパースする。
+
+    Args:
+        filtered_results: 有効なアクションの検索結果
+
+    Returns:
+        パース済みのアクション情報のリスト
+    """
+    actions = []
+    for res in filtered_results[:3]:
+        try:
+            row_id = res.get("row_id")
+            if row_id:
+                detail = _fetch_sheet_row("Action", row_id)
+                actions.append(_parse_action_result(detail))
+            else:
+                actions.append(_parse_action_result(res))
+        except Exception:
+            actions.append(_parse_action_result(res))
+
+    for res in filtered_results[3:]:
+        actions.append(_parse_action_result(res))
+    return actions
+
+
+def search_action(
+    query: str = "",
+    class_job: str = "",
+    level_min: int | None = None,
+    level_max: int | None = None,
+) -> str:
+    """FF14のアクションをXIVAPI v2で検索する（2段階取得で説明文を補完）
+
+    Args:
+        query: 検索キーワード
+        class_job: ジョブ名
+        level_min: 習得レベル下限
+        level_max: 習得レベル上限
+
+    Returns:
+        検索結果のJSON文字列
+    """
+    error, job_abbreviation, level_min, level_max = _resolve_action_conditions(
+        query, class_job, level_min, level_max
+    )
+    if error is not None:
+        return error
+
+    has_filters = bool(job_abbreviation) or level_min is not None or level_max is not None
     search_query = _build_action_query(query, job_abbreviation, level_min, level_max)
     limit = XIVAPI_FILTERED_LIMIT if has_filters else XIVAPI_DEFAULT_LIMIT
 
@@ -401,34 +573,11 @@ def search_action(
         if not search_results:
             return _build_not_found_response(query, "アクションが見つかりませんでした")
 
-        # システム予約アクションや無効なデータをフィルタリング
-        filtered_results = []
-        for res in search_results:
-            f = res.get("fields", {})
-            name = f.get("Name@ja") or f.get("Name", "")
-            row_id = res.get("row_id", 0)
-            # 名前があり、かつIDが10以上のものを有効とみなす
-            if name and row_id >= 10:
-                filtered_results.append(res)
-        
+        filtered_results = _filter_valid_actions(search_results)
         if not filtered_results:
             return _build_not_found_response(query, "有効なアクションが見つかりませんでした")
 
-        actions = []
-        for i, res in enumerate(filtered_results[:3]):
-            try:
-                row_id = res.get("row_id")
-                if row_id:
-                    detail = _fetch_sheet_row("Action", row_id)
-                    actions.append(_parse_action_result(detail))
-                else:
-                    actions.append(_parse_action_result(res))
-            except Exception:
-                actions.append(_parse_action_result(res))
-
-        for res in filtered_results[3:]:
-            actions.append(_parse_action_result(res))
-
+        actions = _parse_actions_with_details(filtered_results)
         return json.dumps({"found": True, "query": query, "actions": actions}, ensure_ascii=False)
 
     except Exception as e:
