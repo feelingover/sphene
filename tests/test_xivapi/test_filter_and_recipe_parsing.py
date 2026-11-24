@@ -49,3 +49,20 @@ class TestRecipeParsing:
             result = json.loads(search_recipe(query="a"))
         assert len(result["recipes"]) == 1
         assert logger.warning.call_args.kwargs["exc_info"] is True
+
+
+class TestActionDetailFallback:
+    def test_detail_fetch_failure_falls_back_and_is_logged(self):
+        """詳細取得に失敗しても検索結果でパースし、warning を exc_info 付きで出す"""
+        search_result = {"row_id": 100, "fields": {"Name@ja": "ファイア", "Description@ja": "検索結果の説明"}}
+        with (
+            patch("xivapi.client._execute_search", return_value={"results": [search_result]}),
+            patch("xivapi.client._fetch_sheet_row", side_effect=RuntimeError("boom")),
+            patch("xivapi.client.logger") as logger,
+        ):
+            result = json.loads(search_action(query="ファイア"))
+        assert result["found"] is True
+        assert result["actions"][0]["name"] == "ファイア"
+        assert result["actions"][0]["description"] == "検索結果の説明"
+        assert "row_id=100" in logger.warning.call_args.args[0]
+        assert logger.warning.call_args.kwargs["exc_info"] is True

@@ -533,6 +533,10 @@ def _parse_actions_with_details(filtered_results: list[dict[str, Any]]) -> list[
             else:
                 actions.append(_parse_action_result(res))
         except Exception:
+            logger.warning(
+                f"アクション詳細の取得に失敗したため検索結果でパースします: row_id={res.get('row_id')}",
+                exc_info=True,
+            )
             actions.append(_parse_action_result(res))
 
     for res in filtered_results[3:]:
