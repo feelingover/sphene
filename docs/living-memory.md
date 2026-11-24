@@ -196,6 +196,7 @@
 - **送信:** 返信先がないのでチャンネルに直接 `split_message` → `channel.send`。生成中に人間が発言した、または担当が変わった（送信直前に登録簿を再確認）場合は送らない
 - **送信後の記録:** 1チャンクでも送れたら、まず `ChannelContext` に言及済みの `id`（最大50件）・`last_proactive_at`・`last_self_message_at` を記録して保存する（同じ話題に二度と触れないため）。続けて会話履歴（`channel_conversations`）に「自分から話しかけた」記録＋モデルの発言を追加し（返信されたときに文脈を持つため）、チャンネルバッファに `is_bot=True` で追加し、`judge.record_response()` を呼ぶ
 - **永続化:** 新しいフィールドは local / Firestore の両方に保存する。フィールドの無い旧データは「不明（None）」・空リストとして読み込む
+- **既知の制約:** 言及済みの判定は話題の `id` で行う。要約LLMが継続中の話題に `id: null` や前回に無い id を返すと、コード側で新しい id が採番される（`open_topics.py` の `_parse_topic_item`）。そのため同じ話題でも `mentioned_topic_ids` に一致せず、クールダウン（`PROACTIVE_COOLDOWN_HOURS`）が明けたあとに同じ話題へもう一度触れることがある。クールダウンで頻度は抑えられるので、現時点では許容している
 
 環境変数:
 - `PROACTIVE_ENABLED`: 自発会話を有効にする (デフォルト: `false`)。`LIVING_MEMORY_ENABLED=true` が必要で、起動時に設定を検証する（不正なら起動しない）

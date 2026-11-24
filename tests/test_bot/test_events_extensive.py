@@ -14,7 +14,6 @@ import pytest
 import config
 from bot.events import (
     _collect_ai_context,
-    _get_or_reset_conversation,
     _post_response_update,
     _send_chunks,
     is_bot_mentioned,
@@ -155,7 +154,7 @@ class TestEventsExtensive:
         assert is_reply is False
 
     @pytest.mark.asyncio
-    @patch("bot.events.channel_conversations")
+    @patch("ai.conversation.channel_conversations")
     @patch("bot.events.split_message")
     async def test_process_conversation_chunking(self, mock_split, mock_conversations):
         """会話のチャンク分割送信テスト"""
@@ -179,7 +178,7 @@ class TestEventsExtensive:
         message.channel.send.assert_any_call("Chunk 2")
 
     @pytest.mark.asyncio
-    @patch("bot.events.channel_conversations")
+    @patch("ai.conversation.channel_conversations")
     async def test_process_conversation_error_reply_tolerates_deleted_message(
         self, mock_conversations
     ):
@@ -203,7 +202,7 @@ class TestEventsExtensive:
 
     @pytest.mark.asyncio
     @patch("bot.events._post_response_update")
-    @patch("bot.events.channel_conversations")
+    @patch("ai.conversation.channel_conversations")
     async def test_process_conversation_whitespace_answer_sends_error(
         self, mock_conversations, mock_post_update
     ):
@@ -292,7 +291,7 @@ class TestEventsExtensive:
 
     @pytest.mark.asyncio
     @patch("memory.short_term.get_channel_buffer")
-    @patch("bot.events.channel_conversations")
+    @patch("ai.conversation.channel_conversations")
     @patch("bot.events.split_message")
     @patch("memory.judge.get_judge")
     async def test_process_autonomous_response(self, mock_get_judge, mock_split, mock_conversations, mock_get_buffer):
@@ -323,7 +322,7 @@ class TestEventsExtensive:
 
     @pytest.mark.asyncio
     @patch("memory.short_term.get_channel_buffer")
-    @patch("bot.events.channel_conversations")
+    @patch("ai.conversation.channel_conversations")
     @patch("memory.judge.get_judge")
     async def test_process_autonomous_response_whitespace_answer(
         self, mock_get_judge, mock_conversations, mock_get_buffer
@@ -488,52 +487,6 @@ class TestCollectAiContext:
         ctx, summary, keywords, profile, facts = await _collect_ai_context(message)
 
         assert profile == "user profile text"
-
-
-class TestGetOrResetConversation:
-    """_get_or_reset_conversation のテスト"""
-
-    @patch("bot.events.channel_conversations")
-    @patch("bot.events.load_system_prompt")
-    @patch("bot.events.Sphene")
-    def test_returns_existing_conversation(
-        self,
-        mock_sphene: MagicMock,
-        mock_load_prompt: MagicMock,
-        mock_conversations: MagicMock,
-    ) -> None:
-        """期限切れでない場合は既存インスタンスを返す"""
-        mock_api = MagicMock()
-        mock_api.is_expired.return_value = False
-        mock_conversations.__getitem__.return_value = mock_api
-
-        result = _get_or_reset_conversation("ch1")
-
-        assert result is mock_api
-        mock_sphene.assert_not_called()
-
-    @patch("bot.events.load_system_prompt")
-    @patch("bot.events.Sphene")
-    def test_resets_expired_conversation(
-        self,
-        mock_sphene: MagicMock,
-        mock_load_prompt: MagicMock,
-    ) -> None:
-        """期限切れの場合は新しい Sphene インスタンスに置き換えられる"""
-        mock_api = MagicMock()
-        mock_api.is_expired.return_value = True
-        mock_load_prompt.return_value = "system prompt"
-        new_sphene = MagicMock()
-        mock_sphene.return_value = new_sphene
-
-        # 実際の dict を使ってセット/ゲットが正しく連動するようにする
-        fake_conversations: dict = {"ch1": mock_api}
-        with patch("bot.events.channel_conversations", fake_conversations):
-            result = _get_or_reset_conversation("ch1")
-
-        mock_sphene.assert_called_once_with(system_setting="system prompt")
-        assert fake_conversations["ch1"] is new_sphene
-        assert result is new_sphene
 
 
 class TestSendChunks:

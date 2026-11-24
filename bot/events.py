@@ -18,13 +18,7 @@ from discord.ext import commands  # commands をインポート
 
 import config
 
-# Sphene と load_system_prompt をインポート
-from ai.conversation import (
-    Sphene,
-    generate_short_ack,
-    load_system_prompt,
-    channel_conversations,
-)
+from ai.conversation import generate_short_ack, get_or_reset_conversation
 from log_utils.logger import logger
 from utils.background_tasks import track_background_task
 from utils.channel_config import ChannelConfigManager
@@ -256,21 +250,6 @@ async def _collect_relevant_facts(message: discord.Message) -> str:
     return "\n".join(f"- {f.content}" for f in facts)
 
 
-def _get_or_reset_conversation(channel_id: str) -> "Sphene":
-    """チャンネルの会話インスタンスを取得し、期限切れなら新規作成する
-
-    Args:
-        channel_id: チャンネルID（文字列）
-
-    Returns:
-        Sphene: 会話インスタンス
-    """
-    if channel_conversations[channel_id].is_expired():
-        logger.info(f"チャンネルID {channel_id} の会話が期限切れのためリセット")
-        channel_conversations[channel_id] = Sphene(system_setting=load_system_prompt())
-    return channel_conversations[channel_id]
-
-
 @contextlib.asynccontextmanager
 async def _typing_indicator(channel: discord.abc.Messageable) -> AsyncIterator[None]:
     """応答生成中に「入力中...」インジケーターを表示する。
@@ -416,7 +395,7 @@ async def process_conversation(
     channel_context, channel_summary, topic_keywords, user_profile_str, relevant_facts_str = (
         await _collect_ai_context(message)
     )
-    api = _get_or_reset_conversation(channel_id)
+    api = get_or_reset_conversation(channel_id)
 
     # 会話履歴とコンテキストを使用して応答生成（Lock で直列化）
     async with _typing_indicator(message.channel):
@@ -762,7 +741,7 @@ async def _process_autonomous_response(
         logger.debug("コンテキストが空のため自律応答をスキップ")
         return
 
-    api = _get_or_reset_conversation(channel_id_str)
+    api = get_or_reset_conversation(channel_id_str)
 
     # 会話履歴を使用した応答生成（Lock で直列化）
     async with _typing_indicator(message.channel):
