@@ -23,7 +23,9 @@ class TestParseSummaryResult:
         result = _parse_summary_result(
             {"summary": "要約", "mood": "楽しい", "topic_keywords": ["a", "b"]}
         )
-        assert result == {"summary": "要約", "mood": "楽しい", "topic_keywords": ["a", "b"]}
+        assert result == {
+            "summary": "要約", "mood": "楽しい", "topic_keywords": ["a", "b"], "open_topics": None,
+        }
 
     def test_single_element_list_is_unwrapped(self):
         assert _parse_summary_result([{"summary": "要約"}])["summary"] == "要約"

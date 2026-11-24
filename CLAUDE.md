@@ -34,6 +34,7 @@ bot/
 memory/                   # Living Memory + VANGUARD judge (docs/living-memory.md, docs/vanguard.md)
   short_term.py           # Channel buffer
   channel_context.py, summarizer.py   # Rolling summary
+  open_topics.py          # Unresolved topics extracted by summarizer
   user_profile.py, fact_store.py      # Long-term memory
   reflection.py           # Fact extraction (反省会)
   backoff.py              # Failure backoff for summary/reflection LLM

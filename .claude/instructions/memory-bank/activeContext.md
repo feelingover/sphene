@@ -6,9 +6,9 @@ applyTo: "**"
 ## v1.0.0+ Current State (2026/11)
 
 ### 品質指標
-- テスト: 1242件全パス
+- テスト: 1315件全パス
 - カバレッジ: 96%
-- mypy: 114ファイル no issues
+- mypy: 116ファイル no issues
 
 ### 主要フィーチャーフラグ（2グループ）
 
@@ -27,7 +27,7 @@ applyTo: "**"
 | レイヤー | ファイル | 役割 |
 |---------|---------|------|
 | 短期 | `short_term.py` | チャンネルバッファ（deque, TTL, 反省会チェックポイント） |
-| 中期 | `channel_context.py`, `summarizer.py` | ローリング要約（mood, topic_keywords） |
+| 中期 | `channel_context.py`, `summarizer.py` | ローリング要約（mood, topic_keywords, open_topics） |
 | 長期 | `user_profile.py` | ユーザー関係性（stranger→close, last_topic）。ギルド単位（guild_id, user_id） |
 | 長期 | `fact_store.py` | ファクトストア（Jaccard×decay, embedding対応, 忘却機能） |
 | 思考 | `reflection.py` | 反省会エンジン（LLMファクト抽出, fire-and-forget） |
